@@ -1,0 +1,916 @@
+diff --git a/ast/ast.go b/ast/ast.go
+index 8de21ca..1074ab4 100644
+--- a/ast/ast.go
++++ b/ast/ast.go
+@@ -263,6 +263,7 @@ const (
+ 
+ 	BopAnd
+ 	BopOr
++	BopNullCoalesce
+ )
+ 
+ var bopStrings = []string{
+@@ -289,8 +290,9 @@ var bopStrings = []string{
+ 	BopBitwiseXor: "^",
+ 	BopBitwiseOr:  "|",
+ 
+-	BopAnd: "&&",
+-	BopOr:  "||",
++	BopAnd:          "&&",
++	BopOr:           "||",
++	BopNullCoalesce: "??",
+ }
+ 
+ // BopMap is a map from binary operator token strings to BinaryOp values.
+@@ -320,6 +322,7 @@ var BopMap = map[string]BinaryOp{
+ 
+ 	"&&": BopAnd,
+ 	"||": BopOr,
++	"??": BopNullCoalesce,
+ }
+ 
+ func (b BinaryOp) String() string {
+@@ -441,6 +444,7 @@ type Index struct {
+ 	//nolint: golint,stylecheck // keeping Id instead of ID for now to avoid breaking 3rd parties
+ 	Id *Identifier
+ 	NodeBase
++	NullSafe bool
+ }
+ 
+ // Slice represents an array slice a[begin:end:step].
+@@ -696,6 +700,7 @@ type SuperIndex struct {
+ 	//nolint: golint,stylecheck // keeping Id instead of ID for now to avoid breaking 3rd parties
+ 	Id *Identifier
+ 	NodeBase
++	NullSafe bool
+ }
+ 
+ // InSuper represents the e in super construct.
+diff --git a/internal/ast/ast.go b/internal/ast/ast.go
+index aa50726..874e80e 100644
+--- a/internal/ast/ast.go
++++ b/internal/ast/ast.go
+@@ -50,6 +50,7 @@ var bopPrecedence = map[ast.BinaryOp]Precedence{
+ 	ast.BopBitwiseOr:       12,
+ 	ast.BopAnd:             13,
+ 	ast.BopOr:              14,
++	ast.BopNullCoalesce:    15,
+ }
+ 
+ func BinaryOpPrecedence(bop ast.BinaryOp) Precedence {
+@@ -91,3 +92,25 @@ func TighterPrecedence(p Precedence) Precedence {
+ 		return (p - 1)
+ 	}
+ }
++
++// InNullSafeChain reports whether node ends an access chain that contains a
++// null-safe step.
++func InNullSafeChain(node ast.Node) bool {
++	for {
++		switch n := node.(type) {
++		case *ast.Index:
++			if n.NullSafe {
++				return true
++			}
++			node = n.Target
++		case *ast.Apply:
++			node = n.Target
++		case *ast.Slice:
++			node = n.Target
++		case *ast.SuperIndex:
++			return n.NullSafe
++		default:
++			return false
++		}
++	}
++}
+diff --git a/internal/formatter/fix_indentation.go b/internal/formatter/fix_indentation.go
+index 103f95b..5416f5a 100644
+--- a/internal/formatter/fix_indentation.go
++++ b/internal/formatter/fix_indentation.go
+@@ -590,12 +590,20 @@ func (c *FixIndentation) Visit(expr ast.Node, currIndent indent, crowded bool) {
+ 		c.Visit(node.Target, currIndent, crowded)
+ 		c.fill(node.LeftBracketFodder, false, false, currIndent.lineUp) // Can also be DotFodder
+ 		if node.Id != nil {
+-			c.column++ // "."
++			if node.NullSafe {
++				c.column += 2 // "?."
++			} else {
++				c.column++ // "."
++			}
+ 			newIndent := c.newIndent(node.RightBracketFodder, currIndent, c.column)
+ 			c.fill(node.RightBracketFodder, false, false, newIndent.lineUp) // Can also be IdFodder
+ 			c.column += len(*node.Id)
+ 		} else {
+-			c.column++ // "["
++			if node.NullSafe {
++				c.column += 3 // "?." + "["
++			} else {
++				c.column++ // "["
++			}
+ 			newIndent := c.newIndent(*openFodder(node.Index), currIndent, c.column)
+ 			c.Visit(node.Index, newIndent, false)
+ 			c.fillLast(node.RightBracketFodder, false, false, newIndent.lineUp, currIndent.base)
+@@ -781,12 +789,20 @@ func (c *FixIndentation) Visit(expr ast.Node, currIndent indent, crowded bool) {
+ 		c.column += 5 // super
+ 		c.fill(node.DotFodder, false, false, currIndent.lineUp)
+ 		if node.Id != nil {
+-			c.column++ // ".";
++			if node.NullSafe {
++				c.column += 2 // "?."
++			} else {
++				c.column++ // "."
++			}
+ 			newIndent := c.newIndent(node.IDFodder, currIndent, c.column)
+ 			c.fill(node.IDFodder, false, false, newIndent.lineUp)
+ 			c.column += len(*node.Id)
+ 		} else {
+-			c.column++ // "[";
++			if node.NullSafe {
++				c.column += 3 // "?." + "["
++			} else {
++				c.column++ // "["
++			}
+ 			newIndent := c.newIndent(*openFodder(node.Index), currIndent, c.column)
+ 			c.Visit(node.Index, newIndent, false)
+ 			c.fillLast(node.IDFodder, false, false, newIndent.lineUp, currIndent.base)
+diff --git a/internal/formatter/unparser.go b/internal/formatter/unparser.go
+index d9d3a1b..543ebf2 100644
+--- a/internal/formatter/unparser.go
++++ b/internal/formatter/unparser.go
+@@ -378,11 +378,19 @@ func (u *unparser) unparse(expr ast.Node, crowded bool) {
+ 		u.unparse(node.Target, crowded)
+ 		u.fill(node.LeftBracketFodder, false, false) // Can also be DotFodder
+ 		if node.Id != nil {
+-			u.write(".")
++			if node.NullSafe {
++				u.write("?.")
++			} else {
++				u.write(".")
++			}
+ 			u.fill(node.RightBracketFodder, false, false) // IdFodder
+ 			u.unparseID(*node.Id)
+ 		} else {
+-			u.write("[")
++			if node.NullSafe {
++				u.write("?.[")
++			} else {
++				u.write("[")
++			}
+ 			u.unparse(node.Index, false)
+ 			u.fill(node.RightBracketFodder, false, false)
+ 			u.write("]")
+@@ -549,11 +557,19 @@ func (u *unparser) unparse(expr ast.Node, crowded bool) {
+ 		u.write("super")
+ 		u.fill(node.DotFodder, false, false)
+ 		if node.Id != nil {
+-			u.write(".")
++			if node.NullSafe {
++				u.write("?.")
++			} else {
++				u.write(".")
++			}
+ 			u.fill(node.IDFodder, false, false)
+ 			u.unparseID(*node.Id)
+ 		} else {
+-			u.write("[")
++			if node.NullSafe {
++				u.write("?.[")
++			} else {
++				u.write("[")
++			}
+ 			u.unparse(node.Index, false)
+ 			u.fill(node.IDFodder, false, false)
+ 			u.write("]")
+diff --git a/internal/parser/context.go b/internal/parser/context.go
+index 245e53e..0fc296d 100644
+--- a/internal/parser/context.go
++++ b/internal/parser/context.go
+@@ -82,6 +82,9 @@ func DirectChildren(node ast.Node) []ast.Node {
+ 		if node.EndIndex != nil {
+ 			params = append(params, node.EndIndex)
+ 		}
++		if node.Step != nil {
++			params = append(params, node.Step)
++		}
+ 		return params
+ 	case *ast.Local:
+ 		return nil
+diff --git a/internal/parser/lexer.go b/internal/parser/lexer.go
+index 8c8a3f0..cbeb063 100644
+--- a/internal/parser/lexer.go
++++ b/internal/parser/lexer.go
+@@ -41,6 +41,7 @@ const (
+ 	tokenComma
+ 	tokenDollar
+ 	tokenDot
++	tokenDotNullSafe
+ 	tokenParenL
+ 	tokenParenR
+ 	tokenSemicolon
+@@ -82,16 +83,17 @@ const (
+ 
+ var tokenKindStrings = []string{
+ 	// Symbols
+-	tokenBraceL:    `"{"`,
+-	tokenBraceR:    `"}"`,
+-	tokenBracketL:  `"["`,
+-	tokenBracketR:  `"]"`,
+-	tokenComma:     `","`,
+-	tokenDollar:    `"$"`,
+-	tokenDot:       `"."`,
+-	tokenParenL:    `"("`,
+-	tokenParenR:    `")"`,
+-	tokenSemicolon: `";"`,
++	tokenBraceL:      `"{"`,
++	tokenBraceR:      `"}"`,
++	tokenBracketL:    `"["`,
++	tokenBracketR:    `"]"`,
++	tokenComma:       `","`,
++	tokenDollar:      `"$"`,
++	tokenDot:         `"."`,
++	tokenDotNullSafe: `"?."`,
++	tokenParenL:      `"("`,
++	tokenParenR:      `")"`,
++	tokenSemicolon:   `";"`,
+ 
+ 	// Arbitrary length lexemes
+ 	tokenIdentifier:           "IDENTIFIER",
+@@ -923,6 +925,17 @@ func Lex(diagnosticFilename ast.DiagnosticFileName, importedFilename, input stri
+ 		case '.':
+ 			l.next()
+ 			l.emitToken(tokenDot)
++		case '?':
++			l.next()
++			if l.peek() == '?' {
++				l.next()
++				l.emitToken(tokenOperator)
++			} else if l.peek() == '.' {
++				l.next()
++				l.emitToken(tokenDotNullSafe)
++			} else {
++				return nil, l.makeStaticErrorPoint("Could not lex the character '?'", l.location())
++			}
+ 		case '(':
+ 			l.next()
+ 			l.emitToken(tokenParenL)
+diff --git a/internal/parser/parser.go b/internal/parser/parser.go
+index ef65fe5..be4e026 100644
+--- a/internal/parser/parser.go
++++ b/internal/parser/parser.go
+@@ -869,7 +869,7 @@ func tokenStringToAst(tok *token) (*ast.LiteralString, errors.StaticError) {
+ func (p *parser) parseTerminal() (ast.Node, errors.StaticError) {
+ 	tok := p.pop()
+ 	switch tok.kind {
+-	case tokenAssert, tokenBraceR, tokenBracketR, tokenComma, tokenDot, tokenElse,
++	case tokenAssert, tokenBraceR, tokenBracketR, tokenComma, tokenDot, tokenDotNullSafe, tokenElse,
+ 		tokenError, tokenFor, tokenFunction, tokenIf, tokenIn, tokenImport, tokenImportStr, tokenImportBin,
+ 		tokenLocal, tokenOperator, tokenParenR, tokenSemicolon, tokenTailStrict, tokenThen:
+ 		return nil, makeUnexpectedError(tok, "parsing terminal")
+@@ -942,6 +942,7 @@ func (p *parser) parseTerminal() (ast.Node, errors.StaticError) {
+ 		var index ast.Node
+ 		var id *ast.Identifier
+ 		var idFodder ast.Fodder
++		var nullSafe bool
+ 		switch next.kind {
+ 		case tokenDot:
+ 			fieldID, err := p.popExpect(tokenIdentifier)
+@@ -961,6 +962,29 @@ func (p *parser) parseTerminal() (ast.Node, errors.StaticError) {
+ 				return nil, err
+ 			}
+ 			idFodder = bracketR.fodder
++		case tokenDotNullSafe:
++			nullSafe = true
++			if p.peek().kind == tokenBracketL {
++				bracketL := p.pop()
++				var err errors.StaticError
++				index, err = p.parse(iast.MaxPrecedence)
++				if err != nil {
++					return nil, err
++				}
++				bracketR, err := p.popExpect(tokenBracketR)
++				if err != nil {
++					return nil, err
++				}
++				idFodder = bracketR.fodder
++				ast.FodderMoveFront(index.OpenFodder(), &bracketL.fodder)
++			} else {
++				fieldID, err := p.popExpect(tokenIdentifier)
++				if err != nil {
++					return nil, err
++				}
++				idFodder = fieldID.fodder
++				id = (*ast.Identifier)(&fieldID.data)
++			}
+ 		default:
+ 			return nil, errors.MakeStaticError("Expected . or [ after super", tok.loc)
+ 		}
+@@ -970,6 +994,7 @@ func (p *parser) parseTerminal() (ast.Node, errors.StaticError) {
+ 			Index:     index,
+ 			IDFodder:  idFodder,
+ 			Id:        id,
++			NullSafe:  nullSafe,
+ 		}, nil
+ 	}
+ 
+@@ -1231,7 +1256,7 @@ func (p *parser) parse(prec iast.Precedence) (ast.Node, errors.StaticError) {
+ 					return lhs, nil
+ 				}
+ 
+-			case tokenDot, tokenBracketL, tokenParenL, tokenBraceL:
++			case tokenDot, tokenDotNullSafe, tokenBracketL, tokenParenL, tokenBraceL:
+ 				if iast.ApplyPrecedence != prec {
+ 					return lhs, nil
+ 				}
+@@ -1319,6 +1344,41 @@ func (p *parser) parse(prec iast.Precedence) (ast.Node, errors.StaticError) {
+ 					Id:                 &id,
+ 					RightBracketFodder: fieldID.fodder,
+ 				}
++			case tokenDotNullSafe:
++				if p.peek().kind == tokenBracketL {
++					bracketL := p.pop()
++					index, err := p.parse(iast.MaxPrecedence)
++					if err != nil {
++						return nil, err
++					}
++					bracketR, err := p.popExpect(tokenBracketR)
++					if err != nil {
++						return nil, err
++					}
++					ast.FodderMoveFront(index.OpenFodder(), &bracketL.fodder)
++					lhs = &ast.Index{
++						NodeBase:           ast.NewNodeBaseLoc(locFromTokens(begin, bracketR), ast.Fodder{}),
++						Target:             lhs,
++						LeftBracketFodder:  op.fodder,
++						Index:              index,
++						RightBracketFodder: bracketR.fodder,
++						NullSafe:           true,
++					}
++				} else {
++					fieldID, err := p.popExpect(tokenIdentifier)
++					if err != nil {
++						return nil, err
++					}
++					id := ast.Identifier(fieldID.data)
++					lhs = &ast.Index{
++						NodeBase:           ast.NewNodeBaseLoc(locFromTokens(begin, fieldID), ast.Fodder{}),
++						Target:             lhs,
++						LeftBracketFodder:  op.fodder,
++						Id:                 &id,
++						RightBracketFodder: fieldID.fodder,
++						NullSafe:           true,
++					}
++				}
+ 			case tokenParenL:
+ 				end, args, gotComma, err := p.parseArguments("function argument")
+ 				if err != nil {
+diff --git a/internal/program/desugarer.go b/internal/program/desugarer.go
+index 331f7da..7172d0e 100644
+--- a/internal/program/desugarer.go
++++ b/internal/program/desugarer.go
+@@ -21,6 +21,7 @@ import (
+ 	"reflect"
+ 
+ 	"github.com/google/go-jsonnet/ast"
++	iast "github.com/google/go-jsonnet/internal/ast"
+ 	"github.com/google/go-jsonnet/internal/errors"
+ 	"github.com/google/go-jsonnet/internal/parser"
+ )
+@@ -476,6 +477,17 @@ func desugar(astPtr *ast.Node, objLevel int) (err error) {
+ 		if node.Step == nil {
+ 			node.Step = &ast.LiteralNull{}
+ 		}
++		if iast.InNullSafeChain(node.Target) {
++			// The interpreter slices as part of the chain, so that a skipped
++			// chain skips the slice as well.
++			for _, child := range []*ast.Node{&node.Target, &node.BeginIndex, &node.EndIndex, &node.Step} {
++				err = desugar(child, objLevel)
++				if err != nil {
++					return
++				}
++			}
++			return
++		}
+ 		*astPtr = buildStdCall("slice", *node.Loc(), node.Target, node.BeginIndex, node.EndIndex, node.Step)
+ 		err = desugar(astPtr, objLevel)
+ 		if err != nil {
+@@ -529,8 +541,7 @@ func desugar(astPtr *ast.Node, objLevel int) (err error) {
+ 		}
+ 
+ 	case *ast.Parens:
+-		*astPtr = node.Inner
+-		err = desugar(astPtr, objLevel)
++		err = desugar(&node.Inner, objLevel)
+ 		if err != nil {
+ 			return err
+ 		}
+diff --git a/internal/program/static_analyzer.go b/internal/program/static_analyzer.go
+index 01c93e0..c25ee6e 100644
+--- a/internal/program/static_analyzer.go
++++ b/internal/program/static_analyzer.go
+@@ -104,6 +104,11 @@ func analyzeVisit(a ast.Node, inObject bool, vars ast.IdentifierSet) error {
+ 	case *ast.Index:
+ 		visitNext(a.Target, inObject, vars, s)
+ 		visitNext(a.Index, inObject, vars, s)
++	case *ast.Slice:
++		visitNext(a.Target, inObject, vars, s)
++		visitNext(a.BeginIndex, inObject, vars, s)
++		visitNext(a.EndIndex, inObject, vars, s)
++		visitNext(a.Step, inObject, vars, s)
+ 	case *ast.Local:
+ 		newVars := enterLocal(a.Binds, vars, inObject, s)
+ 		visitNext(a.Body, inObject, newVars, s)
+@@ -140,6 +145,8 @@ func analyzeVisit(a ast.Node, inObject bool, vars ast.IdentifierSet) error {
+ 			visitNext(field.Name, inObject, vars, s)
+ 		}
+ 
++	case *ast.Parens:
++		visitNext(a.Inner, inObject, vars, s)
+ 	case *ast.Self:
+ 		if !inObject {
+ 			return errors.MakeStaticError("Can't use self outside of an object.", *a.Loc())
+diff --git a/interpreter.go b/interpreter.go
+index 26df98a..f29d7d7 100644
+--- a/interpreter.go
++++ b/interpreter.go
+@@ -27,6 +27,7 @@ import (
+ 
+ 	"github.com/google/go-jsonnet/ast"
+ 	"github.com/google/go-jsonnet/astgen"
++	iast "github.com/google/go-jsonnet/internal/ast"
+ )
+ 
+ // TODO(sbarzowski) use it as a pointer in most places b/c it can sometimes be shared
+@@ -281,6 +282,11 @@ type interpreter struct {
+ 	stack callStack
+ 
+ 	evalHook EvalHook
++
++	// The target of the last Index or Apply found to be outside any null-safe
++	// chain. Its own chain is then known not to be null-safe either, which
++	// spares walking it again when the target is evaluated.
++	plainChainTarget ast.Node
+ }
+ 
+ // Map union, b takes precedence when keys collide.
+@@ -373,6 +379,16 @@ func (i *interpreter) rawevaluate(a ast.Node, tc tailCallStatus) (value, error)
+ 			}
+ 			return i.getBoolean(yv)
+ 
++		} else if node.Op == ast.BopNullCoalesce {
++			xv, err := i.evaluate(node.Left, nonTailCall)
++			if err != nil {
++				return nil, err
++			}
++			if _, ok := xv.(*valueNull); ok {
++				return i.evaluate(node.Right, tc)
++			}
++			return xv, nil
++
+ 		} else {
+ 			left, err := i.evaluate(node.Left, nonTailCall)
+ 			if err != nil {
+@@ -473,6 +489,10 @@ func (i *interpreter) rawevaluate(a ast.Node, tc tailCallStatus) (value, error)
+ 		return nil, i.Error(msg.getGoString())
+ 
+ 	case *ast.Index:
++		if node != i.plainChainTarget && iast.InNullSafeChain(node) {
++			return i.evaluateChain(node, tc)
++		}
++		i.plainChainTarget = node.Target
+ 		targetValue, err := i.evaluate(node.Target, nonTailCall)
+ 		if err != nil {
+ 			return nil, err
+@@ -519,6 +539,13 @@ func (i *interpreter) rawevaluate(a ast.Node, tc tailCallStatus) (value, error)
+ 		codePath := node.Loc().FileName
+ 		return i.importCache.importBinary(codePath, node.File.Value, i)
+ 
++	case *ast.Parens:
++		return i.evaluate(node.Inner, tc)
++
++	case *ast.Slice:
++		// Only slices inside a null-safe chain survive desugaring.
++		return i.evaluateChain(node, tc)
++
+ 	case *ast.LiteralBoolean:
+ 		return makeValueBoolean(node.Value), nil
+ 
+@@ -566,6 +593,9 @@ func (i *interpreter) rawevaluate(a ast.Node, tc tailCallStatus) (value, error)
+ 		return foo.getValue(i)
+ 
+ 	case *ast.SuperIndex:
++		if node.NullSafe {
++			return i.evaluateChain(node, tc)
++		}
+ 		index, err := i.evaluate(node.Index, nonTailCall)
+ 		if err != nil {
+ 			return nil, err
+@@ -594,6 +624,10 @@ func (i *interpreter) rawevaluate(a ast.Node, tc tailCallStatus) (value, error)
+ 		}, nil
+ 
+ 	case *ast.Apply:
++		if node != i.plainChainTarget && iast.InNullSafeChain(node) {
++			return i.evaluateChain(node, tc)
++		}
++		i.plainChainTarget = node.Target
+ 		// Eval target
+ 		target, err := i.evaluate(node.Target, nonTailCall)
+ 		if err != nil {
+@@ -1398,3 +1432,307 @@ func evaluateStream(i *interpreter, node ast.Node, tla vmExtMap) ([]string, erro
+ 	i.stack.clearCurrentTrace()
+ 	return manifested, err
+ }
++
++func (i *interpreter) evaluateChain(top ast.Node, tc tailCallStatus) (value, error) {
++	var steps []ast.Node
++	var base ast.Node
++	curr := top
++	for {
++		switch n := curr.(type) {
++		case *ast.Index:
++			steps = append(steps, n)
++			curr = n.Target
++		case *ast.Apply:
++			steps = append(steps, n)
++			curr = n.Target
++		case *ast.Slice:
++			steps = append(steps, n)
++			curr = n.Target
++		default:
++			base = curr
++			goto done
++		}
++	}
++done:
++	for l, r := 0, len(steps)-1; l < r; l, r = l+1, r-1 {
++		steps[l], steps[r] = steps[r], steps[l]
++	}
++
++	var currVal value
++	if superNode, ok := base.(*ast.SuperIndex); ok {
++		val, failed, err := i.evalSuperIndexStep(superNode)
++		if err != nil {
++			return nil, err
++		}
++		if failed {
++			return makeValueNull(), nil
++		}
++		currVal = val
++	} else {
++		var err error
++		currVal, err = i.evaluate(base, nonTailCall)
++		if err != nil {
++			return nil, err
++		}
++	}
++
++	for idx, stepNode := range steps {
++		isLast := (idx == len(steps)-1)
++		stepTc := nonTailCall
++		if isLast && tc == tailCall {
++			stepTc = tailCall
++		}
++
++		trace := traceElement{
++			loc:     stepNode.Loc(),
++			context: stepNode.Context(),
++		}
++		oldTrace := i.stack.currentTrace
++		i.stack.clearCurrentTrace()
++		i.stack.setCurrentTrace(trace)
++
++		var nextVal value
++		var failed bool
++		var err error
++
++		switch step := stepNode.(type) {
++		case *ast.Index:
++			nextVal, failed, err = i.evalIndexStep(step, currVal)
++		case *ast.Apply:
++			nextVal, err = i.evalApplyStep(step, currVal, stepTc)
++		case *ast.Slice:
++			nextVal, err = i.evalSliceStep(step, currVal)
++		default:
++			panic(fmt.Sprintf("Unexpected step in chain: %T", stepNode))
++		}
++
++		i.stack.clearCurrentTrace()
++		i.stack.setCurrentTrace(oldTrace)
++
++		if err != nil {
++			return nil, err
++		}
++		if failed {
++			return makeValueNull(), nil
++		}
++		currVal = nextVal
++	}
++
++	return currVal, nil
++}
++
++func (i *interpreter) evalSuperIndexStep(node *ast.SuperIndex) (value, bool, error) {
++	if node.NullSafe {
++		sb := i.stack.getSelfBinding().super()
++		if sb.self == nil || sb.superDepth >= sb.self.uncached.inheritanceSize() {
++			return makeValueNull(), true, nil
++		}
++		err := checkAssertions(i, sb.self)
++		if err != nil {
++			return nil, false, err
++		}
++		var fieldName string
++		if node.Id != nil {
++			fieldName = string(*node.Id)
++		} else {
++			idxVal, err := i.evaluate(node.Index, nonTailCall)
++			if err != nil {
++				return nil, false, err
++			}
++			strVal, err := i.getString(idxVal)
++			if err != nil {
++				return nil, false, err
++			}
++			fieldName = strVal.getGoString()
++		}
++		if !objectHasField(sb, fieldName) {
++			return makeValueNull(), true, nil
++		}
++		val, err := objectIndex(i, sb, fieldName)
++		if err != nil {
++			return nil, false, err
++		}
++		return val, false, nil
++	}
++
++	var fieldName string
++	if node.Id != nil {
++		fieldName = string(*node.Id)
++	} else {
++		index, err := i.evaluate(node.Index, nonTailCall)
++		if err != nil {
++			return nil, false, err
++		}
++		indexStr, err := i.getString(index)
++		if err != nil {
++			return nil, false, err
++		}
++		fieldName = indexStr.getGoString()
++	}
++	val, err := objectIndex(i, i.stack.getSelfBinding().super(), fieldName)
++	if err != nil {
++		return nil, false, err
++	}
++	return val, false, nil
++}
++
++func (i *interpreter) evalIndexStep(node *ast.Index, targetVal value) (value, bool, error) {
++	if node.NullSafe {
++		if _, isNull := targetVal.(*valueNull); isNull {
++			return makeValueNull(), true, nil
++		}
++		var indexVal value
++		if node.Id != nil {
++			indexVal = makeValueString(string(*node.Id))
++		} else {
++			var err error
++			indexVal, err = i.evaluate(node.Index, nonTailCall)
++			if err != nil {
++				return nil, false, err
++			}
++		}
++
++		// Only a missing field or an out-of-range index yields null; every
++		// other mismatch raises the same error as an ordinary access.
++		switch target := targetVal.(type) {
++		case *valueObject:
++			indexString, err := i.getString(indexVal)
++			if err != nil {
++				return nil, false, err
++			}
++			fieldName := indexString.getGoString()
++			if err := checkAssertions(i, target); err != nil {
++				return nil, false, err
++			}
++			if !objectHasField(objectBinding(target), fieldName) {
++				return makeValueNull(), true, nil
++			}
++			val, err := target.index(i, fieldName)
++			if err != nil {
++				return nil, false, err
++			}
++			return val, false, nil
++
++		case *valueArray:
++			indexNum, err := i.getNumber(indexVal)
++			if err != nil {
++				return nil, false, err
++			}
++			if indexNum.value < 0 || indexNum.value >= float64(target.length()) {
++				return makeValueNull(), true, nil
++			}
++			idx := int(indexNum.value)
++			val, err := target.index(i, idx)
++			if err != nil {
++				return nil, false, err
++			}
++			return val, false, nil
++
++		case valueString:
++			indexNum, err := i.getNumber(indexVal)
++			if err != nil {
++				return nil, false, err
++			}
++			if indexNum.value < 0 || indexNum.value >= float64(target.length()) {
++				return makeValueNull(), true, nil
++			}
++			idx := int(indexNum.value)
++			val, err := target.index(i, idx)
++			if err != nil {
++				return nil, false, err
++			}
++			return val, false, nil
++		}
++
++		return nil, false, i.Error(fmt.Sprintf("Value non indexable: %v", reflect.TypeOf(targetVal)))
++	}
++
++	var indexVal value
++	if node.Id != nil {
++		indexVal = makeValueString(string(*node.Id))
++	} else {
++		var err error
++		indexVal, err = i.evaluate(node.Index, nonTailCall)
++		if err != nil {
++			return nil, false, err
++		}
++	}
++
++	switch target := targetVal.(type) {
++	case *valueObject:
++		indexString, err := i.getString(indexVal)
++		if err != nil {
++			return nil, false, err
++		}
++		val, err := target.index(i, indexString.getGoString())
++		if err != nil {
++			return nil, false, err
++		}
++		return val, false, nil
++
++	case *valueArray:
++		indexInt, err := i.getNumber(indexVal)
++		if err != nil {
++			return nil, false, err
++		}
++		val, err := target.index(i, int(indexInt.value))
++		if err != nil {
++			return nil, false, err
++		}
++		return val, false, nil
++
++	case valueString:
++		indexInt, err := i.getNumber(indexVal)
++		if err != nil {
++			return nil, false, err
++		}
++		val, err := target.index(i, int(indexInt.value))
++		if err != nil {
++			return nil, false, err
++		}
++		return val, false, nil
++	}
++
++	return nil, false, i.Error(fmt.Sprintf("Value non indexable: %v", reflect.TypeOf(targetVal)))
++}
++
++func (i *interpreter) evalApplyStep(node *ast.Apply, targetVal value, tc tailCallStatus) (value, error) {
++	function, err := i.getFunction(targetVal)
++	if err != nil {
++		return nil, err
++	}
++	argEnv := i.stack.getCurrentEnv(node)
++	arguments := callArguments{
++		positional: make([]*cachedThunk, len(node.Arguments.Positional)),
++		named:      make([]namedCallArgument, len(node.Arguments.Named)),
++		tailstrict: node.TailStrict,
++	}
++	for idx, arg := range node.Arguments.Positional {
++		arguments.positional[idx] = &cachedThunk{env: &argEnv, body: arg.Expr}
++	}
++	for idx, arg := range node.Arguments.Named {
++		arguments.named[idx] = namedCallArgument{name: arg.Name, pv: &cachedThunk{env: &argEnv, body: arg.Arg}}
++	}
++	return i.evaluateTailCall(function, arguments, tc)
++}
++
++func (i *interpreter) evalSliceStep(node *ast.Slice, targetVal value) (value, error) {
++	slice, err := i.baseStd.index(i, "slice")
++	if err != nil {
++		return nil, err
++	}
++	function, err := i.getFunction(slice)
++	if err != nil {
++		return nil, err
++	}
++	argEnv := i.stack.getCurrentEnv(node)
++	arguments := callArguments{
++		positional: []*cachedThunk{
++			readyThunk(targetVal),
++			{env: &argEnv, body: node.BeginIndex},
++			{env: &argEnv, body: node.EndIndex},
++			{env: &argEnv, body: node.Step},
++		},
++	}
++	return function.call(i, arguments)
++}
+diff --git a/linter/internal/types/build_graph.go b/linter/internal/types/build_graph.go
+index af1d486..1258325 100644
+--- a/linter/internal/types/build_graph.go
++++ b/linter/internal/types/build_graph.go
+@@ -192,6 +192,9 @@ func calcTP(node ast.Node, varAt map[ast.Node]*common.Variable, g *typeGraph) ty
+ 	case *ast.Error:
+ 		return concreteTP(voidTypeDesc())
+ 	case *ast.Index:
++		if node.NullSafe {
++			return tpRef(anyType)
++		}
+ 		switch index := node.Index.(type) {
+ 		case *ast.LiteralString:
+ 			return tpIndex(knownObjectIndex(g.getExprPlaceholder(node.Target), index.Value))
+@@ -248,6 +251,10 @@ func calcTP(node ast.Node, varAt map[ast.Node]*common.Variable, g *typeGraph) ty
+ 		}})
+ 	case *ast.Apply:
+ 		return tpIndex(functionCallIndex(g.getExprPlaceholder(node.Target)))
++	case *ast.Parens:
++		return tpRef(g.getExprPlaceholder(node.Inner))
++	case *ast.Slice:
++		return tpRef(anyType)
+ 	}
+ 	panic(fmt.Sprintf("Unexpected %#v", node))
+ }
+diff --git a/linter/internal/types/check.go b/linter/internal/types/check.go
+index 738bad7..826f76c 100644
+--- a/linter/internal/types/check.go
++++ b/linter/internal/types/check.go
+@@ -8,16 +8,47 @@ import (
+ 	"github.com/google/go-jsonnet/linter/internal/common"
+ )
+ 
+-func checkSubexpr(node ast.Node, typeOf exprTypes, ec *common.ErrCollector) {
++func checkSubexpr(node ast.Node, typeOf exprTypes, inNullSafeChain map[ast.Node]bool, ec *common.ErrCollector) {
+ 	for _, child := range parser.Children(node) {
+-		check(child, typeOf, ec)
++		check(child, typeOf, inNullSafeChain, ec)
++	}
++}
++
++// findNullSafeChains records every node that ends an access chain containing
++// a null-safe step.
++func findNullSafeChains(node ast.Node, inNullSafeChain map[ast.Node]bool) {
++	for _, child := range parser.Children(node) {
++		findNullSafeChains(child, inNullSafeChain)
++	}
++	switch node := node.(type) {
++	case *ast.Index:
++		if node.NullSafe || inNullSafeChain[node.Target] {
++			inNullSafeChain[node] = true
++		}
++	case *ast.Apply:
++		if inNullSafeChain[node.Target] {
++			inNullSafeChain[node] = true
++		}
++	case *ast.Slice:
++		if inNullSafeChain[node.Target] {
++			inNullSafeChain[node] = true
++		}
++	case *ast.SuperIndex:
++		if node.NullSafe {
++			inNullSafeChain[node] = true
++		}
+ 	}
+ }
+ 
+ // check verifies that the types are valid for a given program, given
+ // the previously resolved types.
+-func check(node ast.Node, typeOf exprTypes, ec *common.ErrCollector) {
+-	checkSubexpr(node, typeOf, ec)
++func check(node ast.Node, typeOf exprTypes, inNullSafeChain map[ast.Node]bool, ec *common.ErrCollector) {
++	checkSubexpr(node, typeOf, inNullSafeChain, ec)
++	if inNullSafeChain[node] {
++		// A null-safe chain may skip the rest of its steps, so they are not
++		// necessarily evaluated.
++		return
++	}
+ 	switch node := node.(type) {
+ 	case *ast.Apply:
+ 		t := typeOf[node.Target]
+@@ -142,5 +173,7 @@ func Check(mainNode ast.Node, roots map[string]ast.Node, vars map[string]map[ast
+ 	// t := et[node.node]
+ 	// fmt.Fprintf(os.Stderr, "%v\n", types.Describe(&t))
+ 
+-	check(mainNode, et, ec)
++	inNullSafeChain := make(map[ast.Node]bool)
++	findNullSafeChains(mainNode, inNullSafeChain)
++	check(mainNode, et, inNullSafeChain, ec)
+ }

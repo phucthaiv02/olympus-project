@@ -1,0 +1,723 @@
+diff --git a/formatter/null_operators_d17b50_test.go b/formatter/null_operators_d17b50_test.go
+new file mode 100644
+index 0000000..e9a4113
+--- /dev/null
++++ b/formatter/null_operators_d17b50_test.go
+@@ -0,0 +1,51 @@
++package formatter
++
++import (
++	"testing"
++)
++
++func TestFormatNullOperators_d17b50(t *testing.T) {
++	cases := []struct {
++		input string
++		want  string
++	}{
++		{"null??1\n", "null ?? 1\n"},
++		{"null   ??   1\n", "null ?? 1\n"},
++		{"null ?? null ?? 1\n", "null ?? null ?? 1\n"},
++		{"(null ?? 1) + 2\n", "(null ?? 1) + 2\n"},
++		{"local o = null;\no?.a.b ?? 2\n", "local o = null;\no?.a.b ?? 2\n"},
++		{"local o = null;\no?.a?.[0]?.b\n", "local o = null;\no?.a?.[0]?.b\n"},
++		{"local o = {};\no?.[0]?.f(1, 2)\n", "local o = {};\no?.[0]?.f(1, 2)\n"},
++		{"local o = {a: 1};\no?.[1]\n", "local o = { a: 1 };\no?.[1]\n"},
++		{"local o = null;\no?.a[1:]\n", "local o = null;\no?.a[1:]\n"},
++		{"{a: 1} + {b: super?.a ?? 0}\n", "{ a: 1 } + { b: super?.a ?? 0 }\n"},
++		{"local f(x) = x?.y ?? 0;\nf(null)\n", "local f(x) = x?.y ?? 0;\nf(null)\n"},
++		{"local x = null;\n{\n  a: x?.b,\n  c: x ?? 2,\n}\n", "local x = null;\n{\n  a: x?.b,\n  c: x ?? 2,\n}\n"},
++		{"local o = { f(x, y): x };\no?.f(1,\n2)\n", "local o = { f(x, y): x };\no?.f(1,\n     2)\n"},
++		{"local o = [1];\no?.[0 +\n0]\n", "local o = [1];\no?.[0 +\n    0]\n"},
++		{"{ f(x, y): x } + { b: super?.f(1,\n2) }\n", "{ f(x, y): x } + { b: super?.f(1,\n                               2) }\n"},
++		{"{ a: 1 } + { b: super?.['a' +\n''] }\n", "{ a: 1 } + { b: super?.['a' +\n                        ''] }\n"},
++	}
++	for _, c := range cases {
++		got, err := Format("snippet.jsonnet", c.input, DefaultOptions())
++		if err != nil {
++			t.Errorf("%q: unexpected error: %v", c.input, err)
++			continue
++		}
++		if got != c.want {
++			t.Errorf("%q: got %q, want %q", c.input, got, c.want)
++		}
++	}
++}
++
++func TestFormatNullSafeSuperIndex_d17b50(t *testing.T) {
++	const input = "{ b: super?.[ 'a' ] }\n"
++	const want = "{ b: super?.['a'] }\n"
++	got, err := Format("snippet.jsonnet", input, DefaultOptions())
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
+diff --git a/linter/null_operators_d17b50_test.go b/linter/null_operators_d17b50_test.go
+new file mode 100644
+index 0000000..f986e86
+--- /dev/null
++++ b/linter/null_operators_d17b50_test.go
+@@ -0,0 +1,83 @@
++package linter
++
++import (
++	"strings"
++	"testing"
++
++	jsonnet "github.com/google/go-jsonnet"
++)
++
++func TestLintNullOperators_d17b50(t *testing.T) {
++	snippets := []string{
++		"local o = { a: 1 };\no?.a ?? 2\n",
++		"local d = 5;\nnull ?? d\n",
++		"local o = null;\no?.f(1)\n",
++		"local o = null;\no?.a.b ?? 3\n",
++		"local o = { a: 1 };\no?.b\n",
++		"local o = { a: 1 };\no?.b.c.d\n",
++		"local o = null;\no?.['a']\n",
++		"local o = [1];\nlocal i = 2;\no?.[i] ?? 0\n",
++		"local f(x) = x?.y ?? 0;\nf({ y: 1 }) + f(null)\n",
++		"{ a: 1 } + { b: super?.a ?? 0, c: super?.z }\n",
++		"local cfg = { server: { port: 80 } };\ncfg?.server?.port ?? 8080\n",
++		"local o = null;\no?.a[1:]\n",
++		"local o = { a: [1, 2] };\no?.a[1:][0] ?? 0\n",
++		"{ b: super?.['a'] ?? 0 }\n",
++		"local o = null;\no?.a[error 'unreachable']\n",
++		"local o = {};\no?.a[error 'unreachable']\n",
++		"local o = [1];\no?.[5][error 'unreachable']\n",
++		"local o = null;\no?.f(1)[error 'unreachable']\n",
++		"local o = null;\no?.a.b(1, 2, 3).c[error 'a'][error 'b']\n",
++		"local o = null;\no?.a[error 'unreachable'] ?? 0\n",
++		"{ b: super?.a[error 'unreachable'] }\n",
++		"local s = 2;\nlocal o = { a: [1, 2, 3] };\no?.a[::s]\n",
++		"local o = { a: [1, 2, 3] };\nlocal f(s) = o?.a[::s];\nf(2)\n",
++		"local s = 2;\nlocal o = null;\no?.a[1:][::s]\n",
++	}
++	for _, code := range snippets {
++		var out strings.Builder
++		found := LintSnippet(jsonnet.MakeVM(), &out, []Snippet{{FileName: "snippet.jsonnet", Code: code}})
++		if found || out.Len() > 0 {
++			t.Errorf("%q: unexpected problems reported:\n%s", code, out.String())
++		}
++	}
++}
++
++func TestLintNullSafeSliceStepImports_d17b50(t *testing.T) {
++	vm := jsonnet.MakeVM()
++	vm.Importer(&jsonnet.MemoryImporter{Data: map[string]jsonnet.Contents{
++		"lib.libsonnet": jsonnet.MakeContents("{ step: 2 }\n"),
++		"step.txt":      jsonnet.MakeContents("ab"),
++	}})
++	snippets := []string{
++		"local lib = import 'lib.libsonnet';\nlocal o = { a: [1, 2, 3] };\no?.a[::lib.step]\n",
++		"local s = importstr 'step.txt';\nlocal o = null;\no?.a[::std.length(s)]\n",
++	}
++	for _, code := range snippets {
++		var out strings.Builder
++		found := LintSnippet(vm, &out, []Snippet{{FileName: "snippet.jsonnet", Code: code}})
++		if found || out.Len() > 0 {
++			t.Errorf("%q: unexpected problems reported:\n%s", code, out.String())
++		}
++	}
++}
++
++func TestLintStillReportsOutsideSkippedChain_d17b50(t *testing.T) {
++	cases := []struct {
++		code string
++		want string
++	}{
++		{"local o = { a: 1 };\no.b?.c\n", `Indexed object has no field "b"`},
++		{"{}.a?.b\n", `Indexed object has no field "a"`},
++		{"local o = { a: { b: 1 } };\no.a.c?.d\n", `Indexed object has no field "c"`},
++		{"local o = { f(x): x };\no.f(1, 2)?.a\n", "Too many arguments"},
++		{"local o = { a: 1 };\n(o?.a)[{}]\n", "Index is neither a number"},
++	}
++	for _, c := range cases {
++		var out strings.Builder
++		found := LintSnippet(jsonnet.MakeVM(), &out, []Snippet{{FileName: "snippet.jsonnet", Code: c.code}})
++		if !found || !strings.Contains(out.String(), c.want) {
++			t.Errorf("%q: expected a problem containing %q, got:\n%s", c.code, c.want, out.String())
++		}
++	}
++}
+diff --git a/null_operators_d17b50_test.go b/null_operators_d17b50_test.go
+new file mode 100644
+index 0000000..c834623
+--- /dev/null
++++ b/null_operators_d17b50_test.go
+@@ -0,0 +1,492 @@
++package jsonnet
++
++import (
++	"bytes"
++	"encoding/json"
++	"reflect"
++	"strings"
++	"testing"
++
++	"github.com/google/go-jsonnet/ast"
++)
++
++type nullOpCase struct {
++	src  string
++	want string
++}
++
++func checkNullOpCases(t *testing.T, cases []nullOpCase) {
++	t.Helper()
++	for _, c := range cases {
++		out, err := MakeVM().EvaluateAnonymousSnippet("snippet.jsonnet", c.src)
++		if err != nil {
++			t.Errorf("%s: unexpected error: %v", c.src, err)
++			continue
++		}
++		var got, want interface{}
++		if err := json.NewDecoder(strings.NewReader(out)).Decode(&got); err != nil {
++			t.Errorf("%s: invalid output %q: %v", c.src, out, err)
++			continue
++		}
++		if err := json.NewDecoder(strings.NewReader(c.want)).Decode(&want); err != nil {
++			t.Fatalf("%s: invalid expectation %q: %v", c.src, c.want, err)
++		}
++		if !reflect.DeepEqual(got, want) {
++			t.Errorf("%s: got %s, want %s", c.src, out, c.want)
++		}
++	}
++}
++
++func checkNullOpRuntimeErrors(t *testing.T, srcs []string) {
++	t.Helper()
++	for _, src := range srcs {
++		out, err := MakeVM().EvaluateAnonymousSnippet("snippet.jsonnet", src)
++		if err == nil {
++			t.Errorf("%s: expected an error, got %s", src, out)
++		}
++	}
++}
++
++func TestNullCoalescingValues_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`null ?? 1`, `1`},
++		{`2 ?? 1`, `2`},
++		{`false ?? true`, `false`},
++		{`0 ?? 1`, `0`},
++		{`"" ?? "x"`, `""`},
++		{`[] ?? [1]`, `[]`},
++		{`{} ?? {a: 1}`, `{}`},
++		{`null ?? null`, `null`},
++		{`null ?? null ?? 3`, `3`},
++		{`null ?? 4 ?? 5`, `4`},
++		{`local x = null; x ?? {a: 1}`, `{"a": 1}`},
++		{`local f(x) = x ?? "default"; [f(null), f("v")]`, `["default", "v"]`},
++		{`{a: null, b: self.a ?? "d", c: self.b ?? "e"}`, `{"a": null, "b": "d", "c": "d"}`},
++		{`[x ?? 0 for x in [1, null, 3]]`, `[1, 0, 3]`},
++		{`std.length(null ?? [1, 2])`, `2`},
++	})
++}
++
++func TestNullCoalescingIsLazy_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`1 ?? error "unreachable"`, `1`},
++		{`false ?? error "unreachable"`, `false`},
++		{`null ?? 1 ?? error "unreachable"`, `1`},
++		{`local f() = error "unreachable"; [] ?? f()`, `[]`},
++		{`{a: 1 ?? error "unreachable"}`, `{"a": 1}`},
++	})
++	checkNullOpRuntimeErrors(t, []string{
++		`null ?? error "reached"`,
++		`(error "left") ?? 1`,
++	})
++}
++
++func TestNullCoalescingPrecedence_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`5 ?? 1 + 2`, `5`},
++		{`null ?? 1 + 2`, `3`},
++		{`1 + 2 ?? 5`, `3`},
++		{`1 ?? 2 == 3`, `1`},
++		{`false ?? true || true`, `false`},
++		{`null ?? true && false`, `false`},
++		{`true ?? false && false`, `true`},
++		{`null ?? 1 < 2`, `true`},
++		{`2 ?? 3 * 4`, `2`},
++		{`(null ?? 1) + 2`, `3`},
++		{`(5 ?? 1) + 2`, `7`},
++		{`if null ?? true then "yes" else "no"`, `"yes"`},
++		{`local x = null ?? 2; x * 10`, `20`},
++		{`[null ?? 1, 2 ?? null]`, `[1, 2]`},
++		{`null ?? "a" in {a: 1}`, `true`},
++	})
++}
++
++func TestNullSafeFieldAccess_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`null?.a`, `null`},
++		{`{a: 1}?.a`, `1`},
++		{`{a: 1}?.b`, `null`},
++		{`{a: null}?.a`, `null`},
++		{`{a: {b: 2}}?.a?.b`, `2`},
++		{`{a: {b: 2}}.a?.c`, `null`},
++		{`{a:: 3}?.a`, `3`},
++		{`{a::: 4}?.a`, `4`},
++		{`local o = {a: 1}; [o?.a, o?.b]`, `[1, null]`},
++		{`local o = null; o?.a`, `null`},
++		{`{a: {b: null}, c: self.a?.b?.c}`, `{"a": {"b": null}, "c": null}`},
++		{`{x: 1, y: self?.x, z: self?.w}`, `{"x": 1, "y": 1, "z": null}`},
++		{`local o = {} + {a: 5}; o?.a`, `5`},
++		{`[x?.v for x in [{v: 1}, null, {}]]`, `[1, null, null]`},
++	})
++}
++
++func TestNullSafeIndexAccess_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`null?.["a"]`, `null`},
++		{`null?.[0]`, `null`},
++		{`{a: 1}?.["a"]`, `1`},
++		{`{a: 1}?.["b"]`, `null`},
++		{`local k = "a"; {a: 7}?.[k]`, `7`},
++		{`[10, 20]?.[0]`, `10`},
++		{`[10, 20]?.[1]`, `20`},
++		{`[10, 20]?.[2]`, `null`},
++		{`[10, 20]?.[-1]`, `null`},
++		{`[10, 20]?.[-0.5]`, `null`},
++		{`[10, 20]?.[0.5]`, `10`},
++		{`[10, 20]?.[1.5]`, `20`},
++		{`"éa"?.[0.5]`, `"é"`},
++		{`"é"?.[1]`, `null`},
++		{`"éa"?.[1]`, `"a"`},
++		{`"日本"?.[2]`, `null`},
++		{`[1]?.[1e100]`, `null`},
++		{`"x"?.[1e100]`, `null`},
++		{`[1, 2]?.[1e15]`, `null`},
++		{`[1]?.[-1e100]`, `null`},
++		{`"x"?.[-1e100]`, `null`},
++		{`[]?.[0]`, `null`},
++		{`"ab"?.[1]`, `"b"`},
++		{`"ab"?.[2]`, `null`},
++		{`""?.[0]`, `null`},
++		{`[[1, 2], [3]]?.[1]?.[1]`, `null`},
++		{`[[1, 2], [3]]?.[0]?.[1]`, `2`},
++		{`{a: [1]}?.a?.[0]`, `1`},
++		{`[{a: 1}]?.[0]?.a`, `1`},
++	})
++}
++
++func TestNullSafeShortCircuitsChain_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`local o = null; o?.a.b.c`, `null`},
++		{`local o = null; o?.a[0].b`, `null`},
++		{`local o = null; o?.["a"]["b"][3]`, `null`},
++		{`local o = {}; o?.a.b.c`, `null`},
++		{`local o = {}; o?.a[0]`, `null`},
++		{`local o = [1]; o?.[5].x[0]`, `null`},
++		{`local o = [1]; o?.[1e100].x[0]`, `null`},
++		{`local o = "x"; o?.[1e100][error "unreachable"]`, `null`},
++		{`local o = {a: {b: {c: 1}}}; o?.a.b.c`, `1`},
++		{`local o = {a: {}}; o.a?.b.c.d`, `null`},
++		{`local o = null; o?.f(1)`, `null`},
++		{`local o = null; o?.f(1)(2).g`, `null`},
++		{`local o = {}; o?.f(1)`, `null`},
++		{`local o = {f(x): x + 1}; o?.f(1)`, `2`},
++		{`local o = {f(x): {g: x * 2}}; o?.f(3).g`, `6`},
++		{`local o = {f(): null}; o?.f()?.g`, `null`},
++		{`local f() = null; f()?.a.b`, `null`},
++		{`local f() = {a: {b: 9}}; f()?.a.b`, `9`},
++		{`local o = null; [o?.a.b, 1]`, `[null, 1]`},
++		{`local o = null; o?.a[1:]`, `null`},
++		{`local o = {}; o?.a[1:][0].b`, `null`},
++		{`local o = {a: [1, 2, 3]}; o?.a[1:]`, `[2, 3]`},
++		{`local o = {a: "hello"}; o?.a[1:3]`, `"el"`},
++		{`local s = 2; local o = {a: [1, 2, 3, 4]}; o?.a[::s]`, `[1, 3]`},
++	})
++}
++
++func TestNullSafeSkipsEvaluation_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`null?.[error "unreachable"]`, `null`},
++		{`local o = null; o?.a[error "unreachable"]`, `null`},
++		{`local o = null; o?.f(error "unreachable")`, `null`},
++		{`local o = {}; o?.f(error "unreachable")`, `null`},
++		{`local o = {}; o?.a.f(error "a", error "b")[error "c"]`, `null`},
++		{`local o = [1]; o?.[4][error "unreachable"]`, `null`},
++		{`local o = null; o?.f(x=error "unreachable")`, `null`},
++		{`local o = null; o?.a[error "a":error "b":error "c"]`, `null`},
++		{`{b: super?.[error "unreachable"]}`, `{"b": null}`},
++	})
++}
++
++func TestNullSafeChainEnds_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`local o = null; (o?.a) ?? 3`, `3`},
++		{`local o = null; o?.a ?? 3`, `3`},
++		{`local o = {a: 0}; o?.a ?? 3`, `0`},
++		{`local cfg = {}; cfg?.server?.port ?? 8080`, `8080`},
++		{`local cfg = {server: {port: 80}}; cfg?.server?.port ?? 8080`, `80`},
++		{`local cfg = null; cfg?.server.port ?? 8080`, `8080`},
++		{`local o = null; o?.a == null`, `true`},
++		{`local o = null; std.type(o?.a)`, `"null"`},
++		{`local o = {a: 2}; o?.a + 1`, `3`},
++	})
++	checkNullOpRuntimeErrors(t, []string{
++		`local o = null; (o?.a).b`,
++		`local o = null; (o?.a)[0]`,
++		`local o = {}; (o?.f)(1)`,
++		`local o = null; o?.a + 1`,
++	})
++}
++
++func TestNullSafeOnlyAtOperator_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`{a: {b: 1}}?.a.b`, `1`},
++	})
++	checkNullOpRuntimeErrors(t, []string{
++		`local o = {a: null}; o?.a.b`,
++		`local o = {a: {}}; o?.a.b`,
++		`local o = {a: [1]}; o?.a[3]`,
++		`local o = {f(): null}; o?.f().g`,
++		`local o = {a: null}; o.a?.b.c + o.a.d`,
++		`local o = {a: null}; o?.a[1:]`,
++		`local o = null; (o?.a)[1:]`,
++	})
++}
++
++func TestOrdinaryAccessBeforeNullSafeFails_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`{a: {}}.a?.b`, `null`},
++	})
++	checkNullOpRuntimeErrors(t, []string{
++		`{}.a?.b`,
++		`null.a?.b`,
++		`[1][9]?.b`,
++		`{}.f()?.a`,
++		`{}["a"]?.[0]`,
++		`local o = null; o.a?.b`,
++		`local o = {}; o.a?.b ?? 1`,
++	})
++}
++
++func TestNullSafeWrongTypes_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`{a: 1}?.a`, `1`},
++	})
++	checkNullOpRuntimeErrors(t, []string{
++		`1?.a`,
++		`true?.a`,
++		`"str"?.a`,
++		`[1]?.a`,
++		`[1]?.["a"]`,
++		`{a: 1}?.[0]`,
++		`"ab"?.["x"]`,
++		`local f() = 1; f?.a`,
++	})
++}
++
++func TestNullSafeDownstreamCallErrorsAreNotSuppressed_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`{f(): 3}?.f()`, `3`},
++	})
++	checkNullOpRuntimeErrors(t, []string{
++		`{f(): error "body"}?.f()`,
++		`{f(x): x}?.f(error "argument")`,
++		`{f: 1}?.f()`,
++	})
++}
++
++func TestNullSafeBaseErrorsAreNotSuppressed_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`({a: 1})?.a`, `1`},
++		{`(null)?.[0]`, `null`},
++	})
++	checkNullOpRuntimeErrors(t, []string{
++		`(error "base field")?.a`,
++		`(error "base index")?.[error "index must not replace base error"]`,
++	})
++}
++
++func TestNullSafeFieldValueIsEvaluated_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`{a: 1, b: error "unrelated"}?.a`, `1`},
++		{`{assert true, a: 1}?.b`, `null`},
++	})
++	checkNullOpRuntimeErrors(t, []string{
++		`{a: error "field"}?.a`,
++		`[error "elem"]?.[0]`,
++		`{assert false : "boom", a: 1}?.b`,
++		`{assert false : "boom", a: 1}?.["b"]`,
++	})
++}
++
++func TestNullSafeSuper_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`{a: 1} + {b: super?.a}`, `{"a": 1, "b": 1}`},
++		{`{a: 1} + {b: super?.z}`, `{"a": 1, "b": null}`},
++		{`{a: 1} + {b: super?.["a"], c: super?.["z"]}`, `{"a": 1, "b": 1, "c": null}`},
++		{`{a: {x: 1}} + {a+: {y: super?.x}}`, `{"a": {"x": 1, "y": 1}}`},
++		{`{a: 1} + {b: super?.z.y.x}`, `{"a": 1, "b": null}`},
++		{`{a: 1} + {b: super?.z ?? "none"}`, `{"a": 1, "b": "none"}`},
++		{`{a: {b: 2}} + {c: super?.a.b}`, `{"a": {"b": 2}, "c": 2}`},
++		{`{a: 1} + {a: 2} + {b: super?.a}`, `{"a": 2, "b": 2}`},
++		{`{a:: 1} + {b: super?.a}`, `{"b": 1}`},
++		{`{b: super?.a}`, `{"b": null}`},
++		{`{b: super?.a.c[0]}`, `{"b": null}`},
++		{`{a: [1, 2]} + {b: super?.a[1:]}`, `{"a": [1, 2], "b": [2]}`},
++	})
++}
++
++func TestNullSafeSuperDoesNotSuppressOtherErrors_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`{a: {c: 1}} + {b: super?.a.c}`, `{"a": {"c": 1}, "b": 1}`},
++		{`{a: [1]} + {b: super?.a[0]}`, `{"a": [1], "b": 1}`},
++		{`{a: 1} + {b: super?.["a"]}`, `{"a": 1, "b": 1}`},
++	})
++	checkNullOpRuntimeErrors(t, []string{
++		`{a: null} + {b: super?.a.c}`,
++		`{a: {}} + {b: super?.a.b}`,
++		`{a: [1]} + {b: super?.a[3]}`,
++		`{a: 1} + {b: super?.[error "index reached"]}`,
++		`{a: 1} + {b: super?.[0]}`,
++	})
++}
++
++func TestNullOperatorsCombined_d17b50(t *testing.T) {
++	checkNullOpCases(t, []nullOpCase{
++		{`
++local users = [
++  {name: "a", address: {city: "x"}},
++  {name: "b", address: null},
++  {name: "c"},
++];
++[u?.address?.city ?? "unknown" for u in users]
++`, `["x", "unknown", "unknown"]`},
++		{`
++local defaults = {replicas: 1, image: "base"};
++local override = {image: "custom"};
++{
++  [k]: override?.[k] ?? defaults[k]
++  for k in std.objectFields(defaults)
++}
++`, `{"image": "custom", "replicas": 1}`},
++		{`
++local get(o, path) = std.foldl(function(acc, k) acc?.[k], path, o);
++[get({a: {b: [5, 6]}}, ["a", "b", 1]), get({a: {}}, ["a", "b", 1]), get(null, ["a"])]
++`, `[6, null, null]`},
++		{`std.map(function(x) x?.v ?? -1, [{v: 3}, null, {w: 1}])`, `[3, -1, -1]`},
++	})
++}
++
++func TestNullOperatorsTopLevelArgs_d17b50(t *testing.T) {
++	vm := MakeVM()
++	vm.TLACode("cfg", `{port: null}`)
++	out, err := vm.EvaluateAnonymousSnippet("snippet.jsonnet", `function(cfg) cfg?.port ?? cfg?.host ?? "none"`)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if out != "\"none\"\n" {
++		t.Fatalf("got %q", out)
++	}
++}
++
++func evaluateCountingCalls(t *testing.T, src string) (string, int, int) {
++	t.Helper()
++	vm := MakeVM()
++	calls := 0
++	vm.NativeFunction(&NativeFunction{
++		Name:   "tick",
++		Params: ast.Identifiers{"x"},
++		Func: func(args []interface{}) (interface{}, error) {
++			calls++
++			return args[0], nil
++		},
++	})
++	var traces bytes.Buffer
++	vm.SetTraceOut(&traces)
++	out, err := vm.EvaluateAnonymousSnippet("snippet.jsonnet", src)
++	if err != nil {
++		t.Fatalf("%s: unexpected error: %v", src, err)
++	}
++	return out, calls, strings.Count(traces.String(), "TRACE:")
++}
++
++func TestNullOperatorsEvaluateOperandsOnce_d17b50(t *testing.T) {
++	cases := []struct {
++		src    string
++		want   string
++		calls  int
++		traces int
++	}{
++		{`std.native("tick")(1) ?? 2`, `1`, 1, 0},
++		{`std.native("tick")(false) ?? true`, `false`, 1, 0},
++		{`null ?? std.native("tick")(2)`, `2`, 1, 0},
++		{`std.native("tick")(null) ?? std.native("tick")(3)`, `3`, 2, 0},
++		{`std.trace("left", 1) ?? 2`, `1`, 0, 1},
++		{`null ?? std.trace("right", 2)`, `2`, 0, 1},
++		{`std.native("tick")({a: 1})?.a`, `1`, 1, 0},
++		{`std.native("tick")({a: {b: [4, 5]}})?.a?.b?.[1]`, `5`, 1, 0},
++		{`std.native("tick")(null)?.a.b`, `null`, 1, 0},
++		{`std.native("tick")([7, 8])?.[1]`, `8`, 1, 0},
++		{`std.native("tick")("xy")?.[1]`, `"y"`, 1, 0},
++		{`(std.native("tick")({a: 1}))?.a`, `1`, 1, 0},
++		{`(std.native("tick")([1, 2]))?.[0]`, `1`, 1, 0},
++		{`({a: 1} + std.native("tick")({b: 2}))?.b`, `2`, 1, 0},
++		{`(std.trace("receiver", {a: {b: 3}}))?.a.b`, `3`, 0, 1},
++		{`std.trace("receiver", {a: 1})?.a`, `1`, 0, 1},
++		{`std.trace("receiver", {f(x): x + 1})?.f(1)`, `2`, 0, 1},
++		{`std.trace("receiver", {a: [1, 2, 3]})?.a[1:]`, `[2, 3]`, 0, 1},
++		{`{a: 1}?.[std.native("tick")("a")]`, `1`, 1, 0},
++		{`{a: 1}?.[std.native("tick")("b")]`, `null`, 1, 0},
++		{`[5, 6]?.[std.native("tick")(1)]`, `6`, 1, 0},
++		{`[5, 6]?.[std.native("tick")(2)]`, `null`, 1, 0},
++		{`"ab"?.[std.trace("selector", 0)]`, `"a"`, 0, 1},
++		{`{a: {b: 2}}?.a[std.native("tick")("b")]`, `2`, 1, 0},
++		{`{a: 1} + {b: super?.[std.native("tick")("a")]}`, `{"a": 1, "b": 1}`, 1, 0},
++		{`{a: 1} + {b: super?.[std.trace("selector", "z")]}`, `{"a": 1, "b": null}`, 0, 1},
++		{`std.native("tick")({a: null})?.a ?? std.native("tick")(4)`, `4`, 2, 0},
++		{`std.native("tick")({a: 0})?.a ?? std.native("tick")(4)`, `0`, 1, 0},
++	}
++	for _, c := range cases {
++		out, calls, traces := evaluateCountingCalls(t, c.src)
++		var got, want interface{}
++		if err := json.Unmarshal([]byte(out), &got); err != nil {
++			t.Errorf("%s: invalid output %q: %v", c.src, out, err)
++			continue
++		}
++		if err := json.Unmarshal([]byte(c.want), &want); err != nil {
++			t.Fatalf("%s: invalid expectation %q: %v", c.src, c.want, err)
++		}
++		if !reflect.DeepEqual(got, want) {
++			t.Errorf("%s: got %s, want %s", c.src, out, c.want)
++		}
++		if calls != c.calls {
++			t.Errorf("%s: native function called %d times, want %d", c.src, calls, c.calls)
++		}
++		if traces != c.traces {
++			t.Errorf("%s: traced %d times, want %d", c.src, traces, c.traces)
++		}
++	}
++}
++
++func TestNullSafeSliceStepImports_d17b50(t *testing.T) {
++	vm := MakeVM()
++	vm.Importer(&MemoryImporter{Data: map[string]Contents{
++		"main.jsonnet": MakeContents(`
++local o = {a: [1, 2, 3, 4, 5]};
++[
++  o?.a[::import "step.libsonnet"],
++  o?.a[::std.length(importstr "step.txt")],
++  o?.a[::std.length(importbin "step.bin")],
++]
++`),
++		"step.libsonnet":   MakeContents(`(import "nested.libsonnet") + 1`),
++		"nested.libsonnet": MakeContents(`1`),
++		"step.txt":         MakeContents(`abc`),
++		"step.bin":         MakeContentsRaw([]byte{1, 2, 3, 4}),
++	}})
++
++	out, err := vm.EvaluateFile("main.jsonnet")
++	if err != nil {
++		t.Fatal(err)
++	}
++	var got interface{}
++	if err := json.Unmarshal([]byte(out), &got); err != nil {
++		t.Fatalf("invalid output %q: %v", out, err)
++	}
++	want := []interface{}{
++		[]interface{}{1.0, 3.0, 5.0},
++		[]interface{}{1.0, 4.0},
++		[]interface{}{1.0, 5.0},
++	}
++	if !reflect.DeepEqual(got, want) {
++		t.Errorf("got %s, want %v", out, want)
++	}
++
++	deps, err := vm.FindDependencies("", []string{"main.jsonnet"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	wantDeps := []string{"nested.libsonnet", "step.bin", "step.libsonnet", "step.txt"}
++	if !reflect.DeepEqual(deps, wantDeps) {
++		t.Errorf("got dependencies %v, want %v", deps, wantDeps)
++	}
++}
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 0000000..edfe41c
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,73 @@
++#!/usr/bin/env bash
++# Usage:
++#   ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  run the existing test suites of every package.
++#   new   run the tests for the null-coalescing and null-safe access operators.
++set -uo pipefail
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  if [ -z "${2:-}" ]; then
++    echo "--output_path requires a value" >&2
++    exit 2
++  fi
++  case "$2" in
++    /*) OUTPUT_PATH="$2" ;;
++    *) OUTPUT_PATH="$PWD/$2" ;;
++  esac
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++cd /app || exit 1
++
++TEST_LOG="$(mktemp)"
++trap 'rm -f "$TEST_LOG"' EXIT
++STATUS=0
++
++run_tests() {
++  go test -count=1 -v "$@" 2>&1 | tee -a "$TEST_LOG"
++  local status=${PIPESTATUS[0]}
++  if [ "$status" -ne 0 ]; then
++    STATUS=$status
++  fi
++}
++
++case "$MODE" in
++  base)
++    if ! pkgs=$(go list ./...); then
++      echo "failed to list packages" >&2
++      exit 1
++    fi
++    for pkg in $pkgs; do
++      if ! listing=$(go test -list '.*' "$pkg" 2>&1); then
++        printf '%s\n' "$listing" | tee -a "$TEST_LOG"
++        echo "failed to discover tests in $pkg" >&2
++        STATUS=1
++        continue
++      fi
++      names=$(printf '%s\n' "$listing" | grep -E '^(Test|Example|Fuzz)' | grep -v '_d17b50$' | paste -sd'|' -)
++      if [ -n "$names" ]; then
++        run_tests -run "^(${names})\$" "$pkg"
++      fi
++    done
++    ;;
++  new)
++    run_tests -run '_d17b50$' . ./formatter/ ./linter/
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ]; then
++  if ! mkdir -p "$(dirname "$OUTPUT_PATH")" || ! go-junit-report < "$TEST_LOG" > "$OUTPUT_PATH" || [ ! -s "$OUTPUT_PATH" ]; then
++    echo "failed to write JUnit report to $OUTPUT_PATH" >&2
++    exit 1
++  fi
++fi
++
++exit "$STATUS"
