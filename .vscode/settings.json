@@ -1,0 +1,6 @@
+{
+  "terminal.integrated.env.linux": {
+    "CLAUDE_CONFIG_DIR": "/home/tes/.claude-personal"
+  },
+  "git.ignoreLimitWarning": true
+}
