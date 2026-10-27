@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: one-run-edits-tests
+expected_outcome: |
+  Reconstructs the run without its test edits, regrades it, and decides whether it still passes; reports tampering as a verdict.

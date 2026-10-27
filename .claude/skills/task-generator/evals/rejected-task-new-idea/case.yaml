@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: rejected-task-new-idea
+expected_outcome: |
+  Mode A after rejection: abandons the idea and repo choice, searches for a different repo and issue, repeats the duplicate check, and only then writes a Vietnamese description translated to English.

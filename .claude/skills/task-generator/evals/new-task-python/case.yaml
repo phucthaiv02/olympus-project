@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: new-task-python
+expected_outcome: |
+  Mode A: 3-5 eligible Python repo candidates, each tied to an open issue with no referencing PR, duplicate-check evidence, then waits for the user's pick without writing the description yet.

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: prompt-too-long
+expected_outcome: |
+  Counts words and clauses, says the prompt exceeds the budget, proposes merging edge cases into one general rule or dropping a feature group, and checks tests against the prompt in both directions.

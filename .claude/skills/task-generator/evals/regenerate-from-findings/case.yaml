@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: regenerate-from-findings
+expected_outcome: |
+  Mode B: does not search for a new repo; drops or merges a feature group, handles the unstated assertion by one general rule or by telling the user to drop it, writes Vietnamese first, translates with the script, keeps old files as versions, and logs the regeneration.

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: find-weak-tests
+expected_outcome: |
+  Re-grades each run on the current tests, audits the diffs, probes against the reference, finds runs that differ on prompt-stated rules and adds distinguishing tests, then re-grades.

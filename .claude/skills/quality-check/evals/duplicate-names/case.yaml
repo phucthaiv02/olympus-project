@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: duplicate-names
+expected_outcome: |
+  Explains shared tests between base and new, and duplicated names from the same package run by two runners; inspects the runner and verifies by counting names in the junit files.
