@@ -1,0 +1,5 @@
+set -u; cd /app && git config --global --add safe.directory /app
+git apply /patches/test.patch || exit 97
+[ "0" = 1 ] && { git apply /patches/solution.patch || exit 98; }
+ulimit -s unlimited
+chmod +x test.sh; ./test.sh --output_path /out/tests-new-3.xml new

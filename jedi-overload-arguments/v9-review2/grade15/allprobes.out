@@ -1,0 +1,12 @@
+== probe.py: lines=15 BAD=0 CRASH=0 
+== probe2.py: lines=73 BAD=0 CRASH=0 bad 0
+== probe3.py: lines=118 BAD=0 CRASH=0 
+== probe4.py: lines=40 BAD=0 CRASH=0 
+== probe5.py: lines=30 BAD=0 CRASH=0 
+== probe6.py: lines=32 BAD=0 CRASH=0 bad 0
+== probe7.py: lines=50 BAD=0 CRASH=0 bad 0
+== probe8.py: lines=64 BAD=0 CRASH=0 bad 0
+== probe9.py: lines=41 BAD=0 CRASH=0 bad 0
+== probe10.py: lines=1 BAD=0 CRASH=0 
+== probe11.py: lines=67 BAD=0 CRASH=0 bad 0
+== proto.py: lines=40 BAD=0 CRASH=0 bad 0

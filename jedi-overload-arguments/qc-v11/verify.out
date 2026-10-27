@@ -1,0 +1,14 @@
+../.claude/skills/quality-check/scripts/verify.sh: line 13: cd: ../.claude/skills/quality-check/scripts: No such file or directory
+PASS  docker build
+      tests/base/run1 exit=0
+      tests/new/run1 exit=1
+      solution/base/run1 exit=0
+      solution/new/run1 exit=0
+--- verify contract
+python3: can't open file '/junit_check.py': [Errno 2] No such file or directory
+--- flakiness (3 repeats)
+PASS  tests/base: 0 flaky of 3981 tests
+PASS  tests/new: 0 flaky of 71 tests
+PASS  solution/base: 0 flaky of 3981 tests
+PASS  solution/new: 0 flaky of 71 tests
+Artifacts: /home/tes/Desktop/ADK/olympus-project/jedi-overload-arguments/qc-v11/checks/verify-2026-10-27-2121

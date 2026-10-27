@@ -1,0 +1,35 @@
+base: 71 failed in 7.15s
+ref seed 0: 71 passed in 10.21s
+ref seed 1: 71 passed in 10.22s
+ref seed 2: 71 passed in 9.04s
+ref seed 3: 71 passed in 8.81s
+ref seed 7: 71 passed in 8.50s
+ref seed 42: 71 passed in 9.76s
+== reviewer probe (8 issues) on ref
+OK    1 cond-comp crash                      got=['RB'] expected=['RB']
+OK    2 nested star alt                      got=['RA'] expected=['RA']
+OK    3 absent positional shift              got=['RB'] expected=['RB']
+OK    4 nested merge absence                 got=['RC'] expected=['RC']
+OK    5a class key overwrite                 got=['RB'] expected=['RB']
+OK    5b tuple key overwrite                 got=['RB'] expected=['RB']
+OK    6 wrap(wrap())                         got=['RB'] expected=['RB']
+OK    6 inline                               got=['RB'] expected=['RB']
+OK    7a protocol default                    got=['RB'] expected=['RB']
+OK    7b protocol name                       got=['RB'] expected=['RB']
+OK    7 protocol ok control                  got=['RA'] expected=['RA']
+OK    7c protocol unquoted mismatch control  got=['RB'] expected=['RB']
+OK    8 protocol quoted                      got=['RB'] expected=['RB']
+OK    AR empty comp                          got=['RA'] expected=['RA']
+OK    v1 fwd TypeVar bound                   got=['RA'] expected=['RA']
+rd7000n9vttf9p4mpck2and3w98gzsh2 | 6 failed, 65 passed | elements_of_containers items_of_mappings_and_other_containers unpacked_values_of_unknown_length 
+rd71800ec4wgaezx6erzx96ja58gy4ve | 2 failed, 69 passed | keys_that_are_not_strings unpacked_values_of_unknown_length 
+rd72n3nrmqxnhdd2mxak5fj3rn8gy90g | 3 failed, 68 passed | keys_that_are_not_strings tuples_of_unknown_length unpacked_values_of_unknown_length 
+rd73x8pt7pwwjvyj215eke9m3x8gyyp5 | 3 failed, 68 passed | keys_that_are_not_strings one_constraint_for_the_whole_call unpacked_values_of_unknown_length 
+rd749ksxw2r7g5yscck7sh4k7n8gymkw | 71 passed | 
+rd74gg0mzqrbsarc9zsasmfpb18gyya7 | 3 failed, 68 passed | items_of_mappings_and_other_containers one_constraint_for_the_whole_call type_var_with_forward_references 
+rd771brznqxkkkwghjyyejrhan8gzm2x | 1 failed, 70 passed | unpacked_values_of_unknown_length 
+rd7fzkww6pa9pdbmz1maxq8t9n8gyeqa | 3 failed, 68 passed | keys_that_are_not_strings one_constraint_for_the_whole_call unpacked_values_of_unknown_length 
+nova-rd78gtm3h0aa7h04x67pzfdftn8h05pj | 3 failed, 68 passed | one_constraint_for_the_whole_call type_var_with_forward_references unpacked_values_of_unknown_length 
+nova-rd7cj4ar4m5nv309zgbybscyx58h0and | 2 failed, 69 passed | items_of_mappings_and_other_containers unpacked_values_of_unknown_length 
+nova-rd7dnvcqmng6mkrtkct1svqv0x8h10tx | 3 failed, 68 passed | items_of_mappings_and_other_containers one_constraint_for_the_whole_call unpacked_values_of_unknown_length 
+nova-rd7ea6spxfnya9wk2g77886e4x8h1j7h | 3 failed, 68 passed | one_constraint_for_the_whole_call type_var_with_forward_references unpacked_values_of_unknown_length 
