@@ -1,0 +1,10 @@
+constructor is *S: true elem.kind: 25
+isStructPointer: true
+unsafe view: s.X=7 int64, q.X=main.MyInt64, back==p true
+explicit (*S3)(p): 9 true
+slice elem view: 5 true
+var/new: true true
+25688:			s[0] = new S.ptr(new $Int64(0, 1));
+25703:			ps = new sliceType$1([$clone(new S.ptr(new $Int64(0, 1)), S), $clone(new S.ptr(new $Int64(0, 2)), S)]);
+25708:			g[0] = new S.ptr(new $Int64(0, 0));
+25709:			h = new S.ptr(new $Int64(0, 0));

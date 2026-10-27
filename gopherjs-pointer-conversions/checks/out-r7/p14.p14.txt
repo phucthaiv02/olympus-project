@@ -1,0 +1,13 @@
+2 iface call true
+3 go true
+4 field true
+5 deref assign true
+6 funclit ret true
+7 select send true
+8 index assign true
+9 map assign true
+10 cmp true true
+11 switch true
+12 true
+13 1
+1 defer true

@@ -1,0 +1,22 @@
+FAIL C1 Convert proxy to unsafe panic: reflect.Value.Convert: value of type *main.MyInt cannot be converted to type unsafe.Pointer
+FAIL C2 Convert ptr to unsafe panic: reflect.Value.Convert: value of type *int cannot be converted to type unsafe.Pointer
+FAIL C3 Convert named P to unsafe panic: reflect.Value.Convert: value of type main.P cannot be converted to type unsafe.Pointer
+FAIL C4 Convert nil to unsafe panic: reflect.Value.Convert: value of type *main.MyInt cannot be converted to type unsafe.Pointer
+FAIL C5 Convert unsafe to ptr round trip panic: reflect.Value.Convert: value of type unsafe.Pointer cannot be converted to type *main.MyInt
+FAIL C6 Convert zero unsafe to ptr panic: reflect.Value.Convert: value of type unsafe.Pointer cannot be converted to type *main.MyInt
+FAIL C7 Convert struct proxy to unsafe panic: reflect.Value.Convert: value of type *main.Named cannot be converted to type unsafe.Pointer
+FAIL C8 Convert array ptr to unsafe panic: reflect.Value.Convert: value of type *[2]main.MyInt64 cannot be converted to type unsafe.Pointer
+FAIL C9 Convert slice elem ptr to unsafe panic: reflect.Value.Convert: value of type *main.MyInt cannot be converted to type unsafe.Pointer
+ok A1 Pointer of proxies
+ok A2 UnsafePointer proxies
+ok A3 Elem Addr of proxy
+ok A4 UnsafeAddr of proxy elem
+ok A5 struct view field Addr
+ok A6 plain struct field Addr (baseline)
+ok A7 struct view Pointer
+ok A8 array view Pointer
+ok A9 array view elem Addr
+ok A10 slice elem Addr
+ok A11 view field read via reflect
+ok A12 Value.Set unsafe from proxy
+ok A13 SetPointer then Convert

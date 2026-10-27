@@ -1,0 +1,20 @@
+ok   Y1 arr int64 elem type
+ok   Y2 arr int64 write
+ok   Y3 arr int64 identity
+ok   Y4 named arr B64
+ok   Y5 arr of ptr
+ok   Y6 arr complex
+ok   Y7 arr int elem (wrapped)
+ok   Y8 struct field int64
+ok   Y9 struct field write
+ok   Y10 struct field ptr
+ok   Y11 struct field arr
+ok   Y12 struct identity
+ok   Y13 nested struct
+ok   Y14 nested struct write
+ok   Y15 struct value copy type
+ok   Y16 struct whole write
+ok   Y17 slice elem int64 via unsafe
+ok   Y18 *[]int64->*[]MyInt64
+ok   Y19 field addr after conv
+ok   Y20 elem addr after conv

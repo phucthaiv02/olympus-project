@@ -1,0 +1,36 @@
+std EXIT=0
+base EXIT=0
+new EXIT=0
+gob EXIT=0
+      1 ok github.com/gopherjs/gopherjs/tests/ptrconv_658733
+     27 --- PASS:
+base 2292 cases 0 fail 38 skip
+std ok 31
+same ref.p10.txt
+same ref.p11.txt
+same ref.p12.txt
+same ref.p13.txt
+same ref.p14.txt
+same ref.p5.txt
+same ref.p6.txt
+same ref.p7.txt
+same ref.p8.txt
+same ref.p9.txt
+same ref.pA.txt
+same ref.pB.txt
+same ref.pC.txt
+same ref.pD.txt
+same ref.pE.txt
+same ref.pF.txt
+same ref.pG.txt
+same ref.pH.txt
+same ref.pR3A.txt
+same ref.pR3B.txt
+same ref.pR3C.txt
+same ref.pR3D.txt
+same ref.pR3E.txt
+same ref.pR3F.txt
+same ref.pR3G.txt
+same ref.pR3H.txt
+PASS
+ok  	encoding/gob	1087.049s

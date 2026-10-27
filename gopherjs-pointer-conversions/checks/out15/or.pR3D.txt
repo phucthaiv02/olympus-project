@@ -1,0 +1,11 @@
+FAIL D3 *Emb -> *Inner
+FAIL D3b *Emb -> *Inner read
+FAIL D4 foreign [2]byte copy
+FAIL D4b foreign [2]byte string
+ok D5 foreign array eq twice
+FAIL D6 foreign array NewAt Elem Index
+FAIL D7 foreign array Convert unsafe then Elem
+FAIL D8 *[2]int64 -> *T2 field types panic: JavaScript error: Cannot read properties of undefined (reading 'constructor')
+FAIL D9 foreign struct write keeps source type
+FAIL D10 foreign array json-ish fmt %v
+FAIL D11 foreign array p[:] write panic: runtime error: index out of range

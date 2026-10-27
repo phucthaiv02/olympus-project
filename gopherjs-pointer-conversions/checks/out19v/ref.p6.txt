@@ -1,0 +1,73 @@
+ok   D1 P(p)==p
+ok   D2 p==P(p) var
+ok   D3 PSt mixed
+ok   D4 PArr mixed
+ok   D5 any(P)==any(P)
+ok   D6 any(P)!=any(p)
+ok   D7 any(*MyInt)==any(*MyInt)
+ok   G1 generic T(p) type
+ok   G2 generic identity
+ok   G3 generic back
+ok   G4 generic write
+ok   G5 generic nil
+ok   G6 generic gtype
+ok   G7 generic struct
+ok   G8 generic array
+ok   I1 return
+ok   I2 arg
+ok   I3 variadic
+ok   I4 composite field
+ok   I5 slice lit
+ok   I6 map value
+ok   I7 map key
+ok   I8 chan send
+ok   I9 append
+ok   I10 multi assign
+ok   I11 struct field assign
+ok   I12 array lit
+ok   I13 map lit key
+ok   I14 func value arg
+ok   I15 implicit back
+ok   I16 PP from **int
+ok   I17 ptr of P
+ok   I18 write via *P
+ok   T1 *[]int->*S type
+ok   T2 *[]int->*S write
+ok   T3 *[]int->*S identity
+ok   T4 *string->*MyStr
+ok   T5 *int64->*MyInt64 read
+ok   T6 *int64 write
+ok   T7 complex
+ok   T8 field ptr
+ok   T9 array elem ptr
+ok   T10 *St field via conv
+ok   T11 struct value type
+ok   T12 *Arr->*[2]int
+ok   T13 *St -> *St2 -> *St
+ok   T14 ptr to ptr field
+ok   U1 unsafe equal across types
+ok   U2 unsafe equal *MyInt
+ok   U3 unsafe map key
+ok   U4 unsafe struct equal
+ok   U5 unsafe from P back
+ok   U6 unsafe any
+ok   U7 unsafe distinct
+ok   U8 unsafe nil eq
+ok   U9 unsafe arr equal
+ok   U10 unsafe elem equal
+ok   R1 Pointer() equal
+ok   R2 Set assignable
+ok   R3 Elem type
+ok   R4 Elem SetInt
+ok   R5 Call arg
+ok   R6 MapIndex key
+ok   R7 DeepEqual
+ok   R8 %p equal
+ok   R12 Set struct ptr
+ok   R13 Append
+ok   R14 Convert *St->PSt identity
+ok   R15 Convert *[2]int->PArr
+ok   E1 conv eval once
+ok   E2 implicit eval once
+ok   E3 unsafe eval once
+ok   E4 reflect eval

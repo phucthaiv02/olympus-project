@@ -1,0 +1,15 @@
+1 generic true true true
+2 generic unsafe true true true true
+3 tuple return true
+4 tuple assign true true
+5 range true
+6 commaok true false true
+7 select true
+8 variadic true
+9 arrlit true true
+10 mapkey lit 1
+11 nil true
+12 nil iface true
+13 recv commaok true true
+14 true
+15 arrays true true

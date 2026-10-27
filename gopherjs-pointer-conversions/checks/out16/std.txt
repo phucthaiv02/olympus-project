@@ -1,0 +1,65 @@
+PASS
+ok  	bufio	4.589s
+PASS
+ok  	container/heap	2.316s
+PASS
+ok  	bytes	10.589s
+PASS
+ok  	container/ring	1.191s
+PASS
+ok  	crypto/aes	1.123s
+PASS
+ok  	crypto/cipher	1.449s
+PASS
+ok  	crypto/sha256	1.252s
+PASS
+ok  	crypto/subtle	2.885s
+PASS
+ok  	encoding/base64	1.543s
+PASS
+ok  	encoding/binary	2.132s
+PASS
+ok  	encoding/hex	1.885s
+PASS
+ok  	errors	1.720s
+PASS
+ok  	hash/crc32	1.476s
+PASS
+ok  	encoding/json	10.973s
+PASS
+ok  	hash/fnv	0.817s
+PASS
+ok  	hash/maphash	3.242s
+PASS
+ok  	io/fs	3.592s
+PASS
+ok  	maps	0.823s
+PASS
+ok  	math	1.274s
+PASS
+ok  	math/bits	1.849s
+PASS
+ok  	os	3.424s
+PASS
+ok  	path	0.899s
+PASS
+ok  	sort	3.891s
+PASS
+ok  	strings	4.782s
+PASS
+ok  	syscall	1.494s
+PASS
+ok  	slices	20.053s
+PASS
+ok  	text/template	3.905s
+PASS
+ok  	regexp	36.723s
+PASS
+ok  	unicode/utf16	0.908s
+(node:507) TimeoutNegativeWarning: -2077252342 is a negative number.
+Timeout duration was set to 1.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS
+ok  	time	17.955s
+PASS
+ok  	math/big	88.885s

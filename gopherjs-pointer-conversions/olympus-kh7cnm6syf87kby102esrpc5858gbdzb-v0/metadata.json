@@ -1,0 +1,17 @@
+{
+  "problemId": "kh7cnm6syf87kby102esrpc5858gbdzb",
+  "title": "Pointer conversions lose the destination type, nil and pointer identity",
+  "status": "draft",
+  "version": 0,
+  "versionId": "kd723y91mb0zs7mg6km8hdwbbx8gak4a",
+  "isLocked": false,
+  "language": "go",
+  "difficulty": null,
+  "category": "bugfix",
+  "repoUrl": "https://github.com/gopherjs/gopherjs",
+  "commitHash": "490705b1d6fc7d5bd9202ac41888e146183328eb",
+  "githubIssueUrl": "https://github.com/gopherjs/gopherjs/issues/1240",
+  "estimatedLOC": null,
+  "testOutputMode": null,
+  "downloadedAt": "2026-10-27T04:35:39.297Z"
+}

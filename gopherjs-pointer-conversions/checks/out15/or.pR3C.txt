@@ -1,0 +1,10 @@
+C1 %T %v *[2]int32 &[]
+C2 p[:] 0 []
+C3 &p[1] true false 0
+C4 reflect 2 0 0
+C5 int elems %v panic: runtime error: index out of range
+C6 int elems copy panic: JavaScript error: dst.set is not a function
+C7 int -> [2]int %v &[]
+C8 struct->[1]int32 slice &[] []
+C9 &s.X ->[1]int &[] []
+C10 s -> [1]int &[] [] false

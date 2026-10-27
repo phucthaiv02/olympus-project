@@ -1,0 +1,8 @@
+go1.21.13
+ok S1 SetIterValue *int -> P
+ok S2 SetIterKey *int -> P
+ok S3 SetIterValue *S -> PS
+ok S4 SetIterValue nil *int -> P
+ok S5 Send *int on chan P
+ok S6 Select send *int on chan P
+ok S7 Set P into same-typed var via Value from MapIndex

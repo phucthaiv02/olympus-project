@@ -1,0 +1,13 @@
+FAIL N1 NewAt struct from int
+FAIL N2 NewAt write through panic: interface conversion: interface is *int, not *main.S
+ok N3 NewAt round trip
+FAIL N4 Convert unsafe -> *S
+FAIL N5 direct (*S)(unsafe(&n))
+FAIL N6 (*int)(unsafe(&s)) first field
+FAIL N7 struct -> array
+FAIL N8 array -> struct panic: JavaScript error: Cannot read properties of undefined (reading 'length')
+FAIL N9 element -> struct
+FAIL N10 struct element -> int
+FAIL N11 NewAt int from struct
+FAIL N12 *int -> *[2]int extra elems
+ok N13 nil stays nil

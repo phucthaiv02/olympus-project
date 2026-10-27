@@ -1,0 +1,40 @@
+ok   M1 return tuple
+ok   M2 assign tuple
+ok   M3 var tuple
+ok   M4 call tuple
+ok   M5 range assign
+ok   M6 select recv
+ok   M7 comma-ok map
+ok   M8 comma-ok assert
+ok   M9 comma-ok recv
+ok   M10 defer arg
+ok   M11 go arg
+ok   M12 generic id[P]
+ok   M13 closure return
+ok   M14 op-assign struct field ptr
+ok   M15 switch case
+ok   N1 uconv type
+ok   N2 uconv identity
+ok   N3 uconv same
+ok   N4 uconv struct
+ok   N5 uconv nil
+ok   N6 toU
+ok   N7 toU nil
+ok   N8 gp
+ok   N9 uconv int64
+ok   N10 uconv array
+ok   W1 write keeps src type int64
+ok   W2 unsafe write keeps src type
+ok   W3 slice write keeps src type
+ok   W4 int64 slice elem
+ok   W5 method on converted
+ok   W6 method via unsafe
+ok   W7 iface method
+ok   W8 struct method
+ok   W9 json
+ok   W10 atomic
+ok   W11 struct unsafe write type
+ok   W12 **int write
+ok   W13 *P write type
+ok   W14 Inc via pointer to slice elem
+ok   W15 uintptr cast

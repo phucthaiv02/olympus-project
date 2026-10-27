@@ -1,0 +1,18 @@
+1 true true true
+2 true true
+3 true
+4 true int main.MyInt true
+5 true
+6 int64 main.MyInt64 true 5
+7 complex128 main.MyC (3+0i)
+8 true
+9 true main.MyInt64
+10 7 int64 main.S
+11 true
+12 true true
+13 true
+14 main.S 3
+15 true
+16 [[0 0] [0 4]] int64 main.MyInt64 true
+17 0
+18 [8 9] int64

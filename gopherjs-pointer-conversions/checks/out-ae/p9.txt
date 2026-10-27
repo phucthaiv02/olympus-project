@@ -1,0 +1,24 @@
+FAIL A1 (*int)(up(&a)) == &a[0]
+FAIL A1b &a[0] first
+FAIL A2 up(&a[0]) == up(&a)
+FAIL A2b up(&a) first
+FAIL A3 reflect Pointer
+FAIL A4 (*MyInt)(up(&a)) == (*MyInt)(up(&a[0]))
+ok A5 write through
+FAIL A6 int64 typed
+FAIL A7 int32 typed array
+FAIL A8 string array
+FAIL A9 2D
+FAIL A10 elem0 -> array -> elem0
+FAIL A11 slice backing
+FAIL A12 map key
+FAIL S1 (*int)(up(&s)) == &s.X
+FAIL S1b &s.X first
+FAIL S2 up(&s.X) == up(&s)
+FAIL S3 reflect Pointer
+FAIL S4 (*MyInt)(up(&s))
+FAIL S5 nested struct
+FAIL S6 struct first field array
+FAIL S7 first field pointer
+FAIL S8 back from field to struct
+FAIL S9 array of structs elem0 field

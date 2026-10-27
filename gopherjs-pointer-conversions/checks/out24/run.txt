@@ -1,0 +1,4 @@
+std EXIT=0
+base EXIT=0
+new EXIT=0
+gob EXIT=0

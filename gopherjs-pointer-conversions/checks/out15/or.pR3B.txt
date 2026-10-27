@@ -1,0 +1,25 @@
+ok B1 &p.X == &p.X
+FAIL B2 *&p.X
+FAIL B3 unsafe(&p.X) == unsafe(&x)
+FAIL B4 &p.X == &x
+ok B5 prefix struct diff names
+ok B5b prefix struct read
+FAIL B6 flat array -> struct with array field panic: JavaScript error: Cannot read properties of undefined (reading '1')
+FAIL B7 *O -> *int
+FAIL B8 *[2]Pair -> *[4]int32
+FAIL B9 NewAt S from &arr
+ok B10 foreign Value.Convert
+FAIL B11 foreign Elem().Addr() panic: interface conversion: interface is *int, not *main.S
+FAIL B12 foreign Field.Addr == &p.X panic: reflect: call of reflect.Value.Field on int Value
+FAIL B13 foreign %T and Println
+FAIL B14 foreign ptr to array %T
+FAIL B15 foreign array slice p[:] panic: runtime error: index out of range
+FAIL B16 foreign array range
+FAIL B17 foreign array &p[1] identity
+FAIL B18 foreign array copy into panic: JavaScript error: dst.set is not a function
+FAIL B19 foreign array deref value panic: JavaScript error: Cannot read properties of undefined (reading 'subarray')
+FAIL B20 foreign array reflect Index
+FAIL B21 foreign array to slice conv
+FAIL B22 foreign struct DeepEqual
+FAIL B23 *int -> *MyInt from foreign int
+FAIL B24 foreign array len/cap panic: runtime error: slice bounds out of range

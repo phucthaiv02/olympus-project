@@ -1,0 +1,8 @@
+ok T1 sort.Slice [][2]int
+ok T2 sort.Slice []St
+ok T3 MakeFunc returning P
+ok T4 cap0 subslice append
+ok T5 cap0 then reslice of parent
+ok T6 view struct elem write via 2D? &a[1] struct elem
+ok T7 Set PA via reflect from &a[1]
+ok T8 struct elem ptr to *[1]St

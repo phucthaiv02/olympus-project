@@ -1,0 +1,6 @@
+plain closure &x == &x: true
+conv closure: true true
+implicit closure: true
+outer &w first: true true
+MyInt closure: true
+two closures: true

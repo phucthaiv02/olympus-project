@@ -1,0 +1,25 @@
+ok B1 &p.X == &p.X
+ok B2 *&p.X
+FAIL B3 unsafe(&p.X) == unsafe(&x)
+FAIL B4 &p.X == &x
+ok B5 prefix struct diff names
+ok B5b prefix struct read
+FAIL B6 flat array -> struct with array field
+FAIL B7 *O -> *int
+FAIL B8 *[2]Pair -> *[4]int32
+ok B9 NewAt S from &arr
+ok B10 foreign Value.Convert
+ok B11 foreign Elem().Addr()
+ok B12 foreign Field.Addr == &p.X
+ok B13 foreign %T and Println
+ok B14 foreign ptr to array %T
+FAIL B15 foreign array slice p[:]
+ok B16 foreign array range
+FAIL B17 foreign array &p[1] identity
+FAIL B18 foreign array copy into panic: JavaScript error: dst.set is not a function
+ok B19 foreign array deref value
+ok B20 foreign array reflect Index
+FAIL B21 foreign array to slice conv
+ok B22 foreign struct DeepEqual
+ok B23 *int -> *MyInt from foreign int
+ok B24 foreign array len/cap

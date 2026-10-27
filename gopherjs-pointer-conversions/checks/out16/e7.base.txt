@@ -1,0 +1,60 @@
+ok E1 PS(&local) type+id
+FAIL E2 P(&global)
+FAIL E3 P(&s.f) field
+FAIL E4 P(&a[1]) array elem
+FAIL E5 P(&sl[1]) slice elem
+FAIL E6 P(new(int))
+E7 parts true false false
+FAIL E7 closure var
+FAIL E8 (*MyInt)(&a[1])
+FAIL E9 (*MyInt)(&s.X)
+FAIL E10 PP(&p) local
+ok E11 PA(&a2[1])
+ok E12 (*S2)(&ss[0])
+FAIL E13 generic T(p)
+ok E14 *ps = S{5}
+FAIL E15 any(P(&n)) == any(P(&n))
+FAIL E16 P(h.p)
+FAIL E17 P(mk())
+ok E18 PNA(&A)
+ok E19 PS2((*S2)(s))
+ok E20 P(&n) %v vs &n
+FAIL E21 reflect Pointer equal
+ok E22 (*MyInt)(&n) %p
+FAIL I1 range assign
+FAIL I2 closure return
+FAIL I3 method arg
+FAIL I4 field assign
+FAIL I5 *pp = &n
+FAIL I6 arr[0] = &n
+FAIL I7 converse int var
+FAIL I8 converse map/chan/append/literal
+ok I9 converse struct ptr
+FAIL I10 tuple assign
+FAIL I11 multi return
+FAIL I12 defer arg
+FAIL I13 compare q == &n
+FAIL I14 switch case
+FAIL I15 map key implicit
+FAIL I16 retP
+ok I17 struct ptr arg
+FAIL I18 interface from implicit
+FAIL I19 go stmt arg
+ok I20 converse struct field arr
+ok N1 PS(nil)
+FAIL N2 unsafe nil arr
+FAIL N3 unsafe nil **
+ok N4 reflect Convert nil *S
+FAIL N5 reflect Set nil into PS
+FAIL N6 NewAt nil struct/array
+ok N7 implicit nil struct
+FAIL N8 generic nil
+FAIL N9 typed nil in iface
+ok N10 zero-size struct non-nil
+ok N11 zero-size array non-nil
+FAIL N12 unsafe.Pointer(P(nil)) == nil
+ok N13 reflect Convert nil P -> *int
+ok N14 unsafe nil struct to *S2
+FAIL N15 reflect Call nil
+FAIL N16 (*MyInt)(nil field ptr)
+ok N17 nil via unsafe from named

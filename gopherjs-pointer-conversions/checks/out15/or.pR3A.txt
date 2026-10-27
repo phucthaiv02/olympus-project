@@ -1,0 +1,25 @@
+FAIL A1 *S -> *[1]S elem panic: JavaScript error: Cannot read properties of undefined (reading 'X')
+FAIL A2 *S -> *[1]S write+identity panic: JavaScript error: Cannot set properties of undefined (setting 'X')
+FAIL A3 *[2]int -> *[1][2]int
+FAIL A4 *int64 -> *SM1 field type panic: JavaScript error: Cannot read properties of undefined (reading 'constructor')
+FAIL A5 *[2]int64 -> *SM64 field type panic: JavaScript error: Cannot read properties of undefined (reading 'constructor')
+FAIL A6 *SI64 -> *[2]MyInt64 elem type panic: JavaScript error: Cannot read properties of undefined (reading 'constructor')
+FAIL A7 *SI64 -> *MyInt64 type
+FAIL A8 *int -> *Outer nested panic: JavaScript error: Cannot read properties of undefined (reading 'A')
+FAIL A9 *Inner -> *Emb
+FAIL A10 container_of panic: JavaScript error: Cannot read properties of undefined (reading 'prop')
+FAIL A11 (*int)(unsafe(&arr)) == &arr[0]
+FAIL A12 (*int)(unsafe(&s)) == &s.X
+FAIL A13 (*S)(unsafe(&s.X)) == &s
+FAIL A14 foreign struct method panic: JavaScript error: p.Get is not a function
+FAIL A15 foreign struct deref copy
+FAIL A16 foreign struct assign whole
+FAIL A17 foreign struct reflect panic: reflect: call of reflect.Value.Field on int Value
+FAIL A18 foreign &p.X identity
+FAIL A19 *[1]*int -> *WithPtr type panic: JavaScript error: Cannot read properties of undefined (reading 'constructor')
+FAIL A20 *[2]int -> *WithArr panic: JavaScript error: Cannot read properties of undefined (reading '1')
+FAIL A21 *int -> *[1]MyInt typ
+FAIL A22 *int64 -> *[1]MyInt64 elem type panic: JavaScript error: Cannot read properties of undefined (reading 'constructor')
+FAIL A23 *[1]int64 -> *MyInt64 type panic: JavaScript error: ptr.$get is not a function
+FAIL A24 NewAt MyInt64 from [1]int64 panic: JavaScript error: ptr.$get is not a function
+FAIL A25 *S -> *[1]S fmt

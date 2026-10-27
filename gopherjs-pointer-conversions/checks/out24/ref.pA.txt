@@ -1,0 +1,25 @@
+ok A1 MakeFunc result type
+ok A2 MakeFunc nil result
+ok B1 Elem.Addr of P type
+ok C1 &*p of P
+ok C2 &*p of PS
+ok D1 method via PM
+ok D2 method via PS
+ok E1 slice ptr-to-array nil write
+ok E2 slice ptr-to-array elem addr
+ok E3 slice ptr-to-array elem addr typed
+ok E4 array via slice of arrays nil write
+ok F1 unsafe.Slice of struct view
+ok F2 unsafe.Slice of explicit struct conv
+ok G1 unsafe.Slice of int64 conv type
+ok G2 unsafe.Slice of int64 conv write
+ok G3 unsafe.Slice of view elem
+ok H1 promoted field addr
+ok H2 promoted field unsafe
+ok H3 promoted field via view
+ok H4 promoted field via explicit view
+ok H5 reflect FieldByName addr
+ok I1 Convert nil addressable
+ok I2 Convert nil addressable Interface
+FAIL J1 append grow struct view aliasing
+FAIL J0 append grow plain struct baseline

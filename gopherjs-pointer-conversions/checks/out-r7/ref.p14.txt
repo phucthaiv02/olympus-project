@@ -1,0 +1,13 @@
+ok N1 NewAt struct from int
+ok N2 NewAt write through
+ok N3 NewAt round trip
+ok N4 Convert unsafe -> *S
+ok N5 direct (*S)(unsafe(&n))
+ok N6 (*int)(unsafe(&s)) first field
+ok N7 struct -> array
+ok N8 array -> struct
+ok N9 element -> struct
+ok N10 struct element -> int
+ok N11 NewAt int from struct
+ok N12 *int -> *[2]int extra elems
+ok N13 nil stays nil

@@ -1,0 +1,11 @@
+ok D3 *Emb -> *Inner
+ok D3b *Emb -> *Inner read
+FAIL D4 foreign [2]byte copy
+ok D4b foreign [2]byte string
+ok D5 foreign array eq twice
+ok D6 foreign array NewAt Elem Index
+ok D7 foreign array Convert unsafe then Elem
+ok D8 *[2]int64 -> *T2 field types
+ok D9 foreign struct write keeps source type
+ok D10 foreign array json-ish fmt %v
+FAIL D11 foreign array p[:] write

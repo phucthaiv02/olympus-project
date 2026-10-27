@@ -1,0 +1,2 @@
+PASS
+ok  	encoding/gob	1226.749s

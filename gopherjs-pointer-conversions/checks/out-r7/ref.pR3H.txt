@@ -1,0 +1,11 @@
+ok H1 foreign *S -> (*S2)(p)
+ok H2 foreign *S -> (*S2)(p) write
+ok H3 foreign *S -> PS implicit
+ok H4 foreign *S -> PS(p)
+ok H5 foreign *S reflect Convert *S2
+ok H6 foreign from array *S -> *S2
+ok H7 foreign *[2]int32 -> (*Arr)(p)
+ok H8 foreign *[2]int32 -> PArr implicit
+ok H9 foreign *S generic
+ok H10 foreign *S Set into PS var via reflect
+ok H11 *int -> *MyInt foreign roundtrip

@@ -1,0 +1,24 @@
+ok A1 (*int)(up(&a)) == &a[0]
+ok A1b &a[0] first
+ok A2 up(&a[0]) == up(&a)
+ok A2b up(&a) first
+ok A3 reflect Pointer
+ok A4 (*MyInt)(up(&a)) == (*MyInt)(up(&a[0]))
+ok A5 write through
+ok A6 int64 typed
+ok A7 int32 typed array
+ok A8 string array
+ok A9 2D
+ok A10 elem0 -> array -> elem0
+ok A11 slice backing
+ok A12 map key
+ok S1 (*int)(up(&s)) == &s.X
+ok S1b &s.X first
+ok S2 up(&s.X) == up(&s)
+ok S3 reflect Pointer
+ok S4 (*MyInt)(up(&s))
+ok S5 nested struct
+ok S6 struct first field array
+ok S7 first field pointer
+ok S8 back from field to struct
+ok S9 array of structs elem0 field

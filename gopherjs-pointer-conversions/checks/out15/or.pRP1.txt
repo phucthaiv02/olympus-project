@@ -1,0 +1,12 @@
+G1 true true
+G2 int64 true
+R1 true true
+R2 true true
+R3 true true
+R4 true true
+R5 true
+R5b true true
+R6 true true
+R7 true true
+R7b main.MyInt64
+N1 false false

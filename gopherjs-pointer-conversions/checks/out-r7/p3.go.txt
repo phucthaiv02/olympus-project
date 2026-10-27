@@ -1,0 +1,24 @@
+1 &*p true true
+2 PA true true true
+3 PA nil true true
+4 promoted true
+5 promoted ptr true
+6 generic true true true
+7 generic unsafe true true
+8 struct ptr field true main.P
+9 arr ptr true true main.P
+10 deref true
+11 append true
+12 call true
+13 makefunc true
+14 mapkey 1 1
+15 send true
+16 index set true
+17 zero true
+18 nil PA reflect true
+19 typeassert true
+20 PP true true
+21 mapkey2 true true
+22 true true true
+23 slice true main.MyInt
+24 slice2 true true

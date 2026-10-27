@@ -1,0 +1,25 @@
+ok A1 *S -> *[1]S elem
+ok A2 *S -> *[1]S write+identity
+FAIL A3 *[2]int -> *[1][2]int
+ok A4 *int64 -> *SM1 field type
+ok A5 *[2]int64 -> *SM64 field type
+ok A6 *SI64 -> *[2]MyInt64 elem type
+ok A7 *SI64 -> *MyInt64 type
+FAIL A8 *int -> *Outer nested
+FAIL A9 *Inner -> *Emb
+FAIL A10 container_of
+FAIL A11 (*int)(unsafe(&arr)) == &arr[0]
+FAIL A12 (*int)(unsafe(&s)) == &s.X
+FAIL A13 (*S)(unsafe(&s.X)) == &s
+ok A14 foreign struct method
+ok A15 foreign struct deref copy
+ok A16 foreign struct assign whole
+ok A17 foreign struct reflect
+FAIL A18 foreign &p.X identity
+ok A19 *[1]*int -> *WithPtr type
+FAIL A20 *[2]int -> *WithArr
+ok A21 *int -> *[1]MyInt typ
+ok A22 *int64 -> *[1]MyInt64 elem type
+ok A23 *[1]int64 -> *MyInt64 type
+ok A24 NewAt MyInt64 from [1]int64
+ok A25 *S -> *[1]S fmt

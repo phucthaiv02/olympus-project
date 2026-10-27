@@ -1,0 +1,8 @@
+go1.21.13
+FAIL S1 SetIterValue *int -> P
+FAIL S2 SetIterKey *int -> P
+ok S3 SetIterValue *S -> PS
+FAIL S4 SetIterValue nil *int -> P panic: runtime error: invalid memory address or nil pointer dereference
+ok S5 Send *int on chan P
+ok S6 Select send *int on chan P
+ok S7 Set P into same-typed var via Value from MapIndex

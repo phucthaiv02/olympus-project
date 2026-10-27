@@ -1,0 +1,13 @@
+ok K1 non-nil ptr-to-int-array elems, nil write
+ok K2 non-nil ptr-to-int-array elems, nil read after src write
+ok K3 slice of non-nil ptr-to-int-array, nil write
+ok K4 reflect NewAt same
+ok K5 nested arrays non-nil
+ok L1 written ptr-to-array elem type
+ok L2 written ptr-to-array elem iface eq
+ok L3 struct field written ptr-to-array elem type
+ok L4 via **ptr (setter path) elem type
+ok M1 *byte -> *[4]byte (regression?)
+ok M2 *int -> *[2]int
+ok M3 *T -> *[1]T
+ok M4 new(T) struct via unsafe

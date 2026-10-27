@@ -1,0 +1,3 @@
+std EXIT=0
+base EXIT=0
+new EXIT=0

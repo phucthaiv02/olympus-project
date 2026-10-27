@@ -1,0 +1,10 @@
+C1 %T %v *[2]int32 &[1 2]
+C2 p[:] 2 [1 2]
+C3 &p[1] true false 0
+C4 reflect 6 2 1
+C5 int elems %v &[1 2] [5 2] 1
+C6 int elems copy panic: JavaScript error: dst.set is not a function
+C7 int -> [2]int %v &[3]
+C8 struct->[1]int32 slice &[0] [0]
+C9 &s.X ->[1]int &[4] [4]
+C10 s -> [1]int &[0] [0] false
