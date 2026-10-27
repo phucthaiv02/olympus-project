@@ -1,0 +1,1012 @@
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 0000000..f9914f0
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,57 @@
++#!/usr/bin/env bash
++# Usage:
++#   ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  run the existing test suite.
++#   new   run the tests for headings inside the content of directives.
++set -uo pipefail
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  if [ -z "${2:-}" ]; then
++    echo "--output_path requires a value" >&2
++    exit 2
++  fi
++  case "$2" in
++    /*) OUTPUT_PATH="$2" ;;
++    *) OUTPUT_PATH="$PWD/$2" ;;
++  esac
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++cd /app || exit 1
++
++NEW_TESTS="tests/test_sphinx/test_directive_headings_5e8a1c.py"
++
++PYTEST_ARGS=(-p no:cacheprovider -v)
++if [ -n "$OUTPUT_PATH" ]; then
++  if ! mkdir -p "$(dirname "$OUTPUT_PATH")"; then
++    echo "failed to create the directory for $OUTPUT_PATH" >&2
++    exit 1
++  fi
++  PYTEST_ARGS+=(--junitxml="$OUTPUT_PATH")
++fi
++
++case "$MODE" in
++  base)
++    python -m pytest "${PYTEST_ARGS[@]}" --ignore="$NEW_TESTS" tests
++    STATUS=$?
++    ;;
++  new)
++    python -m pytest "${PYTEST_ARGS[@]}" "$NEW_TESTS"
++    STATUS=$?
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ] && [ ! -s "$OUTPUT_PATH" ]; then
++  echo "failed to write JUnit report to $OUTPUT_PATH" >&2
++  exit 1
++fi
++
++exit "$STATUS"
+diff --git a/tests/test_sphinx/test_directive_headings_5e8a1c.py b/tests/test_sphinx/test_directive_headings_5e8a1c.py
+new file mode 100644
+index 0000000..dccdab0
+--- /dev/null
++++ b/tests/test_sphinx/test_directive_headings_5e8a1c.py
+@@ -0,0 +1,943 @@
++"""Headings in the content of directives that allow section titles,
++such as ``only`` and ``ifconfig``.
++"""
++
++from __future__ import annotations
++
++import re
++from io import StringIO
++from pathlib import Path
++from textwrap import dedent
++
++from docutils import nodes
++from sphinx.application import Sphinx
++
++CONF = """\
++extensions = ["myst_parser", "sphinx.ext.ifconfig"]
++show_flag = False
++
++
++def setup(app):
++    app.add_config_value("show_flag", False, "env")
++"""
++
++
++def build(
++    tmp_path: Path, files: dict[str, str], builder: str = "html", **conf
++) -> Sphinx:
++    src = tmp_path / "src"
++    src.mkdir(exist_ok=True)
++    (src / "conf.py").write_text(CONF)
++    for name, content in files.items():
++        path = src / name
++        path.parent.mkdir(parents=True, exist_ok=True)
++        path.write_text(dedent(content).lstrip(), encoding="utf8")
++    app = Sphinx(
++        str(src),
++        str(src),
++        str(tmp_path / "out" / builder),
++        str(tmp_path / "doctrees" / builder),
++        builder,
++        confoverrides=conf,
++        status=StringIO(),
++        warning=StringIO(),
++        freshenv=True,
++    )
++    app.build()
++    return app
++
++
++def html(app: Sphinx, docname: str = "index") -> str:
++    return (Path(app.outdir) / f"{docname}.html").read_text(encoding="utf8")
++
++
++def text(app: Sphinx, docname: str = "index") -> str:
++    return (Path(app.outdir) / f"{docname}.txt").read_text(encoding="utf8")
++
++
++def outline(node: nodes.Node) -> list:
++    """A compact view of the structure of a doctree."""
++    result: list = []
++    for child in node.children:
++        if isinstance(child, nodes.section):
++            result.append(("section", child[0].astext(), outline(child)))
++        elif child.tagname in ("only", "ifconfig"):
++            result.append((child.tagname, child["expr"], outline(child)))
++        elif isinstance(child, nodes.paragraph):
++            result.append(("p", child.astext()))
++    return result
++
++
++def doc_outline(app: Sphinx, docname: str) -> list:
++    return outline(app.env.get_doctree(docname))
++
++
++def toc_titles(app: Sphinx, target: str) -> list[str]:
++    """The titles of the entries for ``target`` in the root toctree."""
++    entries = re.findall(
++        r'class="toctree-l\d+"><a class="reference internal" href="([^"#]*)[^"]*">'
++        r"([^<]*)<",
++        html(app, "index"),
++    )
++    return list(
++        dict.fromkeys(title for href, title in entries if href == f"{target}.html")
++    )
++
++
++DOCS_WITH_TOCTREE = """\
++Root
++====
++
++.. toctree::
++
++   page
++   page_rst
++"""
++
++
++def test_only_heading_excluded(tmp_path):
++    files = {
++        "index.md": """
++            # Title
++
++            ## Section
++
++            text before
++
++            ```{only} not html
++            ### Hidden heading
++
++            hidden body
++            ```
++
++            text after
++            """
++    }
++    app = build(tmp_path, files, "html")
++    content = html(app)
++    assert "Hidden heading" not in content
++    assert "hidden body" not in content
++    assert "text before" in content
++    assert "text after" in content
++
++    app = build(tmp_path, files, "text")
++    content = text(app)
++    assert "Hidden heading" in content
++    assert "hidden body" in content
++
++
++def test_only_heading_kept(tmp_path):
++    files = {
++        "index.md": """
++            # Title
++
++            ```{only} html
++            ## Shown heading
++
++            shown body
++            ```
++            """
++    }
++    app = build(tmp_path, files, "html")
++    content = html(app)
++    assert "Shown heading" in content
++    assert "shown body" in content
++
++    app = build(tmp_path, files, "text")
++    content = text(app)
++    assert "Shown heading" not in content
++    assert "shown body" not in content
++
++
++def test_only_heading_wrapped_in_only_node(tmp_path):
++    app = build(
++        tmp_path,
++        {
++            "index.md": """
++                # Title
++
++                ## Section
++
++                ````{only} not html
++                ### Sub
++
++                sub body
++                ````
++
++                after
++                """
++        },
++    )
++    assert doc_outline(app, "index") == [
++        (
++            "section",
++            "Title",
++            [
++                (
++                    "section",
++                    "Section",
++                    [
++                        (
++                            "only",
++                            "not html",
++                            [("section", "Sub", [("p", "sub body")])],
++                        ),
++                        ("p", "after"),
++                    ],
++                )
++            ],
++        )
++    ]
++
++
++def test_content_after_only_stays_in_enclosing_section(tmp_path):
++    app = build(
++        tmp_path,
++        {
++            "index.md": """
++                # Title
++
++                ## First
++
++                ```{only} not html
++                ### Inner
++
++                inner body
++                ```
++
++                still in first
++
++                ## Second
++
++                second body
++                """
++        },
++    )
++    assert doc_outline(app, "index") == [
++        (
++            "section",
++            "Title",
++            [
++                (
++                    "section",
++                    "First",
++                    [
++                        (
++                            "only",
++                            "not html",
++                            [("section", "Inner", [("p", "inner body")])],
++                        ),
++                        ("p", "still in first"),
++                    ],
++                ),
++                ("section", "Second", [("p", "second body")]),
++            ],
++        )
++    ]
++
++
++def test_only_nested_heading_hierarchy(tmp_path):
++    files = {
++        "index.md": """
++            # Title
++
++            ## Section
++
++            ```{only} not html
++            lead text
++
++            ### Level three
++
++            three body
++
++            #### Level four
++
++            four body
++
++            ### Another three
++
++            another body
++            ```
++            """
++    }
++    app = build(tmp_path, files)
++    assert doc_outline(app, "index") == [
++        (
++            "section",
++            "Title",
++            [
++                (
++                    "section",
++                    "Section",
++                    [
++                        (
++                            "only",
++                            "not html",
++                            [
++                                ("p", "lead text"),
++                                (
++                                    "section",
++                                    "Level three",
++                                    [
++                                        ("p", "three body"),
++                                        ("section", "Level four", [("p", "four body")]),
++                                    ],
++                                ),
++                                ("section", "Another three", [("p", "another body")]),
++                            ],
++                        )
++                    ],
++                )
++            ],
++        )
++    ]
++    content = html(app)
++    for marker in ("lead text", "Level three", "four body", "Another three"):
++        assert marker not in content
++
++
++MD_SAME_LEVEL = """
++    # Doc
++
++    ## Sec One
++
++    one body
++
++    ```{only} not html
++    ## Peer Hidden
++
++    peer body
++
++    ### Child Of Peer
++
++    child body
++    ```
++
++    after only in one
++
++    ## Sec Two
++
++    ```{only} html
++    ## Peer Shown
++
++    shown body
++    ```
++
++    after only in two
++    """
++
++RST_SAME_LEVEL = """
++    Doc
++    ===
++
++    Sec One
++    -------
++
++    one body
++
++    .. only:: not html
++
++       Peer Hidden
++       -----------
++
++       peer body
++
++       Child Of Peer
++       ~~~~~~~~~~~~~
++
++       child body
++
++    after only in one
++
++    Sec Two
++    -------
++
++    .. only:: html
++
++       Peer Shown
++       ----------
++
++       shown body
++
++    after only in two
++    """
++
++
++def test_only_same_level_heading_matches_rst(tmp_path):
++    app = build(
++        tmp_path,
++        {
++            "index.rst": DOCS_WITH_TOCTREE,
++            "page.md": MD_SAME_LEVEL,
++            "page_rst.rst": RST_SAME_LEVEL,
++        },
++    )
++    expected = [
++        (
++            "section",
++            "Doc",
++            [
++                (
++                    "section",
++                    "Sec One",
++                    [("p", "one body"), ("p", "after only in one")],
++                ),
++                (
++                    "only",
++                    "not html",
++                    [
++                        (
++                            "section",
++                            "Peer Hidden",
++                            [
++                                ("p", "peer body"),
++                                ("section", "Child Of Peer", [("p", "child body")]),
++                            ],
++                        )
++                    ],
++                ),
++                ("section", "Sec Two", [("p", "after only in two")]),
++                (
++                    "only",
++                    "html",
++                    [("section", "Peer Shown", [("p", "shown body")])],
++                ),
++            ],
++        )
++    ]
++    assert doc_outline(app, "page_rst") == expected
++    assert doc_outline(app, "page") == expected
++
++
++def test_only_same_level_heading_text_output(tmp_path):
++    app = build(
++        tmp_path,
++        {
++            "index.rst": DOCS_WITH_TOCTREE,
++            "page.md": MD_SAME_LEVEL,
++            "page_rst.rst": RST_SAME_LEVEL,
++        },
++        "text",
++    )
++    content = text(app, "page")
++    assert content == text(app, "page_rst")
++    assert "Peer Hidden" in content
++    assert "Child Of Peer" in content
++    assert "Peer Shown" not in content
++
++
++def test_only_headings_in_toctree(tmp_path):
++    app = build(
++        tmp_path,
++        {
++            "index.rst": DOCS_WITH_TOCTREE,
++            "page.md": MD_SAME_LEVEL,
++            "page_rst.rst": RST_SAME_LEVEL,
++        },
++    )
++    md_titles = toc_titles(app, "page")
++    assert md_titles == toc_titles(app, "page_rst")
++    assert "Peer Shown" in md_titles
++    assert "Peer Hidden" not in md_titles
++    assert "Child Of Peer" not in md_titles
++
++
++def test_only_higher_level_heading_matches_rst(tmp_path):
++    md = """
++        # Doc
++
++        ## Part A
++
++        a body
++
++        ### Part A1
++
++        a1 body
++
++        ```{only} not html
++        ## Part B
++
++        b body
++
++        ### Part B1
++
++        b1 body
++        ```
++
++        still in a1
++
++        ## Part C
++
++        c body
++        """
++    rst = """
++        Doc
++        ===
++
++        Part A
++        ------
++
++        a body
++
++        Part A1
++        ~~~~~~~
++
++        a1 body
++
++        .. only:: not html
++
++           Part B
++           ------
++
++           b body
++
++           Part B1
++           ~~~~~~~
++
++           b1 body
++
++        still in a1
++
++        Part C
++        ------
++
++        c body
++        """
++    app = build(
++        tmp_path,
++        {"index.rst": DOCS_WITH_TOCTREE, "page.md": md, "page_rst.rst": rst},
++    )
++    expected = [
++        (
++            "section",
++            "Doc",
++            [
++                (
++                    "section",
++                    "Part A",
++                    [
++                        ("p", "a body"),
++                        (
++                            "section",
++                            "Part A1",
++                            [("p", "a1 body"), ("p", "still in a1")],
++                        ),
++                    ],
++                ),
++                (
++                    "only",
++                    "not html",
++                    [
++                        (
++                            "section",
++                            "Part B",
++                            [
++                                ("p", "b body"),
++                                ("section", "Part B1", [("p", "b1 body")]),
++                            ],
++                        )
++                    ],
++                ),
++                ("section", "Part C", [("p", "c body")]),
++            ],
++        )
++    ]
++    assert doc_outline(app, "page_rst") == expected
++    assert doc_outline(app, "page") == expected
++    content = html(app, "page")
++    for marker in ("Part B", "b body", "Part B1", "b1 body"):
++        assert marker not in content
++    assert "still in a1" in content
++
++
++def test_only_top_level_heading_matches_rst(tmp_path):
++    md = """
++        # First
++
++        first body
++
++        ```{only} not html
++        # Second
++
++        second body
++        ```
++
++        after
++        """
++    rst = """
++        First
++        =====
++
++        first body
++
++        .. only:: not html
++
++           Second
++           ======
++
++           second body
++
++        after
++        """
++    app = build(
++        tmp_path,
++        {"index.rst": DOCS_WITH_TOCTREE, "page.md": md, "page_rst.rst": rst},
++    )
++    expected = [
++        ("section", "First", [("p", "first body"), ("p", "after")]),
++        ("only", "not html", [("section", "Second", [("p", "second body")])]),
++    ]
++    assert doc_outline(app, "page_rst") == expected
++    assert doc_outline(app, "page") == expected
++
++
++def test_only_include_markdown_with_headings(tmp_path):
++    files = {
++        "index.md": """
++            # Title
++
++            ## Section
++
++            ````{only} not html
++            ```{include} part.md
++            ```
++            ````
++
++            after include
++            """,
++        "part.md": """
++            ### Included heading
++
++            included body
++
++            #### Included child
++
++            child body
++            """,
++    }
++    app = build(tmp_path, files)
++    assert doc_outline(app, "index") == [
++        (
++            "section",
++            "Title",
++            [
++                (
++                    "section",
++                    "Section",
++                    [
++                        (
++                            "only",
++                            "not html",
++                            [
++                                (
++                                    "section",
++                                    "Included heading",
++                                    [
++                                        ("p", "included body"),
++                                        (
++                                            "section",
++                                            "Included child",
++                                            [("p", "child body")],
++                                        ),
++                                    ],
++                                )
++                            ],
++                        ),
++                        ("p", "after include"),
++                    ],
++                )
++            ],
++        )
++    ]
++    content = html(app)
++    for marker in ("Included heading", "included body", "Included child"):
++        assert marker not in content
++    assert "after include" in content
++
++    app = build(tmp_path, files, "text")
++    content = text(app)
++    assert "Included heading" in content
++    assert "child body" in content
++
++
++def test_only_include_with_heading_offset(tmp_path):
++    files = {
++        "index.md": """
++            # Title
++
++            ## Section
++
++            ````{only} not html
++            ```{include} part.md
++            :heading-offset: 2
++            ```
++            ````
++            """,
++        "part.md": """
++            # Offset heading
++
++            offset body
++            """,
++    }
++    app = build(tmp_path, files)
++    assert doc_outline(app, "index") == [
++        (
++            "section",
++            "Title",
++            [
++                (
++                    "section",
++                    "Section",
++                    [
++                        (
++                            "only",
++                            "not html",
++                            [("section", "Offset heading", [("p", "offset body")])],
++                        )
++                    ],
++                )
++            ],
++        )
++    ]
++    assert "Offset heading" not in html(app)
++
++
++def test_only_include_same_level_heading(tmp_path):
++    files = {
++        "index.md": """
++            # Title
++
++            ## Section
++
++            section body
++
++            ````{only} not html
++            ```{include} part.md
++            ```
++            ````
++
++            ## Next
++
++            next body
++            """,
++        "part.md": """
++            ## Included peer
++
++            peer body
++            """,
++    }
++    app = build(tmp_path, files)
++    assert doc_outline(app, "index") == [
++        (
++            "section",
++            "Title",
++            [
++                ("section", "Section", [("p", "section body")]),
++                (
++                    "only",
++                    "not html",
++                    [("section", "Included peer", [("p", "peer body")])],
++                ),
++                ("section", "Next", [("p", "next body")]),
++            ],
++        )
++    ]
++    assert "Included peer" not in html(app)
++
++
++IFCONFIG_MD = """
++    # Title
++
++    ## Section
++
++    section body
++
++    ```{ifconfig} show_flag
++    ### Flag heading
++
++    flag body
++
++    #### Flag child
++
++    flag child body
++    ```
++
++    after ifconfig
++
++    ## Next
++
++    next body
++    """
++
++IFCONFIG_RST = """
++    Title
++    =====
++
++    Section
++    -------
++
++    section body
++
++    .. ifconfig:: show_flag
++
++       Flag heading
++       ~~~~~~~~~~~~
++
++       flag body
++
++       Flag child
++       ^^^^^^^^^^
++
++       flag child body
++
++    after ifconfig
++
++    Next
++    ----
++
++    next body
++    """
++
++
++def test_ifconfig_heading_excluded(tmp_path):
++    app = build(
++        tmp_path,
++        {
++            "index.rst": DOCS_WITH_TOCTREE,
++            "page.md": IFCONFIG_MD,
++            "page_rst.rst": IFCONFIG_RST,
++        },
++    )
++    content = html(app, "page")
++    for marker in ("Flag heading", "flag body", "Flag child", "flag child body"):
++        assert marker not in content
++    assert "after ifconfig" in content
++    assert "next body" in content
++
++
++def test_ifconfig_heading_matches_rst(tmp_path):
++    app = build(
++        tmp_path,
++        {
++            "index.rst": DOCS_WITH_TOCTREE,
++            "page.md": IFCONFIG_MD,
++            "page_rst.rst": IFCONFIG_RST,
++        },
++    )
++    expected = [
++        (
++            "section",
++            "Title",
++            [
++                (
++                    "section",
++                    "Section",
++                    [
++                        ("p", "section body"),
++                        (
++                            "ifconfig",
++                            "show_flag",
++                            [
++                                (
++                                    "section",
++                                    "Flag heading",
++                                    [
++                                        ("p", "flag body"),
++                                        (
++                                            "section",
++                                            "Flag child",
++                                            [("p", "flag child body")],
++                                        ),
++                                    ],
++                                )
++                            ],
++                        ),
++                        ("p", "after ifconfig"),
++                    ],
++                ),
++                ("section", "Next", [("p", "next body")]),
++            ],
++        )
++    ]
++    assert doc_outline(app, "page_rst") == expected
++    assert doc_outline(app, "page") == expected
++
++    app = build(
++        tmp_path,
++        {
++            "index.rst": DOCS_WITH_TOCTREE,
++            "page.md": IFCONFIG_MD,
++            "page_rst.rst": IFCONFIG_RST,
++        },
++        show_flag=True,
++    )
++    assert doc_outline(app, "page") == expected
++    content = html(app, "page")
++    for marker in ("Flag heading", "flag body", "Flag child", "flag child body"):
++        assert marker in content
++
++
++def test_nested_only_headings(tmp_path):
++    app = build(
++        tmp_path,
++        {
++            "index.md": """
++                # Title
++
++                ## Section
++
++                `````{only} not html
++                ### Outer
++
++                outer body
++
++                ````{only} latex
++                #### Inner
++
++                inner body
++                ````
++                `````
++
++                section end
++                """
++        },
++    )
++    assert doc_outline(app, "index") == [
++        (
++            "section",
++            "Title",
++            [
++                (
++                    "section",
++                    "Section",
++                    [
++                        (
++                            "only",
++                            "not html",
++                            [
++                                (
++                                    "section",
++                                    "Outer",
++                                    [
++                                        ("p", "outer body"),
++                                        (
++                                            "only",
++                                            "latex",
++                                            [
++                                                (
++                                                    "section",
++                                                    "Inner",
++                                                    [("p", "inner body")],
++                                                )
++                                            ],
++                                        ),
++                                    ],
++                                )
++                            ],
++                        ),
++                        ("p", "section end"),
++                    ],
++                )
++            ],
++        )
++    ]

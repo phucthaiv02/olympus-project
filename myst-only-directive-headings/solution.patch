@@ -1,0 +1,130 @@
+diff --git a/myst_parser/mdit_to_docutils/base.py b/myst_parser/mdit_to_docutils/base.py
+index 68cfae7..2ea5c00 100644
+--- a/myst_parser/mdit_to_docutils/base.py
++++ b/myst_parser/mdit_to_docutils/base.py
+@@ -302,7 +302,7 @@ class DocutilsRenderer(RendererProtocol):
+         inline: bool = False,
+         temp_root_node: None | nodes.Element = None,
+         heading_offset: int = 0,
+-    ) -> None:
++    ) -> list[int]:
+         """Render unparsed text (appending to the current node).
+ 
+         :param text: the text to render
+@@ -310,6 +310,8 @@ class DocutilsRenderer(RendererProtocol):
+         :param inline: whether the text is inline or block
+         :param temp_root_node: If set, allow sections to be created as children of this node
+         :param heading_offset: offset heading levels by this amount
++
++        :returns: the levels of the sections created as children of ``temp_root_node``
+         """
+         tokens = (
+             self.md.parseInline(text, self.md_env)
+@@ -328,6 +330,8 @@ class DocutilsRenderer(RendererProtocol):
+             if token.map:
+                 token.map = [token.map[0] + lineno, token.map[1] + lineno]
+ 
++        root_levels: list[int] = []
++
+         @contextmanager
+         def _restore():
+             current_heading_offset = self._heading_offset
+@@ -337,16 +341,26 @@ class DocutilsRenderer(RendererProtocol):
+                 # and we also want to restore the level_to_section mapping at the end
+                 current_level_to_section = dict(self._level_to_section.items())
+                 current_root_node = self.md_env.get("temp_root_node", None)
++                current_root_levels = self.md_env.get("temp_root_levels", None)
+                 self.md_env["temp_root_node"] = temp_root_node
++                self.md_env["temp_root_levels"] = root_levels
++                # new sections are created inside the root node,
++                # at the level they would have had outside of it
++                self._level_to_section = dict.fromkeys(
++                    self._level_to_section, temp_root_node
++                )
+             yield
+             self._heading_offset = current_heading_offset
+             if temp_root_node is not None:
+                 self.md_env["temp_root_node"] = current_root_node
++                self.md_env["temp_root_levels"] = current_root_levels
+                 self._level_to_section = current_level_to_section
+ 
+         with _restore():
+             self._render_tokens(tokens)
+ 
++        return root_levels
++
+     @contextmanager
+     def current_node_context(
+         self, node: nodes.Element, append: bool = False
+@@ -463,6 +477,8 @@ class DocutilsRenderer(RendererProtocol):
+ 
+         # append the new section to the parent
+         parent.append(section)
++        if parent is self.md_env.get("temp_root_node", None):
++            self.md_env["temp_root_levels"].append(level)
+         # update the state for this section level
+         self._level_to_section[level] = section
+ 
+diff --git a/myst_parser/mocking.py b/myst_parser/mocking.py
+index b65888e..ffee8e2 100644
+--- a/myst_parser/mocking.py
++++ b/myst_parser/mocking.py
+@@ -111,12 +111,21 @@ class MockState:
+         self.reporter = renderer.document.reporter
+         self.state_machine = state_machine
+         self.inliner = MockInliner(renderer)
++        self.parent = renderer.current_node
++        # the levels of the sections enclosing the directive, outermost first;
++        # in docutils, the index of a title style is the depth of its sections
++        self._section_levels = sorted(
++            level for level in renderer._level_to_section if level > 0
++        )
++        surrounding_title_styles = [
++            self._title_style(level) for level in self._section_levels
++        ]
+ 
+         class Struct:
+             document = self.document
+             reporter = self.document.reporter
+             language = renderer.language_module_rst
+-            title_styles: list[str] = []
++            title_styles: list[str] = surrounding_title_styles
+             section_level = max(renderer._level_to_section)
+             section_bubble_up_kludge = False
+             inliner = self.inliner
+@@ -170,12 +179,34 @@ class MockState:
+         """
+         sm_match_titles = self.state_machine.match_titles
+         with self._renderer.current_node_context(node):
+-            self._renderer.nested_render_text(
++            levels = self._renderer.nested_render_text(
+                 "\n".join(block),
+                 self._lineno + input_offset,
+                 temp_root_node=node if match_titles else None,
+             )
+         self.state_machine.match_titles = sm_match_titles
++        # record the title styles of the nested sections,
++        # as docutils would, so that directives can place them in the doctree
++        for level in levels:
++            style = self._nested_title_style(level)
++            if style not in self.memo.title_styles:
++                self.memo.title_styles.append(style)
++
++    @staticmethod
++    def _title_style(level: int) -> str:
++        """Return the title style used to represent a heading level."""
++        return "#" * level
++
++    def _nested_title_style(self, level: int) -> str:
++        """Return the title style of a heading nested in the directive content.
++
++        A heading takes the style of the enclosing section it would replace,
++        i.e. the outermost one at the same or a deeper level.
++        """
++        for section_level in self._section_levels:
++            if section_level >= level:
++                return self._title_style(section_level)
++        return self._title_style(level)
+ 
+     def parse_target(self, block, block_text, lineno: int):
+         """
