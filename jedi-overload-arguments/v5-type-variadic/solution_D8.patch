@@ -1,0 +1,757 @@
+diff --git a/jedi/inference/arguments.py b/jedi/inference/arguments.py
+index 122a8a67..34db8674 100644
+--- a/jedi/inference/arguments.py
++++ b/jedi/inference/arguments.py
+@@ -8,7 +8,7 @@ from jedi import debug
+ from jedi.inference.utils import PushBackIterator
+ from jedi.inference import analysis
+ from jedi.inference.lazy_value import LazyKnownValue, LazyKnownValues, \
+-    LazyTreeValue, get_merged_lazy_value
++    LazyTreeValue, PossiblyMissingLazyValue, get_merged_lazy_value
+ from jedi.inference.names import ParamName, TreeNameDefinition, AnonymousParamName
+ from jedi.inference.base_value import NO_VALUES, ValueSet, ContextualizedNode
+ from jedi.inference.value import iterable
+@@ -132,6 +132,15 @@ class _AbstractArgumentsMixin:
+     def get_calling_nodes(self):
+         return []
+ 
++    def with_dict_calls_expanded(self, depth=10):
++        """
++        Returns arguments where ``**dict(...)`` is expanded to the entries of
++        the ``dict`` call, through at most ``depth`` nested ``dict`` calls.
++        Used when choosing an overload. Arguments that are not written in the
++        source stay as they are.
++        """
++        return self
++
+ 
+ class AbstractArguments(_AbstractArgumentsMixin):
+     context = None
+@@ -166,6 +175,8 @@ def unpack_arglist(arglist):
+ 
+ class TreeArguments(AbstractArguments):
+     context: Any
++    # How many nested ``**dict(...)`` calls are expanded to their entries.
++    _expand_dict_calls = 0
+ 
+     def __init__(self, inference_state, context, argument_node, trailer=None):
+         """
+@@ -181,6 +192,12 @@ class TreeArguments(AbstractArguments):
+     def create_cached(cls, *args, **kwargs):
+         return cls(*args, **kwargs)
+ 
++    def with_dict_calls_expanded(self, depth=10):
++        arguments = TreeArguments(self._inference_state, self.context,
++                                  self.argument_node, self.trailer)
++        arguments._expand_dict_calls = depth
++        return arguments
++
+     def unpack(self, funcdef=None):
+         named_args = []
+         for star_count, el in unpack_arglist(self.argument_node):
+@@ -194,8 +211,17 @@ class TreeArguments(AbstractArguments):
+                     )
+             elif star_count == 2:
+                 arrays = self.context.infer_node(el)
++                if self._expand_dict_calls > 0 and len(arrays) > 1:
++                    # The argument is one of several possible mappings.
++                    yield from _merge_alternative_entries([
++                        dict(_star_star_dict(self.context, dct, el, funcdef,
++                                             self._expand_dict_calls))
++                        for dct in arrays
++                    ]).items()
++                    continue
+                 for dct in arrays:
+-                    yield from _star_star_dict(self.context, dct, el, funcdef)
++                    yield from _star_star_dict(self.context, dct, el, funcdef,
++                                               self._expand_dict_calls)
+             else:
+                 if el.type == 'argument':
+                     c = el.children
+@@ -322,8 +348,215 @@ def _iterate_star_args(context, array, input_node, funcdef=None):
+         yield from iter_()
+ 
+ 
+-def _star_star_dict(context, array, input_node, funcdef):
++# The key of an entry standing for entries that are not known. It is not a
++# valid parameter name, so no overload is chosen because of such entries.
++_UNKNOWN_DICT_ENTRY = '*'
++# The key of entries whose values are known but whose keys are not, like
++# ``{make_key(): C}``. Their values are checked against ``**kwargs``.
++_UNKNOWN_KEY_ENTRY = '?'
++
++
++def _mapping_entries(value, depth):
++    """
++    Returns the entries of a mapping that is unpacked with ``**`` or passed to
++    ``dict(...)``, through at most ``depth`` nested mappings. Entries that
++    cannot be inferred are represented by an entry with the key
++    ``_UNKNOWN_DICT_ENTRY``.
++    """
++    if depth <= 0:
++        return {_UNKNOWN_DICT_ENTRY: LazyKnownValues(NO_VALUES)}
++    if isinstance(value, iterable.DictLiteralValue):
++        return _dict_literal_entries(value, depth)
++    if _is_dict_call(value):
++        return _dict_call_entries(value._arguments, depth)
++    # Any other mapping, like a dict comprehension or a value annotated as
++    # ``Dict[str, X]``: only the values are known.
++    values = ValueSet.from_sets(
++        lazy_value.infer()
++        for dict_values in value.py__getattribute__('values').execute_with_values()
++        for lazy_value in dict_values.py__iter__()
++    )
++    if not values:
++        return {_UNKNOWN_DICT_ENTRY: LazyKnownValues(NO_VALUES)}
++    return {_UNKNOWN_KEY_ENTRY: PossiblyMissingLazyValue(LazyKnownValues(values))}
++
++
++def _dict_literal_entries(dct, depth):
++    """
++    Returns the entries of a dict literal, including the entries of mappings
++    unpacked in it with ``**``.
++    """
++    context = dct._defining_context
++    entries = {}
++    array_node = dct.atom.children[1]
++    if array_node.type != 'dictorsetmaker':
++        return dict(dct.exact_key_items())
++    iterator = iter(array_node.children)
++    for node in iterator:
++        if node == ',':
++            continue
++        if node == '**':
++            mappings = context.infer_node(next(iterator))
++            alternatives = [_mapping_entries(mapping, depth - 1) for mapping in mappings]
++            if not alternatives:
++                alternatives = [{_UNKNOWN_DICT_ENTRY: LazyKnownValues(NO_VALUES)}]
++        else:
++            next(iterator)  # The colon.
++            lazy_value = LazyTreeValue(context, next(iterator))
++            alternatives = [{_entry_key(key): lazy_value}
++                            for key in context.infer_node(node)]
++            if not alternatives:
++                alternatives = [{_UNKNOWN_DICT_ENTRY: LazyKnownValues(NO_VALUES)}]
++        _update_entries(entries, _merge_alternative_entries(alternatives))
++    return entries
++
++
++def _entry_key(key):
++    """
++    The key of an entry for the inferred value of a key: the string itself,
++    ``_UNKNOWN_KEY_ENTRY`` for a string that is not known statically and
++    ``_UNKNOWN_DICT_ENTRY`` for anything else.
++    """
++    from jedi.inference.helpers import is_string
++    if is_string(key):
++        return key.get_safe_value()
++    if key.is_instance() and key.py__class__().py__name__() == 'str':
++        return _UNKNOWN_KEY_ENTRY
++    return _UNKNOWN_DICT_ENTRY
++
++
++def _dict_call_entries(arguments, depth):
++    """
++    Returns the entries of a ``dict(...)`` call: the entries of a positional
++    mapping or iterable of pairs and the keyword arguments. Like
++    ``dict(...)``, a later entry replaces an earlier one with the same key, so
++    keyword arguments win.
++    """
++    entries = {}
++    # ``dict(**dict(...))`` is expanded as well.
++    for key, lazy_value in arguments.with_dict_calls_expanded(depth - 1).unpack():
++        if key is not None:
++            entries[key] = lazy_value
++            continue
++        alternatives = []
++        for value in lazy_value.infer():
++            # Like ``dict(...)``, anything with ``keys`` is a mapping.
++            if value.py__getattribute__('keys'):
++                alternatives.append(_mapping_entries(value, depth - 1))
++            else:
++                alternatives.append(_pair_entries(value))
++        if not alternatives:
++            alternatives = [{_UNKNOWN_DICT_ENTRY: LazyKnownValues(NO_VALUES)}]
++        _update_entries(entries, _merge_alternative_entries(alternatives))
++    return entries
++
++
++def _pair_entries(value):
++    """
++    Returns the entries of an iterable of ``(key, value)`` pairs. If the
++    number of pairs is not known, like for a generator, every entry is
++    possibly missing.
++    """
++    if not value.py__getattribute__('__iter__'):
++        return {_UNKNOWN_DICT_ENTRY: LazyKnownValues(NO_VALUES)}
++    entries = {}
++    for lazy_pair in value.py__iter__():
++        alternatives = []
++        for pair in lazy_pair.infer():
++            # A pair is anything that has two items, like a tuple, a list or
++            # ``Tuple[str, X]``.
++            items = list(pair.py__iter__())
++            keys = items[0].infer() if len(items) == 2 else NO_VALUES
++            if not keys:
++                alternatives.append({_UNKNOWN_DICT_ENTRY: LazyKnownValues(NO_VALUES)})
++                continue
++            alternatives += [{_entry_key(key): items[1]} for key in keys]
++        if not alternatives:
++            alternatives = [{_UNKNOWN_DICT_ENTRY: LazyKnownValues(NO_VALUES)}]
++        _update_entries(entries, _merge_alternative_entries(alternatives))
++    if not isinstance(value, (iterable.SequenceLiteralValue, iterable.FakeTuple,
++                              iterable.FakeList)):
++        entries = {key: _possibly_missing(lazy_value) for key, lazy_value in entries.items()}
++    return entries
++
++
++def _is_possibly_missing(lazy_value):
++    return isinstance(lazy_value, PossiblyMissingLazyValue)
++
++
++def _possibly_missing(lazy_value):
++    if _is_possibly_missing(lazy_value):
++        return lazy_value
++    return PossiblyMissingLazyValue(lazy_value)
++
++
++def _merge_alternative_entries(alternatives):
++    """
++    Merges the entries of mappings that are possible values of the same
++    argument, so that every possible value of a key is kept. A key that some
++    of the mappings do not have is marked as possibly missing.
++    """
++    merged = {}
++    for entries in alternatives:
++        for key, lazy_value in entries.items():
++            merged.setdefault(key, []).append(lazy_value)
++    result = {}
++    for key, lazy_values in merged.items():
++        lazy_value = get_merged_lazy_value(lazy_values)
++        if any(key not in entries for entries in alternatives) \
++                or any(_is_possibly_missing(v) for v in lazy_values):
++            lazy_value = PossiblyMissingLazyValue(lazy_value)
++        result[key] = lazy_value
++    return result
++
++
++def _update_entries(entries, new_entries):
++    """
++    Adds entries that come after the existing ones. A later entry replaces an
++    earlier one with the same key, unless the later one is possibly missing
++    or its key is not known. Then the key keeps the values of both.
++    """
++    for key, lazy_value in new_entries.items():
++        if key in entries and (_is_possibly_missing(lazy_value)
++                               or key in (_UNKNOWN_KEY_ENTRY, _UNKNOWN_DICT_ENTRY)):
++            data = lazy_value.data if _is_possibly_missing(lazy_value) else lazy_value
++            merged = get_merged_lazy_value([entries[key], data])
++            if _is_possibly_missing(entries[key]) and _is_possibly_missing(lazy_value):
++                merged = PossiblyMissingLazyValue(merged)
++            lazy_value = merged
++        entries[key] = lazy_value
++
++
++def _with_unknown_keys_spread(entries):
++    """
++    An entry whose key is not known may replace any other entry, so its
++    values are added to the values of every entry.
++    """
++    unknown = entries.get(_UNKNOWN_KEY_ENTRY)
++    if unknown is None:
++        return entries
++    result = {}
++    for key, lazy_value in entries.items():
++        if key not in (_UNKNOWN_KEY_ENTRY, _UNKNOWN_DICT_ENTRY):
++            merged = get_merged_lazy_value([lazy_value, unknown])
++            if _is_possibly_missing(lazy_value):
++                merged = PossiblyMissingLazyValue(merged)
++            lazy_value = merged
++        result[key] = lazy_value
++    return result
++
++
++def _is_dict_call(value):
++    from jedi.inference.value.instance import TreeInstance
++    return isinstance(value, TreeInstance) and value.class_value.py__name__() == 'dict'
++
++
++def _star_star_dict(context, array, input_node, funcdef, expand_dict_calls=0):
+     from jedi.inference.value.instance import CompiledInstance
++    if expand_dict_calls > 0:
++        # Used when choosing an overload: every kind of mapping is read.
++        return _with_unknown_keys_spread(
++            _mapping_entries(array, expand_dict_calls)).items()
+     if isinstance(array, CompiledInstance) and array.name.string_name == 'dict':
+         # For now ignore this case. In the future add proper iterators and just
+         # make one call without crazy isinstance checks.
+diff --git a/jedi/inference/base_value.py b/jedi/inference/base_value.py
+index 5ebfee1a..ee1d3545 100644
+--- a/jedi/inference/base_value.py
++++ b/jedi/inference/base_value.py
+@@ -65,6 +65,14 @@ class HelperValueMixin:
+     def gather_annotation_classes(self):
+         return ValueSet([self])
+ 
++    def annotation_accepts(self, value):
++        """
++        Returns whether ``value`` can be passed to a parameter annotated with
++        this value.
++        """
++        cls = value.py__class__()
++        return any(cls.is_sub_class_of(c) for c in self.gather_annotation_classes())
++
+     def merge_types_of_iterate(self, contextualized_node=None, is_async=False):
+         return ValueSet.from_sets(
+             lazy_value.infer()
+diff --git a/jedi/inference/gradual/type_var.py b/jedi/inference/gradual/type_var.py
+index d74c97a6..b15942f0 100644
+--- a/jedi/inference/gradual/type_var.py
++++ b/jedi/inference/gradual/type_var.py
+@@ -84,6 +84,15 @@ class TypeVar(BaseTypingValue):
+         # Everything can match an undefined type var.
+         return True
+ 
++    def annotation_accepts(self, value):
++        if self._bound_lazy_value is not None:
++            annotations = self._bound_lazy_value.infer()
++        elif self._constraints_lazy_values:
++            annotations = self.constraints
++        else:
++            return True
++        return any(a.annotation_accepts(value) for a in annotations)
++
+     @property
+     def constraints(self):
+         return ValueSet.from_sets(
+diff --git a/jedi/inference/gradual/typing.py b/jedi/inference/gradual/typing.py
+index febb80cc..977079a2 100644
+--- a/jedi/inference/gradual/typing.py
++++ b/jedi/inference/gradual/typing.py
+@@ -139,6 +139,21 @@ class ProxyWithGenerics(BaseTypingClassWithGenerics):
+     def gather_annotation_classes(self):
+         return ValueSet.from_sets(self._generics_manager.to_tuple())
+ 
++    def annotation_accepts(self, value):
++        string_name = self._tree_name.value
++        if string_name == 'Union':
++            annotations = self.gather_annotation_classes()
++        elif string_name == 'Optional':
++            # ``Optional[X]`` is ``Union[X, None]``.
++            if value.py__class__().py__name__() == 'NoneType':
++                return True
++            annotations = self._generics_manager[0]
++        elif string_name in IGNORE_ANNOTATION_PARTS:
++            annotations = self._generics_manager[0]
++        else:
++            return super().annotation_accepts(value)
++        return any(a.annotation_accepts(value) for a in annotations)
++
+     def _create_instance_with_generics(self, generics_manager):
+         return ProxyWithGenerics(
+             self.parent_context,
+@@ -235,6 +250,18 @@ class TypingClassWithGenerics(ProxyWithGenerics, _TypingClassMixin):
+ 
+         return type_var_dict
+ 
++    def annotation_accepts(self, value):
++        annotation_name = self.py__name__()
++        if annotation_name == 'Type':
++            # A class is accepted if its instances are accepted by the type
++            # given in the index.
++            return value.is_class() and any(
++                annotation.annotation_accepts(instance)
++                for annotation in self._generics_manager[0]
++                for instance in value.execute_annotation(None)
++            )
++        return super().annotation_accepts(value)
++
+     def _create_instance_with_generics(self, generics_manager):
+         return TypingClassWithGenerics(
+             self.parent_context,
+@@ -246,6 +273,12 @@ class TypingClassWithGenerics(ProxyWithGenerics, _TypingClassMixin):
+ class ProxyTypingClassValue(ProxyTypingValue, _TypingClassMixin):
+     index_class = TypingClassWithGenerics
+ 
++    def annotation_accepts(self, value):
++        string_name = self._tree_name.value
++        if string_name == 'Type':
++            return value.is_class()
++        return super().annotation_accepts(value)
++
+ 
+ class TypeAlias(LazyValueWrapper):
+     def __init__(self, parent_context, origin_tree_name, actual):
+@@ -399,6 +432,9 @@ class AnyClass(BaseTypingValue):
+         debug.warning('Used Any - returned no results')
+         return NO_VALUES
+ 
++    def annotation_accepts(self, value):
++        return True
++
+ 
+ class SelfClass(BaseTypingValue):
+     def execute_annotation(self, context):
+diff --git a/jedi/inference/lazy_value.py b/jedi/inference/lazy_value.py
+index b149f21e..6a0c4e28 100644
+--- a/jedi/inference/lazy_value.py
++++ b/jedi/inference/lazy_value.py
+@@ -55,6 +55,15 @@ def get_merged_lazy_value(lazy_values):
+         return lazy_values[0]
+ 
+ 
++class PossiblyMissingLazyValue(AbstractLazyValue):
++    """
++    The value of an entry that only some of the possible mappings unpacked
++    with ``**`` have. ``data`` is the lazy value of the entry.
++    """
++    def infer(self):
++        return self.data.infer()
++
++
+ class MergedLazyValues(AbstractLazyValue):
+     """data is a list of lazy values."""
+     def infer(self):
+diff --git a/jedi/inference/param.py b/jedi/inference/param.py
+index b8ec4d3e..324ac758 100644
+--- a/jedi/inference/param.py
++++ b/jedi/inference/param.py
+@@ -4,7 +4,7 @@ from inspect import Parameter
+ from jedi import debug
+ from jedi.inference.utils import PushBackIterator
+ from jedi.inference import analysis
+-from jedi.inference.lazy_value import LazyKnownValue, \
++from jedi.inference.lazy_value import LazyKnownValue, PossiblyMissingLazyValue, \
+     LazyTreeValue, LazyUnknownValue
+ from jedi.inference.value import iterable
+ from jedi.inference.names import ParamName
+@@ -27,9 +27,42 @@ class ExecutedParamName(ParamName):
+     def infer(self):
+         return self._lazy_value.infer()
+ 
+-    def matches_signature(self):
++    def matches_signature(self, lenient=False):
+         if self._is_default:
+             return True
++        if lenient:
++            return self._matches_signature_leniently()
++        kind = self.get_kind()
++        if isinstance(self._lazy_value, PossiblyMissingLazyValue) \
++                and kind != Parameter.VAR_KEYWORD and self.default_node is None:
++            # Some of the possible mappings unpacked with ``**`` do not fill
++            # this parameter, and it has no default.
++            return False
++        is_variadic = kind in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD)
++        # The annotation of *args and **kwargs describes each of the
++        # arguments they collect.
++        annotations = self.infer_annotation(execute_annotation=False,
++                                            ignore_stars=is_variadic)
++        if not annotations:
++            # If we cannot infer annotations - or there aren't any - pretend
++            # that the signature matches.
++            return True
++        if not is_variadic:
++            return self._accepts(annotations, self.infer())
++
++        container = self._lazy_value.infer()
++        if kind == Parameter.VAR_POSITIONAL:
++            lazy_values = [lazy_value
++                           for value in container
++                           for lazy_value in value.py__iter__()]
++        else:
++            lazy_values = [lazy_value
++                           for value in container
++                           for _, lazy_value in value.exact_key_items()]
++        return all(self._accepts(annotations, lazy_value.infer())
++                   for lazy_value in lazy_values)
++
++    def _matches_signature_leniently(self):
+         argument_values = self.infer().py__class__()
+         if self.get_kind() in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
+             return True
+@@ -45,11 +78,22 @@ class ExecutedParamName(ParamName):
+                   matches, argument_values, annotations, color='BLUE')
+         return matches
+ 
++    def _accepts(self, annotations, argument_values):
++        # Like a type checker, every value the argument may have (e.g. each
++        # member of a union) has to be accepted by the annotation.
++        matches = bool(argument_values) and all(
++            any(annotation.annotation_accepts(value) for annotation in annotations)
++            for value in argument_values
++        )
++        debug.dbg("param compare %s: %s <=> %s",
++                  matches, argument_values, annotations, color='BLUE')
++        return matches
++
+     def __repr__(self):
+         return '<%s: %s>' % (self.__class__.__name__, self.string_name)
+ 
+ 
+-def get_executed_param_names_and_issues(function_value, arguments):
++def get_executed_param_names_and_issues(function_value, arguments, strict=False):
+     """
+     Return a tuple of:
+       - a list of `ExecutedParamName`s corresponding to the arguments of the
+@@ -68,6 +112,10 @@ def get_executed_param_names_and_issues(function_value, arguments):
+       - a list with entries for each parameter a, b, c & d; the entries for a,
+         c, & d will have their values (42, 'c' and 'd' respectively) included.
+       - a list with a single entry about the lack of a value for `b`
++
++    With `strict` (used when choosing an overload), a keyword argument with the
++    name of a `*args` or `**kwargs` parameter is passed like in Python: it is
++    collected by `**kwargs`.
+     """
+     def too_many_args(argument):
+         m = _error_argument_count(funcdef, len(unpacked_va))
+@@ -118,7 +166,9 @@ def get_executed_param_names_and_issues(function_value, arguments):
+             except KeyError:
+                 non_matching_keys[key] = argument
+             else:
+-                if key in keys_used:
++                if strict and key_param.star_count:
++                    non_matching_keys[key] = argument
++                elif key in keys_used:
+                     had_multiple_value_error = True
+                     m = ("TypeError: %s() got multiple values for keyword argument '%s'."
+                          % (funcdef.name, key))
+diff --git a/jedi/inference/signature.py b/jedi/inference/signature.py
+index c968bf27..65d3823e 100644
+--- a/jedi/inference/signature.py
++++ b/jedi/inference/signature.py
+@@ -64,7 +64,7 @@ class AbstractSignature(_SignatureMixin):
+     def bind(self, value):
+         raise NotImplementedError
+ 
+-    def matches_signature(self, arguments):
++    def matches_signature(self, arguments, lenient=False):
+         return True
+ 
+     def __repr__(self):
+@@ -106,14 +106,23 @@ class TreeSignature(AbstractSignature):
+             return params[1:]
+         return params
+ 
+-    def matches_signature(self, arguments):
++    def matches_signature(self, arguments, lenient=False):
++        """
++        Whether the arguments fit this signature. Overloads are chosen with the
++        annotation checks of a type checker. ``lenient`` keeps the looser
++        check used when inferring the generics of a class instantiation.
++        """
+         from jedi.inference.param import get_executed_param_names_and_issues
++        if not lenient:
++            # The entries of ``**dict(...)`` decide which overload fits.
++            arguments = arguments.with_dict_calls_expanded()
+         executed_param_names, issues = \
+-            get_executed_param_names_and_issues(self._function_value, arguments)
++            get_executed_param_names_and_issues(self._function_value, arguments,
++                                                strict=not lenient)
+         if issues:
+             return False
+ 
+-        matches = all(executed_param_name.matches_signature()
++        matches = all(executed_param_name.matches_signature(lenient)
+                       for executed_param_name in executed_param_names)
+         if debug.enable_notice:
+             tree_node = self._function_value.tree_node
+diff --git a/jedi/inference/value/function.py b/jedi/inference/value/function.py
+index 40e90199..dfd68fb3 100644
+--- a/jedi/inference/value/function.py
++++ b/jedi/inference/value/function.py
+@@ -410,9 +410,6 @@ class OverloadedFunctionValue(FunctionMixin, ValueWrapper):
+             if signature.matches_signature(arguments):
+                 return function_execution.infer()
+ 
+-        if self.inference_state.is_analysis:
+-            # In this case we want precision.
+-            return NO_VALUES
+         return ValueSet.from_sets(fe.infer() for fe in function_executions)
+ 
+     def get_signature_functions(self):
+diff --git a/jedi/inference/value/instance.py b/jedi/inference/value/instance.py
+index 2080b9ad..165a7705 100644
+--- a/jedi/inference/value/instance.py
++++ b/jedi/inference/value/instance.py
+@@ -332,7 +332,7 @@ class TreeInstance(_BaseTreeInstance):
+             # control the typeshed code.
+             funcdef = signature.value.tree_node
+             if funcdef is None or funcdef.type != 'funcdef' \
+-                    or not signature.matches_signature(args):
++                    or not signature.matches_signature(args, lenient=True):
+                 # First check if the signature even matches, if not we don't
+                 # need to infer anything.
+                 continue
+@@ -611,3 +611,7 @@ class InstanceArguments(TreeArgumentsWrapper):
+     def unpack(self, func=None):
+         yield None, LazyKnownValue(self.instance)
+         yield from self._wrapped_arguments.unpack(func)
++
++    def with_dict_calls_expanded(self, depth=10):
++        return InstanceArguments(
++            self.instance, self._wrapped_arguments.with_dict_calls_expanded(depth))
+diff --git a/jedi/inference/value/klass.py b/jedi/inference/value/klass.py
+index 034fe3e5..3c39e7b6 100644
+--- a/jedi/inference/value/klass.py
++++ b/jedi/inference/value/klass.py
+@@ -639,6 +639,73 @@ class DataclassWrapper(ValueWrapper, ClassMixin):
+         return [DataclassSignature(cls, param_names)]
+ 
+ 
++def _annotation_classes(context, annotation_node):
++    if annotation_node is None:
++        return None
++    return ValueSet.from_sets(
++        value.gather_annotation_classes() for value in context.infer_node(annotation_node)
++    )
++
++
++def _all_sub_classes(classes, of_classes):
++    """
++    Whether every class in ``classes`` is a subclass of one of ``of_classes``.
++    Unknown annotations (``None`` or nothing inferred) are compatible.
++    """
++    if not classes or not of_classes:
++        return True
++    return all(any(cls.is_sub_class_of(other) for other in of_classes) for cls in classes)
++
++
++def _member_definition(name):
++    tree_name = getattr(name, 'tree_name', None)
++    if tree_name is None:
++        return None
++    return tree_name.get_definition()
++
++
++def _member_compatible(protocol_name, name):
++    """
++    Whether the member ``name`` of an argument has a type compatible with the
++    member ``protocol_name`` declared by a protocol. Members whose types are
++    not annotated or not known are compatible.
++    """
++    protocol_definition = _member_definition(protocol_name)
++    if protocol_definition is None:
++        return True
++    protocol_context = protocol_name.parent_context
++    if protocol_definition.type == 'funcdef':
++        definition = _member_definition(name)
++        if definition is None or definition.type != 'funcdef':
++            return True
++        context = name.parent_context
++        # Without ``self``.
++        protocol_params = protocol_definition.get_params()[1:]
++        params = definition.get_params()[1:]
++        if not any(param.star_count for param in params):
++            if len(params) < len(protocol_params):
++                return False
++        for protocol_param, param in zip(protocol_params, params):
++            if param.star_count:
++                break
++            # Parameters accept at least what the protocol passes ...
++            if not _all_sub_classes(
++                    _annotation_classes(protocol_context, protocol_param.annotation),
++                    _annotation_classes(context, param.annotation)):
++                return False
++        # ... and return what the protocol promises.
++        return _all_sub_classes(
++            _annotation_classes(context, definition.annotation),
++            _annotation_classes(protocol_context, protocol_definition.annotation),
++        )
++    if protocol_definition.type == 'expr_stmt' \
++            and protocol_definition.children[1].type == 'annassign':
++        annotation = protocol_definition.children[1].children[1]
++        classes = ValueSet(value.py__class__() for value in name.infer())
++        return _all_sub_classes(classes, _annotation_classes(protocol_context, annotation))
++    return True
++
++
+ class ClassValue(ClassMixin, FunctionAndClassBase, metaclass=CachedMetaClass):
+     api_type = 'class'
+ 
+@@ -667,6 +734,47 @@ class ClassValue(ClassMixin, FunctionAndClassBase, metaclass=CachedMetaClass):
+             return arguments.TreeArguments(self.inference_state, self.parent_context, arglist)
+         return None
+ 
++    def annotation_accepts(self, value):
++        # Protocols are matched structurally: the argument's class has to
++        # provide every public member the protocol declares.
++        if self.is_protocol():
++            return self._provides_protocol_members(value)
++        return super().annotation_accepts(value)
++
++    def _provides_protocol_members(self, value):
++        # The members of a protocol are the names defined in the bodies of
++        # the protocol classes it is made of.
++        members = {}
++        for cls in reversed(list(self.py__mro__())):
++            if isinstance(cls, ClassValue) and cls.is_protocol():
++                filter_ = ClassFilter(self, node_context=cls.as_context(), is_instance=True)
++                for name in filter_.values():
++                    members[name.string_name] = name
++        for special in ('__init__', '__new__', '__slots__'):
++            members.pop(special, None)
++        if hasattr(value, 'get_filters'):
++            # Instances also have the attributes assigned to ``self``.
++            filters = list(value.get_filters())
++        else:
++            filters = list(value.py__class__().get_filters(is_instance=True))
++        for member, protocol_name in members.items():
++            names = next((names for names in (f.get(member) for f in filters) if names), None)
++            if not names:
++                return False
++            if not all(_member_compatible(protocol_name, name) for name in names):
++                return False
++        return True
++
++    def is_protocol(self):
++        from jedi.inference.gradual.base import BaseTypingValue, \
++            BaseTypingClassWithGenerics
++        for lazy_cls in self.py__bases__():
++            for cls in lazy_cls.infer():
++                if isinstance(cls, (BaseTypingValue, BaseTypingClassWithGenerics)) \
++                        and cls.py__name__() == 'Protocol':
++                    return True
++        return False
++
+     @inference_state_method_cache(default=())
+     def py__bases__(self):
+         args = self._get_bases_arguments()
+diff --git a/jedi/plugins/stdlib.py b/jedi/plugins/stdlib.py
+index bf753097..20ec0d57 100644
+--- a/jedi/plugins/stdlib.py
++++ b/jedi/plugins/stdlib.py
+@@ -377,6 +377,10 @@ class ClassMethodArguments(TreeArgumentsWrapper):
+         for values in self._wrapped_arguments.unpack(func):
+             yield values
+ 
++    def with_dict_calls_expanded(self, depth=10):
++        return ClassMethodArguments(
++            self._class, self._wrapped_arguments.with_dict_calls_expanded(depth))
++
+ 
+ @argument_clinic('sequence, /', want_value=True, want_arguments=True)
+ def builtins_classmethod(functions, value, arguments):
+@@ -565,6 +569,13 @@ class MergedPartialArguments(AbstractArguments):
+         for key_lazy_value in self._call_arguments.unpack(funcdef):
+             yield key_lazy_value
+ 
++    def with_dict_calls_expanded(self, depth=10):
++        return MergedPartialArguments(
++            self._partial_arguments.with_dict_calls_expanded(depth),
++            self._call_arguments.with_dict_calls_expanded(depth),
++            self._instance,
++        )
++
+ 
+ def functools_partial(value, arguments, callback):
+     return ValueSet(
+@@ -926,6 +937,9 @@ class TypeClassWrapper(ValueWrapper):
+             contextualized_node,
+         )
+ 
++    def annotation_accepts(self, value):
++        return value.is_class()
++
+ 
+ def tree_name_to_values(func):
+     def wrapper(inference_state, context, tree_name):

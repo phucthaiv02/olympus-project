@@ -1,0 +1,442 @@
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 00000000..3ec5b315
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,62 @@
++#!/usr/bin/env bash
++# Usage:
++#   ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  run the existing test suite.
++#   new   run the tests for choosing overloads from the call arguments.
++set -uo pipefail
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  if [ -z "${2:-}" ]; then
++    echo "--output_path requires a value" >&2
++    exit 2
++  fi
++  case "$2" in
++    /*) OUTPUT_PATH="$2" ;;
++    *) OUTPUT_PATH="$PWD/$2" ;;
++  esac
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++cd /app || exit 1
++
++NEW_TESTS="test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py"
++
++PYTEST_ARGS=(-p no:cacheprovider -v)
++if [ -n "$OUTPUT_PATH" ]; then
++  if ! mkdir -p "$(dirname "$OUTPUT_PATH")"; then
++    echo "failed to create the directory for $OUTPUT_PATH" >&2
++    exit 1
++  fi
++  PYTEST_ARGS+=(--junitxml="$OUTPUT_PATH")
++fi
++
++case "$MODE" in
++  base)
++    # The file path completion tests list the repository root, which also
++    # holds this script, and expanding "~" depends on the user's home folder.
++    python -m pytest "${PYTEST_ARGS[@]}" --ignore="$NEW_TESTS" \
++      --deselect test/test_api/test_completion.py::test_file_path_completions \
++      --deselect test/test_api/test_completion.py::test_complete_expanduser \
++      jedi test
++    STATUS=$?
++    ;;
++  new)
++    python -m pytest "${PYTEST_ARGS[@]}" "$NEW_TESTS"
++    STATUS=$?
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ] && [ ! -s "$OUTPUT_PATH" ]; then
++  echo "failed to write JUnit report to $OUTPUT_PATH" >&2
++  exit 1
++fi
++
++exit "$STATUS"
+diff --git a/test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py b/test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py
+new file mode 100644
+index 00000000..4408940a
+--- /dev/null
++++ b/test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py
+@@ -0,0 +1,368 @@
++"""
++Choosing the overload of a function from the arguments of a call.
++"""
++
++from textwrap import dedent
++
++import pytest
++
++HEADER = """\
++from typing import overload, Any, Type, TypeVar, Union
++
++class A: pass
++class B(A): pass
++class C: pass
++class RA: pass
++class RB: pass
++class RC: pass
++"""
++
++
++def overloads(*annotations):
++    code = ''
++    for annotation, result in zip(annotations, ('RA', 'RB', 'RC')):
++        code += '@overload\ndef f(x: %s) -> %s: ...\n' % (annotation, result)
++    return code + 'def f(x): ...\n'
++
++
++def infer_result(Script, code):
++    code = HEADER + dedent(code).strip('\n')
++    lines = code.splitlines()
++    return sorted(d.name for d in Script(code).infer(len(lines), len(lines[-1])))
++
++
++def check(Script, annotations, call, expected, prefix=''):
++    code = prefix + overloads(*annotations) + call
++    assert infer_result(Script, code) == expected, (annotations, call)
++
++
++def test_issue_example(Script):
++    code = dedent('''\
++        from typing import overload
++
++        class Foo: pass
++
++        class FooBuilder:
++            def func_foo(self): pass
++
++        class Bar: pass
++
++        class BarBuilder:
++            def func_bar(self): pass
++
++        @overload
++        def get_obj(input: type[Foo]) -> FooBuilder: ...
++        @overload
++        def get_obj(input: type[Bar]) -> BarBuilder: ...
++        def get_obj(input: type): pass
++
++        builder = get_obj(Foo)
++        builder.''')
++    names = [c.name for c in Script(code).complete()]
++    assert 'func_foo' in names
++    assert 'func_bar' not in names
++
++    code = code.replace('get_obj(Foo)', 'get_obj(Bar)')
++    names = [c.name for c in Script(code).complete()]
++    assert 'func_bar' in names
++    assert 'func_foo' not in names
++
++
++@pytest.mark.parametrize('first', ['type[A]', 'Type[A]'])
++@pytest.mark.parametrize(
++    'call, expected', [
++        ('f(A)', ['RA']),
++        ('f(B)', ['RA']),
++        ('f(C)', ['RB']),
++    ]
++)
++def test_type_of_class(Script, first, call, expected):
++    check(Script, [first, 'type[C]'], call, expected)
++
++
++def test_type_rejects_instances(Script):
++    check(Script, ['type[A]', 'A'], 'f(A())', ['RB'])
++    check(Script, ['Type[A]', 'A'], 'f(B())', ['RB'])
++    check(Script, ['A', 'type[A]'], 'f(A)', ['RB'])
++    factory = 'class Factory:\n    def __call__(self) -> A: ...\n'
++    check(Script, ['type[A]', 'Factory'], 'f(Factory())', ['RB'], prefix=factory)
++
++
++@pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
++def test_any_class(Script, annotation):
++    for cls in ['A', 'B', 'C', 'int', 'str']:
++        check(Script, ['int', annotation], 'f(%s)' % cls, ['RB'])
++    for instance, cls in [('3', 'int'), ('C()', 'C'), ('"s"', 'str')]:
++        check(Script, [annotation, cls], 'f(%s)' % instance, ['RB'])
++
++
++@pytest.mark.parametrize('annotation', ['type[Union[A, C]]', 'Type[A | C]', 'type[A] | type[C]'])
++def test_type_of_union(Script, annotation):
++    check(Script, ['int', annotation], 'f(C)', ['RB'])
++    check(Script, ['int', annotation], 'f(B)', ['RB'])
++
++
++def test_type_of_type_var(Script):
++    bound = 'T = TypeVar("T", bound=A)\n'
++    check(Script, ['type[T]', 'int'], 'f(C)', ['RA', 'RB'], prefix=bound)
++    check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RB'], prefix=bound)
++    check(Script, ['type[T]', 'type[C]'], 'f(B)', ['RA'], prefix=bound)
++    check(Script, ['type[T]', 'type[C]'], 'f(A)', ['RA'], prefix=bound)
++    check(Script, ['type[T]', 'A'], 'f(B())', ['RB'], prefix=bound)
++    constrained = 'T = TypeVar("T", A, int)\n'
++    check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RB'], prefix=constrained)
++    check(Script, ['type[T]', 'type[C]'], 'f(int)', ['RA'], prefix=constrained)
++    check(Script, ['type[T]', 'type[C]'], 'f(B)', ['RA'], prefix=constrained)
++    check(Script, ['type[T]', 'type[str]'], 'f(str)', ['RB'], prefix=constrained)
++    check(Script, ['type[T]', 'int'], 'f(3)', ['RB'], prefix=constrained)
++    unbound = 'T = TypeVar("T")\n'
++    check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RA'], prefix=unbound)
++    check(Script, ['type[T]', 'type[C]'], 'f(int)', ['RA'], prefix=unbound)
++    check(Script, ['type[T]', 'int'], 'f(3)', ['RB'], prefix=unbound)
++
++
++def test_type_from_annotated_names(Script):
++    check(Script, ['type[A]', 'type[C]'], 'f(t)', ['RB'], prefix='t: type[C]\n')
++    code = overloads('type[A]', 'type[C]') + dedent('''\
++        def g(k: type[C]):
++            f(k)''')
++    assert infer_result(Script, code) == ['RB']
++
++
++def test_first_matching_overload_wins(Script):
++    check(Script, ['type[A]', 'type[B]'], 'f(B)', ['RA'])
++    check(Script, ['type[B]', 'type[A]'], 'f(B)', ['RA'])
++    check(Script, ['type[B]', 'type[A]'], 'f(A)', ['RB'])
++    check(Script, ['type', 'type[A]'], 'f(A)', ['RA'])
++    check(Script, ['type[A]', 'type[B]', 'type[C]'], 'f(C)', ['RC'])
++
++
++def test_type_keyword_argument(Script):
++    check(Script, ['int', 'type[C]'], 'f(x=C)', ['RB'])
++    check(Script, ['type[A]', 'type[B]'], 'f(x=B)', ['RA'])
++    check(Script, ['type[C]', 'int'], 'f(x=3)', ['RB'])
++
++
++TWO_PARAMETERS = '''\
++@overload
++def g(x: type[A], y: type[C]) -> RA: ...
++@overload
++def g(x: type[A], y: type[A]) -> RB: ...
++def g(x, y): ...
++'''
++
++
++def test_every_argument_has_to_fit(Script):
++    for call, expected in [
++        ('g(A, C)', ['RA']),
++        ('g(B, C)', ['RA']),
++        ('g(A, A)', ['RB']),
++        ('g(A, y=B)', ['RB']),
++        ('g(y=C, x=B)', ['RA']),
++        ('g(x=A, y=A)', ['RB']),
++        ('g(C, A)', ['RA', 'RB']),
++        ('g(A, A())', ['RA', 'RB']),
++    ]:
++        assert infer_result(Script, TWO_PARAMETERS + call) == expected, call
++
++
++def variadic(first, second, signature):
++    code = ''
++    for annotation, result in [(first, 'RA'), (second, 'RB')]:
++        code += '@overload\ndef f(%s) -> %s: ...\n' % (signature % annotation, result)
++    return code + 'def f(*args, **kwargs): ...\n'
++
++
++@pytest.mark.parametrize('signature', ['*x: %s', 'y: int, *x: %s'])
++def test_var_positional(Script, signature):
++    prefix = '1, ' if signature.startswith('y') else ''
++    for arguments, expected in [
++        ('C, C', ['RB']),
++        ('A, B', ['RA']),
++        ('A, C', ['RA', 'RB']),
++        ('C, A', ['RA', 'RB']),
++        ('', ['RA']),
++    ]:
++        call = 'f(%s)' % (prefix + arguments).rstrip(', ')
++        code = variadic('type[A]', 'type[C]', signature) + call
++        assert infer_result(Script, code) == expected, (signature, call)
++
++
++def test_var_positional_unpacked(Script):
++    code = variadic('type[A]', 'type[C]', '*x: %s')
++    assert infer_result(Script, code + 'ks = (C, C)\nf(*ks)') == ['RB']
++    assert infer_result(Script, code + 'ks = [A, B]\nf(*ks)') == ['RA']
++
++
++@pytest.mark.parametrize('signature', ['**x: %s', 'y: int, **x: %s'])
++def test_var_keyword(Script, signature):
++    prefix = 'y=1, ' if signature.startswith('y') else ''
++    for arguments, expected in [
++        ('p=C, q=C', ['RB']),
++        ('p=A, q=B', ['RA']),
++        ('p=A, q=C', ['RA', 'RB']),
++        ('', ['RA']),
++    ]:
++        call = 'f(%s)' % (prefix + arguments).rstrip(', ')
++        code = variadic('type[A]', 'type[C]', signature) + call
++        assert infer_result(Script, code) == expected, (signature, call)
++
++
++def test_var_keyword_unpacked(Script):
++    code = variadic('type[A]', 'type[C]', '**x: %s')
++    assert infer_result(Script, code + "f(**{'p': C})") == ['RB']
++
++
++def test_variadic_parameters_with_other_annotations(Script):
++    prefix = 'T = TypeVar("T", bound=A)\n'
++    code = prefix + variadic('type[T]', 'type[Union[A, C]]', '*x: %s')
++    assert infer_result(Script, code + 'f(A, B)') == ['RA']
++    assert infer_result(Script, code + 'f(A, C)') == ['RB']
++    assert infer_result(Script, code + 'f(C, int)') == ['RA', 'RB']
++    code = variadic('type', 'int', '*x: %s')
++    assert infer_result(Script, code + 'f(A, int, str)') == ['RA']
++    assert infer_result(Script, code + 'f(A, 1)') == ['RA', 'RB']
++    assert infer_result(Script, code + 'f(1, 2)') == ['RB']
++
++
++def test_variadic_parameters_together(Script):
++    code = dedent('''\
++        @overload
++        def f(y: int, *x: type[A], z: int = 0, **k: type[A]) -> RA: ...
++        @overload
++        def f(y: int, *x: type[C], z: int = 0, **k: type[C]) -> RB: ...
++        def f(*args, **kwargs): ...
++        ''')
++    for call, expected in [
++        ('f(1, A, B, p=A)', ['RA']),
++        ('f(1, C, z=2, p=C)', ['RB']),
++        ('f(1, A, p=C)', ['RA', 'RB']),
++        ('f(1, p=C)', ['RB']),
++        ('f(1, C)', ['RB']),
++        ('f(1, z=2)', ['RA']),
++    ]:
++        assert infer_result(Script, code + call) == expected, call
++
++
++def test_no_matching_overload(Script):
++    check(Script, ['type[A]', 'int'], 'f(C)', ['RA', 'RB'])
++    check(Script, ['type[A]', 'int'], 'f(A)', ['RA'])
++    code = variadic('type[A]', 'type[C]', '*x: %s')
++    assert infer_result(Script, code + 'f(A, C, int)') == ['RA', 'RB']
++
++
++def test_dict_unpacking(Script):
++    code = variadic('type[A]', 'type[C]', '**x: %s')
++    for call, expected in [
++        ('f(**dict(p=C))', ['RB']),
++        ('f(**dict(p=A))', ['RA']),
++        ('d = dict(p=C)\nf(**d)', ['RB']),
++        ('f(**dict(p=A, q=C))', ['RA', 'RB']),
++    ]:
++        assert infer_result(Script, code + call) == expected, call
++
++
++def test_optional_accepts_none(Script):
++    prefix = 'from typing import Optional\n'
++    check(Script, ['Optional[int]', 'str'], 'f(None)', ['RA'], prefix)
++    check(Script, ['Optional[int]', 'str'], 'f(1)', ['RA'], prefix)
++    check(Script, ['Optional[int]', 'str'], 'f("")', ['RB'], prefix)
++
++
++def test_dict_positional_argument(Script):
++    code = variadic('type[A]', 'type[C]', '**x: %s')
++    for call, expected in [
++        ('f(**dict([("p", C)]))', ['RB']),
++        ('f(**dict({"p": C}))', ['RB']),
++        ('f(**dict([("p", A)], q=C))', ['RA', 'RB']),
++        # A keyword argument replaces the entry of the mapping.
++        ('f(**dict({"p": A}, p=C))', ['RB']),
++        ('d = dict(p=C)\nf(**dict(d))', ['RB']),
++        ('d = dict(ab=C)\nf(**dict(d))', ['RB']),
++        ('f(**dict(**dict(p=C)))', ['RB']),
++    ]:
++        assert infer_result(Script, code + call) == expected, call
++    # The mapping and the keyword argument fill the same parameter only once.
++    check(Script, ['type[A]', 'type[C]'], 'f(**dict({"x": A}, x=C))', ['RB'])
++
++
++def test_dict_unpacking_in_method(Script):
++    code = dedent('''\
++        class K:
++            @overload
++            def f(self, **x: type[A]) -> RA: ...
++            @overload
++            def f(self, **x: type[C]) -> RB: ...
++            def f(self, **x): ...
++        ''')
++    assert infer_result(Script, code + 'K().f(**dict(p=C))') == ['RB']
++    assert infer_result(Script, code + 'K().f(**dict([("p", A)]))') == ['RA']
++
++
++def test_union_argument(Script):
++    prefix = dedent('''\
++        def g(x: Union[A, C]):
++            return x
++        ''')
++    # Every type the argument may have has to be accepted.
++    check(Script, ['A', 'C'], 'f(g(A()))', ['RA', 'RB'], prefix)
++    check(Script, ['Union[A, C]', 'int'], 'f(g(A()))', ['RA'], prefix)
++    check(Script, ['B', 'Union[A, C]'], 'f(g(A()))', ['RB'], prefix)
++
++
++@pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
++def test_any_class_defined_later(Script, annotation):
++    prefix = 'class D(C): pass\n'
++    check(Script, ['int', annotation], 'f(D)', ['RB'], prefix)
++    check(Script, [annotation, 'D'], 'f(D())', ['RB'], prefix)
++
++
++def test_optional_of_class(Script):
++    prefix = 'from typing import Optional\n'
++    check(Script, ['Optional[A]', 'C'], 'f(B())', ['RA'], prefix)
++    check(Script, ['Optional[A]', 'C'], 'f(None)', ['RA'], prefix)
++    check(Script, ['Optional[A]', 'C'], 'f(C())', ['RB'], prefix)
++
++
++def test_every_collected_argument_is_checked(Script):
++    code = variadic('type[A]', 'type', '*x: %s')
++    assert infer_result(Script, code + 'f(A, B, C)') == ['RB']
++    assert infer_result(Script, code + 'f(A, B, B)') == ['RA']
++    code = variadic('type[A]', 'type', '**x: %s')
++    assert infer_result(Script, code + 'f(p=A, q=B, r=C)') == ['RB']
++    assert infer_result(Script, code + 'f(p=A, q=B, r=B)') == ['RA']
++
++
++def test_dict_unpacking_in_classmethod(Script):
++    code = dedent('''\
++        class K:
++            @overload
++            @classmethod
++            def f(cls, **x: type[A]) -> RA: ...
++            @overload
++            @classmethod
++            def f(cls, **x: type[C]) -> RB: ...
++            @classmethod
++            def f(cls, **x): ...
++        ''')
++    assert infer_result(Script, code + 'K.f(**dict(p=C))') == ['RB']
++    assert infer_result(Script, code + 'K().f(**dict(p=A))') == ['RA']
++
++
++def test_dict_with_alternative_entries(Script):
++    # Every possible value of an entry has to be accepted.
++    code = 'import random\n' + variadic('type[A]', 'type', '**x: %s')
++    for call, expected in [
++        ('m = {"p": C} if random.random() else {"p": A}\nf(**dict(m))', ['RB']),
++        ('m = {"p": B} if random.random() else {"p": A}\nf(**dict(m))', ['RA']),
++        ('f(**dict([("p", C) if random.random() else ("p", A)]))', ['RB']),
++        ('f(**dict([("p", B) if random.random() else ("p", A)]))', ['RA']),
++    ]:
++        assert infer_result(Script, code + call) == expected, call
++
++
++def test_dict_unpacking_in_partial(Script):
++    code = 'import functools\n' + variadic('type[A]', 'type[C]', '**x: %s')
++    assert infer_result(Script, code + 'functools.partial(f)(**dict(p=C))') == ['RB']
++    assert infer_result(Script, code + 'functools.partial(f, q=A)(**dict(p=A))') == ['RA']
++    assert infer_result(Script, code + 'functools.partial(f, q=A)(**dict(p=C))') == ['RA', 'RB']
