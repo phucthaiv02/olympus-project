@@ -1,0 +1,1017 @@
+diff --git a/README.md b/README.md
+index 0f51b16..d7d9bd0 100644
+--- a/README.md
++++ b/README.md
+@@ -172,7 +172,6 @@ For more information: [underscore](http://github.com/robertkrimen/otto/tree/mast
+ 
+ The following are some limitations with otto:
+ 
+-* `use strict` will parse, but does nothing.
+ * The regular expression engine ([re2/regexp](https://pkg.go.dev/regexp)) is not fully compatible with the ECMA5 specification.
+ * Otto targets ES5. Some ES6 features, e.g. Typed Arrays, are not supported. Pull requests to add functionality are always welcome.
+ 
+diff --git a/ast/node.go b/ast/node.go
+index ae9e63b..8c29927 100644
+--- a/ast/node.go
++++ b/ast/node.go
+@@ -230,6 +230,8 @@ type FunctionLiteral struct {
+ 	Source          string
+ 	DeclarationList []Declaration
+ 	Function        file.Idx
++	// Strict is set if the code of the function is strict mode code.
++	Strict bool
+ }
+ 
+ // Idx0 implements Node.
+@@ -951,6 +953,8 @@ type Program struct {
+ 	Comments        CommentMap
+ 	Body            []Statement
+ 	DeclarationList []Declaration
++	// Strict is set if the program is strict mode code.
++	Strict bool
+ }
+ 
+ // Idx0 implements Node.
+diff --git a/builtin.go b/builtin.go
+index 9f14f19..5c9beb5 100644
+--- a/builtin.go
++++ b/builtin.go
+@@ -19,12 +19,24 @@ func builtinGlobalEval(call FunctionCall) Value {
+ 		return src
+ 	}
+ 	rt := call.runtime
+-	program := rt.cmplParseOrThrow(src.string(), nil)
++	// The code of a direct call to eval made from strict mode code is strict
++	// mode code as well.
++	program := rt.cmplParseEvalOrThrow(src.string(), call.eval && rt.scope.strict)
+ 	if !call.eval {
+ 		// Not a direct call to eval, so we enter the global ExecutionContext
+ 		rt.enterGlobalScope()
+ 		defer rt.leaveScope()
+ 	}
++	if program.strict {
++		// Strict mode eval code has its own variable environment, so that
++		// its declarations don't leak into the calling code (ECMA-262 5.1, 10.4.2).
++		stash := rt.newDeclarationStash(rt.scope.lexical)
++		frm := rt.scope.frame
++		rt.enterScope(newScope(stash, stash, rt.scope.this))
++		rt.scope.frame = frm
++		rt.scope.strict = true
++		defer rt.leaveScope()
++	}
+ 	returnValue := rt.cmplEvaluateNodeProgram(program, true)
+ 	if returnValue.isEmpty() {
+ 		return Value{}
+diff --git a/builtin_function.go b/builtin_function.go
+index 4149ce4..7350d8e 100644
+--- a/builtin_function.go
++++ b/builtin_function.go
+@@ -63,15 +63,22 @@ func builtinFunctionToString(call FunctionCall) Value {
+ 	}
+ }
+ 
++// builtinFunctionThisArgument returns the this value that apply and call
++// pass to fn. Functions written in JavaScript get thisArg as is, and replace
++// it themselves unless they are strict mode code (ECMA-262 5.1, 10.4.3).
++// Native functions get the global object for an undefined thisArg.
++func builtinFunctionThisArgument(rt *runtime, fn *object, this Value) Value {
++	if _, ok := fn.value.(nodeFunctionObject); ok || !this.IsUndefined() {
++		return this
++	}
++	return objectValue(rt.globalObject)
++}
++
+ func builtinFunctionApply(call FunctionCall) Value {
+ 	if !call.This.isCallable() {
+ 		panic(call.runtime.panicTypeError("Function.apply %q is not callable", call.This))
+ 	}
+-	this := call.Argument(0)
+-	if this.IsUndefined() {
+-		// FIXME Not ECMA5
+-		this = objectValue(call.runtime.globalObject)
+-	}
++	this := builtinFunctionThisArgument(call.runtime, call.thisObject(), call.Argument(0))
+ 	argumentList := call.Argument(1)
+ 	switch argumentList.kind {
+ 	case valueUndefined, valueNull:
+@@ -96,11 +103,7 @@ func builtinFunctionCall(call FunctionCall) Value {
+ 		panic(call.runtime.panicTypeError("Function.call %q is not callable", call.This))
+ 	}
+ 	thisObject := call.thisObject()
+-	this := call.Argument(0)
+-	if this.IsUndefined() {
+-		// FIXME Not ECMA5
+-		this = objectValue(call.runtime.globalObject)
+-	}
++	this := builtinFunctionThisArgument(call.runtime, thisObject, call.Argument(0))
+ 	if len(call.ArgumentList) >= 1 {
+ 		return thisObject.call(this, call.ArgumentList[1:], false, nativeFrame)
+ 	}
+@@ -114,12 +117,8 @@ func builtinFunctionBind(call FunctionCall) Value {
+ 	}
+ 	targetObject := target.object()
+ 
+-	this := call.Argument(0)
++	this := builtinFunctionThisArgument(call.runtime, targetObject, call.Argument(0))
+ 	argumentList := call.slice(1)
+-	if this.IsUndefined() {
+-		// FIXME Do this elsewhere?
+-		this = objectValue(call.runtime.globalObject)
+-	}
+ 
+ 	return objectValue(call.runtime.newBoundFunction(targetObject, this, argumentList))
+ }
+diff --git a/cmpl.go b/cmpl.go
+index e81cd50..4d90fda 100644
+--- a/cmpl.go
++++ b/cmpl.go
+@@ -8,4 +8,6 @@ import (
+ type compiler struct {
+ 	file    *file.File
+ 	program *ast.Program
++	// strict is set while compiling strict mode code.
++	strict bool
+ }
+diff --git a/cmpl_evaluate.go b/cmpl_evaluate.go
+index a29b7d8..02c3bf2 100644
+--- a/cmpl_evaluate.go
++++ b/cmpl_evaluate.go
+@@ -8,6 +8,7 @@ func (rt *runtime) cmplEvaluateNodeProgram(node *nodeProgram, eval bool) Value {
+ 	if !eval {
+ 		rt.enterGlobalScope()
+ 		defer rt.leaveScope()
++		rt.scope.strict = node.strict
+ 	}
+ 	rt.cmplFunctionDeclaration(node.functionList)
+ 	rt.cmplVariableDeclaration(node.varList)
+@@ -38,13 +39,22 @@ func (rt *runtime) cmplCallNodeFunction(function *object, stash *fnStash, node *
+ 	}
+ 
+ 	if !argumentsFound {
++		if node.strict {
++			// The arguments object of strict mode code isn't mapped to the
++			// parameters (ECMA-262 5.1, 10.6).
++			indexOfParameterName = nil
++		}
+ 		arguments := rt.newArgumentsObject(indexOfParameterName, stash, len(argumentList))
+-		arguments.defineProperty("callee", objectValue(function), 0o101, false)
++		if node.strict {
++			arguments.defineOwnProperty("callee", rt.throwTypeErrorProperty(), false)
++		} else {
++			arguments.defineProperty("callee", objectValue(function), 0o101, false)
++		}
+ 		stash.arguments = arguments
+ 		// strict = false
+ 		rt.scope.lexical.setValue("arguments", objectValue(arguments), false)
+ 		for index := range argumentList {
+-			if index < len(node.parameterList) {
++			if index < len(node.parameterList) && !node.strict {
+ 				continue
+ 			}
+ 			indexAsString := strconv.FormatInt(int64(index), 10)
+diff --git a/cmpl_evaluate_expression.go b/cmpl_evaluate_expression.go
+index 69c673a..e9727b4 100644
+--- a/cmpl_evaluate_expression.go
++++ b/cmpl_evaluate_expression.go
+@@ -55,16 +55,16 @@ func (rt *runtime) cmplEvaluateNodeExpression(node nodeExpression) Value {
+ 
+ 		value := objectValue(rt.newNodeFunction(node, local))
+ 		if node.name != "" {
+-			local.createBinding(node.name, false, value)
++			// The name of a function expression is an immutable binding (ECMA-262 5.1, 13).
++			local.(*dclStash).createImmutableBinding(node.name, value)
+ 		}
+ 		return value
+ 
+ 	case *nodeIdentifier:
+ 		name := node.name
+-		// TODO Should be true or false (strictness) depending on context
+ 		// getIdentifierReference should not return nil, but we check anyway and panic
+ 		// so as not to propagate the nil into something else
+-		reference := getIdentifierReference(rt, rt.scope.lexical, name, false, at(node.idx))
++		reference := getIdentifierReference(rt, rt.scope.lexical, name, rt.scope.strict, at(node.idx))
+ 		if reference == nil {
+ 			// Should never get here!
+ 			panic(hereBeDragons("referenceError == nil: " + name))
+@@ -87,7 +87,7 @@ func (rt *runtime) cmplEvaluateNodeExpression(node nodeExpression) Value {
+ 		return rt.cmplEvaluateNodeSequenceExpression(node)
+ 
+ 	case *nodeThisExpression:
+-		return objectValue(rt.scope.this)
++		return rt.scope.this
+ 
+ 	case *nodeUnaryExpression:
+ 		return rt.cmplEvaluateNodeUnaryExpression(node)
+@@ -171,7 +171,7 @@ func (rt *runtime) cmplEvaluateNodeBracketExpression(node *nodeBracketExpression
+ 	if err != nil {
+ 		panic(rt.panicTypeError("Cannot access member %q of %s", memberValue.string(), err, at(node.idx)))
+ 	}
+-	return toValue(newPropertyReference(rt, obj, memberValue.string(), false, at(node.idx)))
++	return toValue(rt.newMemberReference(obj, targetValue, memberValue.string(), at(node.idx)))
+ }
+ 
+ func (rt *runtime) cmplEvaluateNodeCallExpression(node *nodeCallExpression, withArgumentList []interface{}) Value {
+@@ -189,11 +189,12 @@ func (rt *runtime) cmplEvaluateNodeCallExpression(node *nodeCallExpression, with
+ 
+ 	eval := false // Whether this call is a (candidate for) direct call to eval
+ 	name := ""
++	var property *propertyReference
+ 	if rf := callee.reference(); rf != nil {
+ 		switch rf := rf.(type) {
+ 		case *propertyReference:
+ 			name = rf.name
+-			this = objectValue(rf.base)
++			property = rf
+ 			eval = rf.name == "eval" // Possible direct eval
+ 		case *stashReference:
+ 			// TODO ImplicitThisValue
+@@ -231,6 +232,10 @@ func (rt *runtime) cmplEvaluateNodeCallExpression(node *nodeCallExpression, with
+ 
+ 	rt.scope.frame.offset = int(atv)
+ 
++	if property != nil {
++		this = property.thisValue(vl.object())
++	}
++
+ 	return vl.object().call(this, argumentList, eval, frm)
+ }
+ 
+@@ -251,7 +256,7 @@ func (rt *runtime) cmplEvaluateNodeDotExpression(node *nodeDotExpression) Value
+ 	if err != nil {
+ 		panic(rt.panicTypeError("Cannot access member %q of %s", node.identifier, err, at(node.idx)))
+ 	}
+-	return toValue(newPropertyReference(rt, obj, node.identifier, false, at(node.idx)))
++	return toValue(rt.newMemberReference(obj, targetValue, node.identifier, at(node.idx)))
+ }
+ 
+ func (rt *runtime) cmplEvaluateNodeNewExpression(node *nodeNewExpression) Value {
+@@ -434,7 +439,7 @@ func (rt *runtime) cmplEvaluateNodeUnaryExpression(node *nodeUnaryExpression) Va
+ func (rt *runtime) cmplEvaluateNodeVariableExpression(node *nodeVariableExpression) Value {
+ 	if node.initializer != nil {
+ 		// FIXME If reference is nil
+-		left := getIdentifierReference(rt, rt.scope.lexical, node.name, false, at(node.idx))
++		left := getIdentifierReference(rt, rt.scope.lexical, node.name, rt.scope.strict, at(node.idx))
+ 		right := rt.cmplEvaluateNodeExpression(node.initializer)
+ 		rightValue := right.resolve()
+ 
+diff --git a/cmpl_evaluate_statement.go b/cmpl_evaluate_statement.go
+index 724120a..b904a12 100644
+--- a/cmpl_evaluate_statement.go
++++ b/cmpl_evaluate_statement.go
+@@ -419,6 +419,7 @@ func (rt *runtime) cmplEvaluateNodeWithStatement(node *nodeWithStatement) Value
+ 	obj := rt.cmplEvaluateNodeExpression(node.object)
+ 	outer := rt.scope.lexical
+ 	lexical := rt.newObjectStash(rt.toObject(obj.resolve()), outer)
++	lexical.provideThis = true
+ 	rt.scope.lexical = lexical
+ 	defer func() {
+ 		rt.scope.lexical = outer
+diff --git a/cmpl_parse.go b/cmpl_parse.go
+index d3fe8da..72e9c36 100644
+--- a/cmpl_parse.go
++++ b/cmpl_parse.go
+@@ -90,11 +90,15 @@ func (cmpl *compiler) parseExpression(expr ast.Expression) nodeExpression {
+ 		if expr.Name != nil {
+ 			name = expr.Name.Name
+ 		}
++		outerStrict := cmpl.strict
++		defer func() { cmpl.strict = outerStrict }()
++		cmpl.strict = cmpl.strict || expr.Strict
+ 		out := &nodeFunctionLiteral{
+ 			name:   name,
+ 			body:   cmpl.parseStatement(expr.Body),
+ 			source: expr.Source,
+ 			file:   cmpl.file,
++			strict: cmpl.strict,
+ 		}
+ 		if expr.ParameterList != nil {
+ 			list := expr.ParameterList.List
+@@ -357,8 +361,15 @@ func (cmpl *compiler) parseStatement(stmt ast.Statement) nodeStatement {
+ }
+ 
+ func cmplParse(in *ast.Program) *nodeProgram {
++	return cmplParseStrict(in, false)
++}
++
++// cmplParseStrict compiles in, as strict mode code if strict is set or the
++// program starts with a "use strict" directive.
++func cmplParseStrict(in *ast.Program, strict bool) *nodeProgram {
+ 	cmpl := compiler{
+ 		program: in,
++		strict:  strict,
+ 	}
+ 	if cmpl.program != nil {
+ 		cmpl.file = cmpl.program.File
+@@ -368,9 +379,11 @@ func cmplParse(in *ast.Program) *nodeProgram {
+ }
+ 
+ func (cmpl *compiler) parse() *nodeProgram {
++	cmpl.strict = cmpl.strict || cmpl.program.Strict
+ 	out := &nodeProgram{
+-		body: make([]nodeStatement, len(cmpl.program.Body)),
+-		file: cmpl.program.File,
++		body:   make([]nodeStatement, len(cmpl.program.Body)),
++		file:   cmpl.program.File,
++		strict: cmpl.strict,
+ 	}
+ 	for i, value := range cmpl.program.Body {
+ 		out.body[i] = cmpl.parseStatement(value)
+@@ -395,6 +408,7 @@ type nodeProgram struct {
+ 	body         []nodeStatement
+ 	varList      []string
+ 	functionList []*nodeFunctionLiteral
++	strict       bool
+ }
+ 
+ type node interface{}
+@@ -453,6 +467,7 @@ type (
+ 		parameterList []string
+ 		varList       []string
+ 		functionList  []*nodeFunctionLiteral
++		strict        bool
+ 	}
+ 
+ 	nodeIdentifier struct {
+diff --git a/otto.go b/otto.go
+index 31b7e30..720b4f2 100644
+--- a/otto.go
++++ b/otto.go
+@@ -128,7 +128,6 @@ For more information: http://github.com/robertkrimen/otto/tree/master/underscore
+ 
+ The following are some limitations with otto:
+ 
+-  - "use strict" will parse, but does nothing.
+   - The regular expression engine (re2/regexp) is not fully compatible with the ECMA5 specification.
+   - Otto targets ES5. ES6 features (eg: Typed Arrays) are not supported.
+ 
+@@ -481,7 +480,7 @@ func (o Otto) ContextSkip(limit int, skipNative bool) Context {
+ 	}
+ 
+ 	// Get the current scope this Value
+-	ctx.This = objectValue(curScope.this)
++	ctx.This = curScope.this
+ 
+ 	// Build stacktrace (up to 10 levels deep)
+ 	ctx.Symbols = make(map[string]Value)
+diff --git a/parser/expression.go b/parser/expression.go
+index 2c8e299..7808f9e 100644
+--- a/parser/expression.go
++++ b/parser/expression.go
+@@ -40,6 +40,9 @@ func (p *parser) parsePrimaryExpression() ast.Expression {
+ 					p.error(idx, "Unexpected reserved word")
+ 				}
+ 			}
++			if p.scope.strict && isStrictReservedWord(literal) {
++				p.error(idx, "Unexpected strict mode reserved word")
++			}
+ 		}
+ 		return &ast.Identifier{
+ 			Name: literal,
+@@ -73,6 +76,7 @@ func (p *parser) parsePrimaryExpression() ast.Expression {
+ 		if err != nil {
+ 			p.error(idx, err.Error())
+ 		}
++		p.checkStrictString(idx, literal)
+ 		return &ast.StringLiteral{
+ 			Idx:     idx,
+ 			Literal: literal,
+@@ -85,6 +89,7 @@ func (p *parser) parsePrimaryExpression() ast.Expression {
+ 			p.error(idx, err.Error())
+ 			value = 0
+ 		}
++		p.checkStrictNumber(idx, literal)
+ 		return &ast.NumberLiteral{
+ 			Idx:     idx,
+ 			Literal: literal,
+@@ -179,6 +184,7 @@ func (p *parser) parseVariableDeclaration(declarationList *[]*ast.VariableExpres
+ 
+ 	literal := p.literal
+ 	idx := p.idx
++	p.checkStrictBinding(idx, literal)
+ 	p.next()
+ 	node := &ast.VariableExpression{
+ 		Name: literal,
+@@ -249,12 +255,14 @@ func (p *parser) parseObjectPropertyKey() (string, string) {
+ 		} else {
+ 			value = literal
+ 		}
++		p.checkStrictNumber(idx, literal)
+ 	case token.STRING:
+ 		var err error
+ 		value, err = parseStringLiteral(literal[1 : len(literal)-1])
+ 		if err != nil {
+ 			p.error(idx, err.Error())
+ 		}
++		p.checkStrictString(idx, literal)
+ 	default:
+ 		// null, false, class, etc.
+ 		if matchIdentifier.MatchString(literal) {
+@@ -571,6 +579,7 @@ func (p *parser) parsePostfixExpression() ast.Expression {
+ 			p.nextStatement()
+ 			return &ast.BadExpression{From: idx, To: p.idx}
+ 		}
++		p.checkStrictAssignmentTarget(operand)
+ 		exp := &ast.UnaryExpression{
+ 			Operator: tkn,
+ 			Idx:      idx,
+@@ -600,10 +609,14 @@ func (p *parser) parseUnaryExpression() ast.Expression {
+ 		}
+ 		p.next()
+ 
++		operand := p.parseUnaryExpression()
++		if _, ok := operand.(*ast.Identifier); ok && tkn == token.DELETE && p.scope.strict {
++			p.error(idx, "Delete of an unqualified identifier in strict mode")
++		}
+ 		return &ast.UnaryExpression{
+ 			Operator: tkn,
+ 			Idx:      idx,
+-			Operand:  p.parseUnaryExpression(),
++			Operand:  operand,
+ 		}
+ 	case token.INCREMENT, token.DECREMENT:
+ 		tkn := p.token
+@@ -620,6 +633,7 @@ func (p *parser) parseUnaryExpression() ast.Expression {
+ 			p.nextStatement()
+ 			return &ast.BadExpression{From: idx, To: p.idx}
+ 		}
++		p.checkStrictAssignmentTarget(operand)
+ 		return &ast.UnaryExpression{
+ 			Operator: tkn,
+ 			Idx:      idx,
+@@ -953,6 +967,7 @@ func (p *parser) parseAssignmentExpression() ast.Expression {
+ 			p.nextStatement()
+ 			return &ast.BadExpression{From: idx, To: p.idx}
+ 		}
++		p.checkStrictAssignmentTarget(left)
+ 
+ 		exp := &ast.AssignExpression{
+ 			Left:     left,
+diff --git a/parser/parser.go b/parser/parser.go
+index f0b710d..f9a173b 100644
+--- a/parser/parser.go
++++ b/parser/parser.go
+@@ -54,6 +54,10 @@ const (
+ 
+ 	// StoreComments stores the comments from source to the comments map.
+ 	StoreComments
++
++	// StrictMode parses the source as strict mode code, as is the case for
++	// the code of a direct call to eval made from strict mode code.
++	StrictMode
+ )
+ 
+ type parser struct {
+diff --git a/parser/scope.go b/parser/scope.go
+index 9f49e47..8062d86 100644
+--- a/parser/scope.go
++++ b/parser/scope.go
+@@ -12,12 +12,22 @@ type scope struct {
+ 	inIteration     bool
+ 	inSwitch        bool
+ 	inFunction      bool
++	// strict is set for strict mode code (ECMA-262 5.1, 10.1.1).
++	strict bool
++	// inPrologue is set until the end of the directive prologue (ECMA-262 5.1, 14.1).
++	inPrologue bool
+ }
+ 
+ func (p *parser) openScope() {
++	strict := p.mode&StrictMode != 0
++	if p.scope != nil {
++		strict = p.scope.strict
++	}
+ 	p.scope = &scope{
+-		outer:   p.scope,
+-		allowIn: true,
++		outer:      p.scope,
++		allowIn:    true,
++		strict:     strict,
++		inPrologue: true,
+ 	}
+ }
+ 
+diff --git a/parser/statement.go b/parser/statement.go
+index e646977..e78a632 100644
+--- a/parser/statement.go
++++ b/parser/statement.go
+@@ -41,7 +41,11 @@ func (p *parser) parseEmptyStatement() ast.Statement {
+ 
+ func (p *parser) parseStatementList() (list []ast.Statement) { //nolint:nonamedreturns
+ 	for p.token != token.RIGHT_BRACE && p.token != token.EOF {
++		if p.token != token.STRING {
++			p.scope.inPrologue = false
++		}
+ 		statement := p.parseStatement()
++		p.directive(statement)
+ 		list = append(list, statement)
+ 	}
+ 
+@@ -175,6 +179,7 @@ func (p *parser) parseTryStatement() ast.Statement {
+ 		}
+ 
+ 		identifier := p.parseIdentifier()
++		p.checkStrictBinding(identifier.Idx, identifier.Name)
+ 		p.expect(token.RIGHT_PARENTHESIS)
+ 		node.Catch = &ast.CatchStatement{
+ 			Catch:     catch,
+@@ -293,6 +298,8 @@ func (p *parser) parseFunctionBlock(node *ast.FunctionLiteral) {
+ 	}()
+ 	node.Body = p.parseBlockStatement()
+ 	node.DeclarationList = p.scope.declarationList
++	node.Strict = p.scope.strict
++	p.checkStrictFunction(node)
+ }
+ 
+ func (p *parser) parseDebuggerStatement() ast.Statement {
+@@ -425,6 +432,9 @@ func (p *parser) parseWithStatement() ast.Statement {
+ 	if p.mode&StoreComments != 0 {
+ 		comments = p.comments.FetchAll()
+ 	}
++	if p.scope.strict {
++		p.error(p.idx, "Strict mode code may not include a with statement")
++	}
+ 	idx := p.expect(token.WITH)
+ 	var withComments []*ast.Comment
+ 	if p.mode&StoreComments != 0 {
+@@ -771,8 +781,11 @@ func (p *parser) parseSourceElements() []ast.Statement {
+ 		if p.token != token.STRING {
+ 			break
+ 		}
+-		body = append(body, p.parseSourceElement())
++		statement := p.parseSourceElement()
++		p.directive(statement)
++		body = append(body, statement)
+ 	}
++	p.scope.inPrologue = false
+ 
+ 	for p.token != token.EOF {
+ 		body = append(body, p.parseSourceElement())
+@@ -784,10 +797,12 @@ func (p *parser) parseSourceElements() []ast.Statement {
+ func (p *parser) parseProgram() *ast.Program {
+ 	p.openScope()
+ 	defer p.closeScope()
++	body := p.parseSourceElements()
+ 	return &ast.Program{
+-		Body:            p.parseSourceElements(),
++		Body:            body,
+ 		DeclarationList: p.scope.declarationList,
+ 		File:            p.file,
++		Strict:          p.scope.strict,
+ 	}
+ }
+ 
+diff --git a/parser/strict.go b/parser/strict.go
+new file mode 100644
+index 0000000..a1f8e92
+--- /dev/null
++++ b/parser/strict.go
+@@ -0,0 +1,129 @@
++package parser
++
++import (
++	"github.com/robertkrimen/otto/ast"
++	"github.com/robertkrimen/otto/file"
++	"github.com/robertkrimen/otto/token"
++)
++
++// isUseStrictDirective reports whether stmt is a "use strict" directive:
++// an expression statement made of nothing but the string literal "use strict"
++// or 'use strict', written without escape sequences or line continuations.
++func isUseStrictDirective(stmt ast.Statement) bool {
++	literal, ok := directiveLiteral(stmt)
++	return ok && len(literal) == 12 && literal[1:11] == "use strict"
++}
++
++// directiveLiteral returns the source of the string literal that makes up the
++// whole of stmt, if stmt is such an expression statement.
++func directiveLiteral(stmt ast.Statement) (string, bool) {
++	expr, ok := stmt.(*ast.ExpressionStatement)
++	if !ok {
++		return "", false
++	}
++	str, ok := expr.Expression.(*ast.StringLiteral)
++	if !ok {
++		return "", false
++	}
++	return str.Literal, true
++}
++
++// directive updates the directive prologue state of the current scope after
++// stmt has been parsed: a "use strict" directive makes the rest of the code
++// strict, and the first statement that isn't a directive ends the prologue.
++func (p *parser) directive(stmt ast.Statement) {
++	if !p.scope.inPrologue {
++		return
++	}
++	if _, ok := directiveLiteral(stmt); !ok {
++		p.scope.inPrologue = false
++		return
++	}
++	if isUseStrictDirective(stmt) {
++		p.scope.strict = true
++	}
++}
++
++// isStrictReservedWord reports whether name is a future reserved word in
++// strict mode code (ECMA-262 5.1, 7.6.1.2).
++func isStrictReservedWord(name string) bool {
++	if name == "yield" {
++		return true
++	}
++	tkn, strict := token.IsKeyword(name)
++	return tkn == token.KEYWORD && strict
++}
++
++// checkStrictBinding reports an error if name may not be bound, as a variable,
++// function, parameter or catch clause name, in strict mode code.
++func (p *parser) checkStrictBinding(idx file.Idx, name string) {
++	if !p.scope.strict {
++		return
++	}
++	switch {
++	case name == "eval" || name == "arguments":
++		p.error(idx, "Unexpected eval or arguments in strict mode")
++	case isStrictReservedWord(name):
++		p.error(idx, "Unexpected strict mode reserved word")
++	}
++}
++
++// checkStrictAssignmentTarget reports an error if target may not be assigned
++// to in strict mode code.
++func (p *parser) checkStrictAssignmentTarget(target ast.Expression) {
++	if identifier, ok := target.(*ast.Identifier); ok && p.scope.strict {
++		if identifier.Name == "eval" || identifier.Name == "arguments" {
++			p.error(identifier.Idx, "Unexpected eval or arguments in strict mode")
++		}
++	}
++}
++
++// checkStrictNumber reports an error for an octal numeric literal in strict
++// mode code.
++func (p *parser) checkStrictNumber(idx file.Idx, literal string) {
++	if p.scope.strict && len(literal) > 1 && literal[0] == '0' && isDecimalDigit(rune(literal[1])) {
++		p.error(idx, "Octal literals are not allowed in strict mode")
++	}
++}
++
++// checkStrictString reports an error for a string literal with an octal escape
++// sequence in strict mode code. \0 not followed by a digit is a NUL character
++// rather than an octal escape, and stays allowed.
++func (p *parser) checkStrictString(idx file.Idx, literal string) {
++	if !p.scope.strict {
++		return
++	}
++	for i := 0; i < len(literal)-1; i++ {
++		if literal[i] != '\\' {
++			continue
++		}
++		i++
++		chr := literal[i]
++		if '1' <= chr && chr <= '7' || chr == '0' && i+1 < len(literal) && isDecimalDigit(rune(literal[i+1])) {
++			p.error(idx, "Octal escape sequences are not allowed in strict mode")
++			return
++		}
++	}
++}
++
++// checkStrictFunction reports the errors in the name and parameters of a
++// function whose code turned out to be strict.
++func (p *parser) checkStrictFunction(node *ast.FunctionLiteral) {
++	if !p.scope.strict {
++		return
++	}
++	if node.Name != nil {
++		p.checkStrictBinding(node.Name.Idx, node.Name.Name)
++	}
++	if node.ParameterList == nil {
++		return
++	}
++	seen := make(map[string]bool, len(node.ParameterList.List))
++	for _, parameter := range node.ParameterList.List {
++		p.checkStrictBinding(parameter.Idx, parameter.Name)
++		if seen[parameter.Name] {
++			p.error(parameter.Idx, "Duplicate parameter name not allowed in strict mode")
++		}
++		seen[parameter.Name] = true
++	}
++}
+diff --git a/runtime.go b/runtime.go
+index 7026236..751f6cf 100644
+--- a/runtime.go
++++ b/runtime.go
+@@ -87,30 +87,39 @@ func (rt *runtime) leaveScope() {
+ 
+ // FIXME This is used in two places (cloning).
+ func (rt *runtime) enterGlobalScope() {
+-	rt.enterScope(newScope(rt.globalStash, rt.globalStash, rt.globalObject))
++	rt.enterScope(newScope(rt.globalStash, rt.globalStash, objectValue(rt.globalObject)))
+ }
+ 
+-func (rt *runtime) enterFunctionScope(outer stasher, this Value) *fnStash {
++// enterFunctionScope enters the scope of a call to a function. The this value
++// of strict mode code is used as is; otherwise undefined and null are replaced
++// by the global object and primitive values are converted to objects
++// (ECMA-262 5.1, 10.4.3).
++func (rt *runtime) enterFunctionScope(outer stasher, this Value, strict bool) *fnStash {
+ 	if outer == nil {
+ 		outer = rt.globalStash
+ 	}
+ 	stash := rt.newFunctionStash(outer)
+-	var thisObject *object
+-	switch this.kind {
+-	case valueUndefined, valueNull:
+-		thisObject = rt.globalObject
+-	default:
+-		thisObject = rt.toObject(this)
++	if !strict {
++		switch this.kind {
++		case valueUndefined, valueNull:
++			this = objectValue(rt.globalObject)
++		default:
++			this = objectValue(rt.toObject(this))
++		}
+ 	}
+-	rt.enterScope(newScope(stash, stash, thisObject))
++	rt.enterScope(newScope(stash, stash, this))
++	rt.scope.strict = strict
+ 	return stash
+ }
+ 
+ func (rt *runtime) putValue(reference referencer, value Value) {
+ 	name := reference.putValue(value)
+ 	if name != "" {
+-		// Why? -- If reference.base == nil
+-		// strict = false
++		// The reference can't be resolved: strict mode code may not create
++		// a global variable by assigning to it (ECMA-262 5.1, 8.7.2).
++		if rt.scope.strict {
++			panic(rt.panicReferenceError("'%s' is not defined", name))
++		}
+ 		rt.globalObject.defineProperty(name, value, 0o111, false)
+ 	}
+ }
+@@ -871,3 +880,15 @@ func (rt *runtime) cmplParseOrThrow(src, sm interface{}) *nodeProgram {
+ 	rt.parseThrow(err) // Will panic/throw appropriately
+ 	return program
+ }
++
++// cmplParseEvalOrThrow compiles the code of a call to eval, as strict mode
++// code if strict is set.
++func (rt *runtime) cmplParseEvalOrThrow(src string, strict bool) *nodeProgram {
++	var mode parser.Mode
++	if strict {
++		mode = parser.StrictMode
++	}
++	program, err := parser.ParseFile(nil, "", src, mode)
++	rt.parseThrow(err) // Will panic/throw appropriately
++	return cmplParseStrict(program, strict)
++}
+diff --git a/scope.go b/scope.go
+index c535c31..4dd7d08 100644
+--- a/scope.go
++++ b/scope.go
+@@ -4,14 +4,16 @@ package otto
+ type scope struct {
+ 	lexical  stasher
+ 	variable stasher
+-	this     *object
++	this     Value
+ 	outer    *scope
+ 	frame    frame
+ 	depth    int
+ 	eval     bool
++	// strict is set while running strict mode code (ECMA-262 5.1, 10.1.1).
++	strict bool
+ }
+ 
+-func newScope(lexical stasher, variable stasher, this *object) *scope {
++func newScope(lexical stasher, variable stasher, this Value) *scope {
+ 	return &scope{
+ 		lexical:  lexical,
+ 		variable: variable,
+diff --git a/stash.go b/stash.go
+index 85ee26d..9cdf993 100644
+--- a/stash.go
++++ b/stash.go
+@@ -25,6 +25,10 @@ type objectStash struct {
+ 	rt     *runtime
+ 	outr   stasher
+ 	object *object
++	// provideThis is set for the environment of a with statement, whose
++	// object is the this value of the functions called through it
++	// (ECMA-262 5.1, 10.2.1.2.6).
++	provideThis bool
+ }
+ 
+ func (s *objectStash) runtime() *runtime {
+@@ -52,6 +56,7 @@ func (s *objectStash) clone(c *cloner) stasher {
+ 		c.runtime,
+ 		c.stash(s.outr),
+ 		c.object(s.object),
++		s.provideThis,
+ 	}
+ 	return out
+ }
+@@ -103,7 +108,9 @@ func (s *objectStash) outer() stasher {
+ }
+ 
+ func (s *objectStash) newReference(name string, strict bool, atv at) referencer {
+-	return newPropertyReference(s.rt, s.object, name, strict, atv)
++	pr := newPropertyReference(s.rt, s.object, name, strict, atv)
++	pr.implicitThis = !s.provideThis
++	return pr
+ }
+ 
+ type dclStash struct {
+@@ -165,6 +172,19 @@ func (s *dclStash) createBinding(name string, deletable bool, value Value) {
+ 	}
+ }
+ 
++// createImmutableBinding creates an initialized binding that can't be changed.
++func (s *dclStash) createImmutableBinding(name string, value Value) {
++	if _, exists := s.property[name]; exists {
++		panic(fmt.Errorf("createImmutableBinding: %s: already exists", name))
++	}
++	s.property[name] = dclProperty{
++		value:     value,
++		mutable:   false,
++		deletable: false,
++		readable:  true,
++	}
++}
++
+ func (s *dclStash) setBinding(name string, value Value, strict bool) {
+ 	prop, exists := s.property[name]
+ 	if !exists {
+@@ -219,8 +239,9 @@ func (s *dclStash) outer() stasher {
+ 
+ func (s *dclStash) newReference(name string, strict bool, _ at) referencer {
+ 	return &stashReference{
+-		name: name,
+-		base: s,
++		name:   name,
++		base:   s,
++		strict: strict,
+ 	}
+ }
+ 
+diff --git a/type_function.go b/type_function.go
+index 41e6393..9140116 100644
+--- a/type_function.go
++++ b/type_function.go
+@@ -126,6 +126,11 @@ func (rt *runtime) newNodeFunctionObject(node *nodeFunctionLiteral, stash stashe
+ 	}
+ 	o.defineProperty("name", stringValue(node.name), 0o000, false)
+ 	o.defineProperty(propertyLength, intValue(len(node.parameterList)), 0o000, false)
++	if node.strict {
++		o.defineOwnProperty("caller", rt.throwTypeErrorProperty(), false)
++		o.defineOwnProperty("arguments", rt.throwTypeErrorProperty(), false)
++		return o
++	}
+ 	o.defineOwnProperty("caller", property{
+ 		value: propertyGetSet{
+ 			rt.newNativeFunction("get", "internal", 0, func(fc FunctionCall) Value {
+@@ -148,6 +153,25 @@ func (rt *runtime) newNodeFunctionObject(node *nodeFunctionLiteral, stash stashe
+ 	return o
+ }
+ 
++// throwTypeErrorProperty returns an accessor property whose getter and setter
++// throw a TypeError, like the caller and callee properties of strict mode
++// functions and their arguments objects (ECMA-262 5.1, 13.2.3).
++func (rt *runtime) throwTypeErrorProperty() property {
++	thrower := rt.newNativeFunction("ThrowTypeError", "internal", 0, func(FunctionCall) Value {
++		panic(rt.panicTypeError("'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them"))
++	})
++	return property{
++		value: propertyGetSet{thrower, thrower},
++		mode:  0o000,
++	}
++}
++
++// isNodeFunction reports whether o is a function written in JavaScript.
++func (o *object) isNodeFunction() bool {
++	_, ok := o.value.(nodeFunctionObject)
++	return ok
++}
++
+ // _object.
+ func (o *object) isCall() bool {
+ 	switch fn := o.value.(type) {
+@@ -173,7 +197,7 @@ func (o *object) call(this Value, argumentList []Value, eval bool, frm frame) Va
+ 		// Enter a scope, name from the native object...
+ 		rt := o.runtime
+ 		if rt.scope != nil && !eval {
+-			rt.enterFunctionScope(rt.scope.lexical, this)
++			rt.enterFunctionScope(rt.scope.lexical, this, false)
+ 			rt.scope.frame = frame{
+ 				native:     true,
+ 				nativeFile: fn.file,
+@@ -203,7 +227,7 @@ func (o *object) call(this Value, argumentList []Value, eval bool, frm frame) Va
+ 
+ 	case nodeFunctionObject:
+ 		rt := o.runtime
+-		stash := rt.enterFunctionScope(fn.stash, this)
++		stash := rt.enterFunctionScope(fn.stash, this, fn.node.strict)
+ 		rt.scope.frame = frame{
+ 			callee: fn.node.name,
+ 			file:   fn.node.file,
+diff --git a/type_reference.go b/type_reference.go
+index 1d2d0d3..46f3e04 100644
+--- a/type_reference.go
++++ b/type_reference.go
+@@ -15,6 +15,48 @@ type propertyReference struct {
+ 	name    string
+ 	at      at
+ 	strict  bool
++	// primitive is the base value when it is a primitive value, which base
++	// is a wrapper object of.
++	primitive *Value
++	// implicitThis is set for a reference to a binding of the global object,
++	// which isn't the this value of a function called through it.
++	implicitThis bool
++}
++
++// newMemberReference returns the reference for the property name of the value
++// base, which converted to an object is obj.
++func (rt *runtime) newMemberReference(obj *object, base Value, name string, atv at) *propertyReference {
++	pr := newPropertyReference(rt, obj, name, rt.scope.strict, atv)
++	if !base.IsObject() {
++		pr.primitive = &base
++	}
++	return pr
++}
++
++// thisValue returns the this value of a call to fn, the function the
++// reference resolves to.
++func (pr *propertyReference) thisValue(fn *object) Value {
++	// Native functions expect an object, so only functions written in
++	// JavaScript get an undefined or primitive this value.
++	switch {
++	case !fn.isNodeFunction():
++		return objectValue(pr.base)
++	case pr.implicitThis:
++		return Value{}
++	case pr.primitive != nil:
++		return *pr.primitive
++	default:
++		return objectValue(pr.base)
++	}
++}
++
++// accessorThis returns the this value of a call to the getter or setter fn of
++// the property the reference resolves to.
++func (pr *propertyReference) accessorThis(fn *object) Value {
++	if pr.primitive != nil && fn.isNodeFunction() {
++		return *pr.primitive
++	}
++	return objectValue(pr.base)
+ }
+ 
+ func newPropertyReference(rt *runtime, base *object, name string, strict bool, atv at) *propertyReference {
+@@ -35,6 +77,17 @@ func (pr *propertyReference) getValue() Value {
+ 	if pr.base == nil {
+ 		panic(pr.runtime.panicReferenceError("'%s' is not defined", pr.name, pr.at))
+ 	}
++	if pr.primitive != nil {
++		// A getter gets the primitive value itself as its this value (ECMA-262 5.1, 8.7.1).
++		if prop := pr.base.getProperty(pr.name); prop != nil {
++			if getSet, ok := prop.value.(propertyGetSet); ok {
++				if getSet[0] == nil {
++					return Value{}
++				}
++				return getSet[0].call(pr.accessorThis(getSet[0]), nil, false, nativeFrame)
++			}
++		}
++	}
+ 	return pr.base.get(pr.name)
+ }
+ 
+@@ -42,10 +95,28 @@ func (pr *propertyReference) putValue(value Value) string {
+ 	if pr.base == nil {
+ 		return pr.name
+ 	}
++	if pr.primitive != nil {
++		pr.putPrimitive(value)
++		return ""
++	}
+ 	pr.base.put(pr.name, value, pr.strict)
+ 	return ""
+ }
+ 
++// putPrimitive assigns to a property of a primitive value. Only an inherited
++// setter can take the value, called with the primitive value as its this
++// value: there is no object to store it on. Strict mode code gets a TypeError
++// otherwise (ECMA-262 5.1, 8.7.2).
++func (pr *propertyReference) putPrimitive(value Value) {
++	if canPut, _, setter := objectCanPutDetails(pr.base, pr.name); canPut && setter != nil && pr.base.getOwnProperty(pr.name) == nil {
++		setter.call(pr.accessorThis(setter), []Value{value}, false, nativeFrame)
++		return
++	}
++	if pr.strict {
++		panic(pr.runtime.panicTypeError("Cannot assign to property %q of %s", pr.name, pr.primitive.string(), pr.at))
++	}
++}
++
+ func (pr *propertyReference) delete() bool {
+ 	if pr.base == nil {
+ 		// TODO Throw an error if strict

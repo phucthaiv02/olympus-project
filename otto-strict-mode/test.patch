@@ -1,0 +1,394 @@
+diff --git a/strict_mode_d193ed_test.go b/strict_mode_d193ed_test.go
+new file mode 100644
+index 0000000..8ef3b0a
+--- /dev/null
++++ b/strict_mode_d193ed_test.go
+@@ -0,0 +1,341 @@
++package otto
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++// errorName runs src as the body of a function and returns the name of the
++// error it throws, or "none".
++func errorName(src string) string {
++	return `(function(){ try { ` + src + ` } catch (e) { return e.name } return "none" })()`
++}
++
++// strictErrorName is errorName for the body of a strict mode function.
++func strictErrorName(src string) string {
++	return `(function(){ "use strict"; try { ` + src + ` } catch (e) { return e.name } return "none" })()`
++}
++
++// syntaxErrorName returns code that evaluates src with eval and yields the name
++// of the error it throws, or "none".
++func syntaxErrorName(src string) string {
++	return errorName(`eval(` + strconvQuote(src) + `);`)
++}
++
++func strconvQuote(src string) string {
++	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(src) + `"`
++}
++
++func TestStrictMode_d193ed_ThisValue(t *testing.T) {
++	tt(t, func() {
++		test, _ := test()
++
++		test(`(function(){ "use strict"; return typeof this })()`, "undefined")
++		test(`(function(){ "use strict"; return this === undefined })()`, true)
++		test(`(function(){ "use strict"; return [typeof this, this] }).call(5)`, "number,5")
++		test(`(function(){ "use strict"; return this === null }).call(null)`, true)
++		test(`(function(){ "use strict"; return typeof this }).apply(undefined, [])`, "undefined")
++		test(`(function(){ "use strict"; return typeof this }).call("abc")`, "string")
++		test(`(function(){ "use strict"; return typeof this }).bind(undefined)()`, "undefined")
++		test(`(function(){ "use strict"; return this }).bind(true)()`, true)
++		test(`(function(){ "use strict"; return (function(){ return typeof this })() })()`, "undefined")
++		test(`(function(){ "use strict"; return [1, 2].map(function(){ return typeof this }) })()`, "undefined,undefined")
++		test(`(function(){ "use strict"; var seen; [1].forEach(function(){ seen = this }, 7); return seen === 7 })()`, true)
++		test(`
++			(function(){
++				"use strict";
++				Object.defineProperty(Number.prototype, "kind", { get: function(){ return typeof this }, configurable: true });
++				var kind = (5).kind;
++				delete Number.prototype.kind;
++				return kind;
++			})()
++		`, "number")
++		test(`
++			(function(){
++				"use strict";
++				String.prototype.strictKind = function(){ return typeof this };
++				var kind = "abc".strictKind();
++				delete String.prototype.strictKind;
++				return kind;
++			})()
++		`, "string")
++		test(`
++			var strictFn = (function(){ "use strict"; return function(){ return typeof this } })();
++			[strictFn(), strictFn.call(1), strictFn.call({})]
++		`, "undefined,number,object")
++
++		// Code that isn't strict keeps replacing and converting the this value.
++		test(`(function(){ return typeof this })()`, "object")
++		test(`(function(){ return this === undefined })()`, false)
++		test(`(function(){ return typeof this }).call(5)`, "object")
++		test(`(function(){ return [1].map(function(){ return typeof this })[0] })()`, "object")
++	})
++}
++
++func TestStrictMode_d193ed_ThisValueFromGo(t *testing.T) {
++	tt(t, func() {
++		vm := New()
++		_, err := vm.Run(`
++			var strictThis = function(){ "use strict"; return typeof this };
++			var sloppyThis = function(){ return typeof this };
++		`)
++		require.NoError(t, err)
++
++		value, err := vm.Call("strictThis", nil)
++		require.NoError(t, err)
++		require.Equal(t, "undefined", value.String())
++
++		value, err = vm.Call("strictThis", 42)
++		require.NoError(t, err)
++		require.Equal(t, "number", value.String())
++
++		value, err = vm.Call("sloppyThis", nil)
++		require.NoError(t, err)
++		require.Equal(t, "object", value.String())
++	})
++}
++
++func TestStrictMode_d193ed_DirectivePrologue(t *testing.T) {
++	tt(t, func() {
++		test, _ := test()
++
++		test(`(function(){ 'use strict'; return typeof this })()`, "undefined")
++		test(`(function(){ "other"; "use strict"; return typeof this })()`, "undefined")
++		test(`(function(){ var a; "use strict"; return typeof this })()`, "object")
++		test(`(function(){ "use\x20strict"; return typeof this })()`, "object")
++		test(`(function(){ "use strict" + ""; return typeof this })()`, "object")
++		test(`(function(){ ("use strict"); return typeof this })()`, "object")
++		test(`(function(){ { "use strict"; } return typeof this })()`, "object")
++		test(`(function(){ "use strict"; return typeof Function("return this")() })()`, "object")
++		test(`typeof Function('"use strict"; return this')()`, "undefined")
++		test(`(function(){ "use strict"; return eval("typeof this") })()`, "undefined")
++		test(`(function(){ return eval("'use strict'; typeof this") })()`, "object")
++
++		vm := New()
++		value, err := vm.Run(`
++			"use strict";
++			function f() { return typeof this }
++			var g = function () { return function () { return typeof this } };
++			[f(), g()()];
++		`)
++		require.NoError(t, err)
++		require.Equal(t, "undefined,undefined", value.String())
++
++		// The global code itself keeps the global object as this.
++		value, err = vm.Run(`"use strict"; typeof this`)
++		require.NoError(t, err)
++		require.Equal(t, "object", value.String())
++
++		// A directive in a function doesn't make the code around it strict.
++		value, err = vm.Run(`
++			function strictOne() { "use strict"; return typeof this }
++			function sloppyOne() { return typeof this }
++			[strictOne(), sloppyOne()];
++		`)
++		require.NoError(t, err)
++		require.Equal(t, "undefined,object", value.String())
++	})
++}
++
++func TestStrictMode_d193ed_Arguments(t *testing.T) {
++	tt(t, func() {
++		test, _ := test()
++
++		test(`(function(a){ "use strict"; arguments[0] = 2; return a })(1)`, 1)
++		test(`(function(a){ "use strict"; a = 3; return arguments[0] })(1)`, 1)
++		test(`(function(a, b){ "use strict"; a = 9; return [arguments.length, arguments[0], arguments[1], arguments[2]] })(1, 2, 3)`, "3,1,2,3")
++		test(`(function(){ "use strict"; return Array.prototype.slice.call(arguments).join("-") })("x", "y")`, "x-y")
++		test(errorName(`(function(){ "use strict"; return arguments.callee })();`), "TypeError")
++		test(errorName(`(function(){ "use strict"; arguments.callee = 1 })();`), "TypeError")
++		test(`(function(){ "use strict"; return "callee" in arguments })()`, true)
++
++		// Arguments objects of code that isn't strict stay mapped to the parameters.
++		test(`(function(a){ arguments[0] = 2; return a })(1)`, 2)
++		test(`(function(a){ a = 3; return arguments[0] })(1)`, 3)
++		test(`(function f(){ return arguments.callee === f })()`, true)
++	})
++}
++
++func TestStrictMode_d193ed_FunctionCallerAndArguments(t *testing.T) {
++	tt(t, func() {
++		test, _ := test()
++
++		test(errorName(`(function(){ "use strict"; }).caller;`), "TypeError")
++		test(errorName(`(function(){ "use strict"; }).arguments;`), "TypeError")
++		test(errorName(`(function(){ "use strict"; return function(){} })().caller;`), "TypeError")
++		test(errorName(`var f = function(){ "use strict"; }; f.caller = 1;`), "TypeError")
++
++		test(`
++			function inner() { return inner.caller === outer }
++			function outer() { return inner() }
++			outer();
++		`, true)
++	})
++}
++
++func TestStrictMode_d193ed_UndeclaredAssignment(t *testing.T) {
++	tt(t, func() {
++		test, _ := test()
++
++		test(errorName(`(function(){ "use strict"; undeclaredStrict1 = 1 })();`), "ReferenceError")
++		test(errorName(`(function(){ "use strict"; undeclaredStrict2 += 1 })();`), "ReferenceError")
++		test(errorName(`(function(){ "use strict"; for (undeclaredStrict3 in { a: 1 }) {} })();`), "ReferenceError")
++		test(`typeof undeclaredStrict1 + typeof undeclaredStrict3`, "undefinedundefined")
++		test(`(function(){ "use strict"; return typeof undeclaredStrict4 })()`, "undefined")
++		test(`(function(){ "use strict"; var declared; declared = 5; return declared })()`, 5)
++
++		// Code that isn't strict still creates a global variable.
++		test(`(function(){ undeclaredSloppy = 7 })(); undeclaredSloppy`, 7)
++
++		vm := New()
++		_, err := vm.Run(`"use strict"; notDeclaredAnywhere = 1;`)
++		require.Error(t, err)
++		require.True(t, strings.HasPrefix(err.Error(), "ReferenceError"), err.Error())
++		value, err := vm.Run(`typeof notDeclaredAnywhere`)
++		require.NoError(t, err)
++		require.Equal(t, "undefined", value.String())
++	})
++}
++
++func TestStrictMode_d193ed_FailedAssignment(t *testing.T) {
++	tt(t, func() {
++		test, _ := test()
++
++		test(strictErrorName(`Object.freeze({ a: 1 }).a = 2;`), "TypeError")
++		test(strictErrorName(`var o = {}; Object.defineProperty(o, "x", { value: 1 }); o.x = 2;`), "TypeError")
++		test(strictErrorName(`var o = { get x() { return 1 } }; o.x = 2;`), "TypeError")
++		test(strictErrorName(`var o = {}; Object.defineProperty(o, "x", { get: function(){ return 1 } }); o.x = 2;`), "TypeError")
++		test(strictErrorName(`Object.preventExtensions({}).y = 2;`), "TypeError")
++		test(strictErrorName(`var o = Object.create(Object.freeze({ inherited: 1 })); o.inherited = 2;`), "TypeError")
++		test(strictErrorName(`var o = Object.freeze({ a: 1 }); o["a"] += 1;`), "TypeError")
++		test(strictErrorName(`var o = Object.freeze({ n: 1 }); o.n++;`), "TypeError")
++		test(strictErrorName(`"abc".length = 1;`), "TypeError")
++		test(strictErrorName(`(5).x = 1;`), "TypeError")
++		test(strictErrorName(`"abc".x = 1;`), "TypeError")
++		test(strictErrorName(`true.x = 1;`), "TypeError")
++		test(strictErrorName(`NaN = 1;`), "TypeError")
++		test(strictErrorName(`undefined = 1;`), "TypeError")
++		test(strictErrorName(`Infinity = 1;`), "TypeError")
++		test(errorName(`(function self(){ "use strict"; self = 1; })();`), "TypeError")
++		test(`
++			(function(){
++				"use strict";
++				var seen;
++				Object.defineProperty(String.prototype, "assign", { set: function(v){ seen = [typeof this, v] }, configurable: true });
++				"abc".assign = 4;
++				delete String.prototype.assign;
++				return seen;
++			})()
++		`, "string,4")
++
++		// Code that isn't strict keeps failing silently.
++		test(`(function(){ var o = Object.freeze({ a: 1 }); o.a = 2; (5).x = 1; NaN = 1; return o.a })()`, 1)
++		test(`(function(){ var o = { get x() { return 1 } }; o.x = 2; return o.x })()`, 1)
++	})
++}
++
++func TestStrictMode_d193ed_Delete(t *testing.T) {
++	tt(t, func() {
++		test, _ := test()
++
++		test(strictErrorName(`delete Object.prototype;`), "TypeError")
++		test(strictErrorName(`delete Object.seal({ a: 1 }).a;`), "TypeError")
++		test(strictErrorName(`delete [].length;`), "TypeError")
++		test(strictErrorName(`var o = {}; Object.defineProperty(o, "x", { value: 1 }); delete o["x"];`), "TypeError")
++		test(`(function(){ "use strict"; var o = { a: 1 }; return [delete o.a, "a" in o, delete o.missing] })()`, "true,false,true")
++
++		test(`(function(){ return [delete Object.prototype, delete [].length] })()`, "false,false")
++	})
++}
++
++func TestStrictMode_d193ed_Eval(t *testing.T) {
++	tt(t, func() {
++		test, _ := test()
++
++		test(`(function(){ "use strict"; var x = 1; eval("var x = 2"); return x })()`, 1)
++		test(`(function(){ "use strict"; eval("var leaked = 2"); return typeof leaked })()`, "undefined")
++		test(`(function(){ "use strict"; eval("function leakedFn() {}"); return typeof leakedFn })()`, "undefined")
++		test(`(function(){ "use strict"; return eval("var own = 3; own + 1") })()`, 4)
++		test(`(function(){ "use strict"; var outer = 5; return eval("outer * 2") })()`, 10)
++		test(`(function(){ "use strict"; var outer = 5; eval("outer = 6"); return outer })()`, 6)
++		test(`(function(){ eval("'use strict'; var notLeaked = 1"); return typeof notLeaked })()`, "undefined")
++		test(`(function(){ var indirect = eval; indirect("'use strict'; var indirectStrictVar = 1"); return typeof indirectStrictVar })()`, "undefined")
++		test(`(function(){ "use strict"; return eval("(function(){ return typeof this })()") })()`, "undefined")
++		test(`(function(){ "use strict"; return eval("this") }).call(9)`, 9)
++		test(errorName(`(function(){ "use strict"; eval("undeclaredInEval = 1"); })();`), "ReferenceError")
++
++		// Eval in code that isn't strict still declares in the calling scope.
++		test(`(function(){ var x = 1; eval("var x = 2"); return x })()`, 2)
++		test(`(function(){ eval("var sloppyLeak = 2"); return typeof sloppyLeak })()`, "number")
++		test(`(function(){ var indirect = eval; indirect("var indirectSloppyVar = 1"); return typeof indirectSloppyVar })()`, "number")
++	})
++}
++
++func TestStrictMode_d193ed_SyntaxErrors(t *testing.T) {
++	tt(t, func() {
++		newRuntime := test
++		test, _ := newRuntime()
++
++		strictOnly := []string{
++			`"use strict"; with ({}) {}`,
++			`"use strict"; var x = 010;`,
++			`"use strict"; var x = "\07";`,
++			`"use strict"; var x = "\012";`,
++			`"use strict"; ({ 010: 1 });`,
++			`"use strict"; function f(a, a) {}`,
++			`function f(a, a) { "use strict"; }`,
++			`"use strict"; var eval = 1;`,
++			`"use strict"; var arguments;`,
++			`"use strict"; function eval() {}`,
++			`"use strict"; (function arguments() {});`,
++			`function eval() { "use strict"; }`,
++			`"use strict"; function f(eval) {}`,
++			`function f(arguments) { "use strict"; }`,
++			`"use strict"; try {} catch (eval) {}`,
++			`"use strict"; eval = 1;`,
++			`"use strict"; arguments += 1;`,
++			`"use strict"; eval++;`,
++			`"use strict"; --arguments;`,
++			`"use strict"; var x; delete x;`,
++			`"use strict"; delete (x);`,
++			`"use strict"; var implements;`,
++			`"use strict"; var interface = 1;`,
++			`"use strict"; function let() {}`,
++			`"use strict"; function f(package) {}`,
++			`"use strict"; private = 1;`,
++			`"use strict"; try {} catch (protected) {}`,
++			`"use strict"; var public, static;`,
++			`"use strict"; var yield;`,
++			`function f() { "use strict"; with ({}) {} }`,
++			`function f() { "use strict"; return function () { var x = 010 } }`,
++		}
++		for _, src := range strictOnly {
++			// Some of the code assigns to globals such as eval, so use a new runtime each time.
++			run, _ := newRuntime()
++			run(syntaxErrorName(src), "SyntaxError")
++			// The same code is fine once the directive is gone.
++			sloppy := strings.ReplaceAll(src, `"use strict";`, ``)
++			run(syntaxErrorName(sloppy), "none")
++		}
++
++		// Things strict mode code still allows.
++		test(syntaxErrorName(`"use strict"; var x = "\0"; var y = 0; var z = 0.5;`), "none")
++		test(syntaxErrorName(`"use strict"; var o = { implements: 1, eval: 2 }; o.implements = o.eval; delete o.eval;`), "none")
++		test(syntaxErrorName(`"use strict"; var f = function (a, b) { return eval("a") };`), "none")
++
++		// Code evaluated by a direct call to eval from strict mode code is strict.
++		test(errorName(`(function(){ "use strict"; eval("with ({}) {}") })();`), "SyntaxError")
++		test(errorName(`(function(){ "use strict"; eval("var x = 010") })();`), "SyntaxError")
++		test(`(function(){ "use strict"; var indirect = eval; return indirect("010") })()`, 8)
++
++		vm := New()
++		_, err := vm.Run(`"use strict"; with ({}) {}`)
++		require.Error(t, err)
++		_, err = vm.Compile("", `function f() { "use strict"; var eval; }`)
++		require.Error(t, err)
++		_, err = vm.Compile("", `function f() { var eval; with ({}) {} return 010 }`)
++		require.NoError(t, err)
++	})
++}
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 0000000..9e0b368
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,41 @@
++#!/usr/bin/env bash
++# Usage: ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  the existing tests of the otto, parser and ast packages.
++#   new   the strict mode tests.
++set -uo pipefail
++
++cd /app
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  OUTPUT_PATH="$2"
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++TEST_LOG="$(mktemp)"
++
++# go vet's tests analyzer rejects documentation_test.go (examples that refer
++# to unknown identifiers) with current Go versions, so it is turned off.
++case "$MODE" in
++  base)
++    go test -count=1 -vet=off -v -skip '^TestStrictMode_d193ed_' . ./parser ./ast 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    ;;
++  new)
++    go test -count=1 -vet=off -v -run '^TestStrictMode_d193ed_' . 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ]; then
++  go-junit-report -set-exit-code < "$TEST_LOG" > "$OUTPUT_PATH" || true
++fi
++
++exit "$STATUS"
