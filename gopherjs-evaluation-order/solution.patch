@@ -1,0 +1,386 @@
+diff --git a/compiler/expressions.go b/compiler/expressions.go
+index a2c65878..cb39218f 100644
+--- a/compiler/expressions.go
++++ b/compiler/expressions.go
+@@ -128,8 +128,47 @@ func (fc *funcContext) translateExpr(expr ast.Expr) *expression {
+ 			return fc.translateExpr(rewritten)
+ 		}
+ 
++		// Elements of a composite literal are evaluated in the order they are
++		// written, but keyed elements may end up in a different position. When
++		// that changes the order of their side effects, the elements are
++		// evaluated into temporary variables first.
++		var preEvaluated []string
++		evaluateInOrder := func(positions []int, elements []string, values []ast.Expr) {
++			last := -1
++			inOrder := true
++			for _, pos := range positions {
++				if !analysis.HasSideEffect(values[pos], fc.pkgCtx.Info.Info) {
++					continue
++				}
++				if pos < last {
++					inOrder = false
++					break
++				}
++				last = pos
++			}
++			if inOrder {
++				return
++			}
++			for _, pos := range positions {
++				if !analysis.HasSideEffect(values[pos], fc.pkgCtx.Info.Info) {
++					continue
++				}
++				v := fc.newLocalVariable("_elem")
++				preEvaluated = append(preEvaluated, fmt.Sprintf("%s = %s", v, elements[pos]))
++				elements[pos] = v
++			}
++		}
++		withPreEvaluated := func(expr *expression) *expression {
++			if len(preEvaluated) == 0 {
++				return expr
++			}
++			return fc.formatExpr("(%s, %s)", strings.Join(preEvaluated, ", "), expr)
++		}
++
+ 		collectIndexedElements := func(elementType types.Type) []string {
+ 			var elements []string
++			var values []ast.Expr
++			var positions []int
+ 			i := 0
+ 			zero := fc.translateExpr(fc.zeroValue(elementType)).String()
+ 			for _, element := range e.Elts {
+@@ -143,10 +182,14 @@ func (fc *funcContext) translateExpr(expr ast.Expr) *expression {
+ 				}
+ 				for len(elements) <= i {
+ 					elements = append(elements, zero)
++					values = append(values, nil)
+ 				}
+ 				elements[i] = fc.translateImplicitConversionWithCloning(element, elementType).String()
++				values[i] = element
++				positions = append(positions, i)
+ 				i++
+ 			}
++			evaluateInOrder(positions, elements, values)
+ 			return elements
+ 		}
+ 
+@@ -160,9 +203,9 @@ func (fc *funcContext) translateExpr(expr ast.Expr) *expression {
+ 			for len(elements) < int(t.Len()) {
+ 				elements = append(elements, zero)
+ 			}
+-			return fc.formatExpr(`$toNativeArray(%s, [%s])`, typeKind(t.Elem()), strings.Join(elements, ", "))
++			return withPreEvaluated(fc.formatExpr(`$toNativeArray(%s, [%s])`, typeKind(t.Elem()), strings.Join(elements, ", ")))
+ 		case *types.Slice:
+-			return fc.formatExpr("new %s([%s])", fc.typeName(exprType), strings.Join(collectIndexedElements(t.Elem()), ", "))
++			return withPreEvaluated(fc.formatExpr("new %s([%s])", fc.typeName(exprType), strings.Join(collectIndexedElements(t.Elem()), ", ")))
+ 		case *types.Map:
+ 			entries := make([]string, len(e.Elts))
+ 			for i, element := range e.Elts {
+@@ -182,6 +225,8 @@ func (fc *funcContext) translateExpr(expr ast.Expr) *expression {
+ 				}
+ 			}
+ 			if isKeyValue {
++				values := make([]ast.Expr, len(elements))
++				var positions []int
+ 				for i := range elements {
+ 					elements[i] = fc.translateExpr(fc.zeroValue(fc.fieldType(t, i))).String()
+ 				}
+@@ -190,12 +235,15 @@ func (fc *funcContext) translateExpr(expr ast.Expr) *expression {
+ 					for j := range elements {
+ 						if kve.Key.(*ast.Ident).Name == t.Field(j).Name() {
+ 							elements[j] = fc.translateImplicitConversionWithCloning(kve.Value, fc.fieldType(t, j)).String()
++							values[j] = kve.Value
++							positions = append(positions, j)
+ 							break
+ 						}
+ 					}
+ 				}
++				evaluateInOrder(positions, elements, values)
+ 			}
+-			return fc.formatExpr("new %s.ptr(%s)", fc.typeName(exprType), strings.Join(elements, ", "))
++			return withPreEvaluated(fc.formatExpr("new %s.ptr(%s)", fc.typeName(exprType), strings.Join(elements, ", ")))
+ 		default:
+ 			panic(fmt.Sprintf("Unhandled CompositeLit type: %[1]T %[1]v\n", t))
+ 		}
+@@ -874,6 +922,23 @@ func (fc *funcContext) translateExpr(expr ast.Expr) *expression {
+ }
+ 
+ func (fc *funcContext) translateCall(e *ast.CallExpr, sig *types.Signature, fun *expression) *expression {
++	if analysis.HasSideEffect(e.Fun, fc.pkgCtx.Info.Info) {
++		hoisted := false
++		for _, arg := range e.Args {
++			hoisted = hoisted || fc.isHoisted(arg)
++		}
++		if len(e.Args) == 1 {
++			_, isTuple := fc.typeOf(e.Args[0]).(*types.Tuple)
++			hoisted = hoisted || isTuple
++		}
++		if hoisted {
++			// Some of the arguments are evaluated ahead of the call, but the
++			// function value must be evaluated before them.
++			funVar := fc.newLocalVariable("_fun")
++			fc.Printf("%s = %s;", funVar, fc.translateExpr(e.Fun))
++			fun = fc.formatExpr("%s", funVar)
++		}
++	}
+ 	args := fc.translateArgs(sig, e.Args, e.Ellipsis.IsValid())
+ 	if fc.Blocking[e] {
+ 		resumeCase := fc.caseCounter
+diff --git a/compiler/statements.go b/compiler/statements.go
+index 28e421e4..efefb543 100644
+--- a/compiler/statements.go
++++ b/compiler/statements.go
+@@ -198,11 +198,12 @@ func (fc *funcContext) translateStmt(stmt ast.Stmt, label *types.Label) {
+ 			runeVar := fc.newLocalVariable("_rune")
+ 			fc.translateLoopingStmt(func() string { return iVar + " < " + refVar + ".length" }, s.Body, func() {
+ 				fc.Printf("%s = $decodeRune(%s, %s);", runeVar, refVar, iVar)
++				value := fc.evaluateRangeValueOperands(s)
+ 				if !isBlank(s.Key) {
+ 					fc.Printf("%s", fc.translateAssign(s.Key, fc.newIdent(iVar, types.Typ[types.Int]), s.Tok == token.DEFINE))
+ 				}
+-				if !isBlank(s.Value) {
+-					fc.Printf("%s", fc.translateAssign(s.Value, fc.newIdent(runeVar+"[0]", types.Typ[types.Rune]), s.Tok == token.DEFINE))
++				if !isBlank(value) {
++					fc.Printf("%s", fc.translateAssign(value, fc.newIdent(runeVar+"[0]", types.Typ[types.Rune]), s.Tok == token.DEFINE))
+ 				}
+ 			}, func() {
+ 				fc.Printf("%s += %s[1];", iVar, runeVar)
+@@ -225,11 +226,12 @@ func (fc *funcContext) translateStmt(stmt ast.Stmt, label *types.Label) {
+ 					Cond: fc.newIdent(entryVar+" === undefined", types.Typ[types.Bool]),
+ 					Body: &ast.BlockStmt{List: []ast.Stmt{&ast.BranchStmt{Tok: token.CONTINUE}}},
+ 				}, nil)
++				value := fc.evaluateRangeValueOperands(s)
+ 				if !isBlank(s.Key) {
+ 					fc.Printf("%s", fc.translateAssign(s.Key, fc.newIdent(entryVar+".k", t.Key()), s.Tok == token.DEFINE))
+ 				}
+-				if !isBlank(s.Value) {
+-					fc.Printf("%s", fc.translateAssign(s.Value, fc.newIdent(entryVar+".v", t.Elem()), s.Tok == token.DEFINE))
++				if !isBlank(value) {
++					fc.Printf("%s", fc.translateAssign(value, fc.newIdent(entryVar+".v", t.Elem()), s.Tok == token.DEFINE))
+ 				}
+ 			}, func() {
+ 				fc.Printf("%s++;", iVar)
+@@ -252,11 +254,12 @@ func (fc *funcContext) translateStmt(stmt ast.Stmt, label *types.Label) {
+ 			iVar := fc.newLocalVariable("_i")
+ 			fc.Printf("%s = 0;", iVar)
+ 			fc.translateLoopingStmt(func() string { return iVar + " < " + length }, s.Body, func() {
++				value := fc.evaluateRangeValueOperands(s)
+ 				if !isBlank(s.Key) {
+ 					fc.Printf("%s", fc.translateAssign(s.Key, fc.newIdent(iVar, types.Typ[types.Int]), s.Tok == token.DEFINE))
+ 				}
+-				if !isBlank(s.Value) {
+-					fc.Printf("%s", fc.translateAssign(s.Value, fc.setType(&ast.IndexExpr{
++				if !isBlank(value) {
++					fc.Printf("%s", fc.translateAssign(value, fc.setType(&ast.IndexExpr{
+ 						X:     fc.newIdent(refVar, t),
+ 						Index: fc.newIdent(iVar, types.Typ[types.Int]),
+ 					}, elemType), s.Tok == token.DEFINE))
+@@ -384,30 +387,45 @@ func (fc *funcContext) translateStmt(stmt ast.Stmt, label *types.Label) {
+ 				fc.Printf("$unused(%s);", fc.translateImplicitConversion(s.Rhs[0], fc.typeOf(s.Lhs[0])))
+ 				return
+ 			}
++			if _, isIdent := lhs.(*ast.Ident); !isIdent && analysis.HasSideEffect(s.Rhs[0], fc.pkgCtx.Info.Info) {
++				// The right-hand side must be evaluated before the assignment itself
++				// takes place, which may panic, e.g. on an out of range index.
++				lhs = fc.evaluateAssignOperands(lhs)
++				tmpVar := fc.newLocalVariable("_tmp")
++				fc.Printf("%s", fc.translateAssign(fc.newIdent(tmpVar, fc.typeOf(lhs)), s.Rhs[0], true))
++				fc.Printf("%s", fc.translateAssign(lhs, fc.newIdent(tmpVar, fc.typeOf(lhs)), s.Tok == token.DEFINE))
++				return
++			}
+ 			fc.Printf("%s", fc.translateAssign(lhs, s.Rhs[0], s.Tok == token.DEFINE))
+ 
+ 		case len(s.Lhs) > 1 && len(s.Rhs) == 1:
++			lhsList := make([]ast.Expr, len(s.Lhs))
++			for i, lhs := range s.Lhs {
++				lhsList[i] = fc.evaluateAssignOperands(lhs)
++			}
+ 			tupleVar := fc.newLocalVariable("_tuple")
+ 			fc.Printf("%s = %s;", tupleVar, fc.translateExpr(s.Rhs[0]))
+ 			tuple := fc.typeOf(s.Rhs[0]).(*types.Tuple)
+-			for i, lhs := range s.Lhs {
+-				lhs = astutil.RemoveParens(lhs)
++			for i, lhs := range lhsList {
+ 				if !isBlank(lhs) {
+ 					fc.Printf("%s", fc.translateAssign(lhs, fc.newIdent(fmt.Sprintf("%s[%d]", tupleVar, i), tuple.At(i).Type()), s.Tok == token.DEFINE))
+ 				}
+ 			}
+ 		case len(s.Lhs) == len(s.Rhs):
++			lhsList := make([]ast.Expr, len(s.Lhs))
++			for i, lhs := range s.Lhs {
++				lhsList[i] = fc.evaluateAssignOperands(lhs)
++			}
+ 			tmpVars := make([]string, len(s.Rhs))
+ 			for i, rhs := range s.Rhs {
+ 				tmpVars[i] = fc.newLocalVariable("_tmp")
+-				if isBlank(astutil.RemoveParens(s.Lhs[i])) {
++				if isBlank(lhsList[i]) {
+ 					fc.Printf("$unused(%s);", fc.translateExpr(rhs))
+ 					continue
+ 				}
+ 				fc.Printf("%s", fc.translateAssign(fc.newIdent(tmpVars[i], fc.typeOf(s.Lhs[i])), rhs, true))
+ 			}
+-			for i, lhs := range s.Lhs {
+-				lhs = astutil.RemoveParens(lhs)
++			for i, lhs := range lhsList {
+ 				if !isBlank(lhs) {
+ 					fc.Printf("%s", fc.translateAssign(lhs, fc.newIdent(tmpVars[i], fc.typeOf(lhs)), s.Tok == token.DEFINE))
+ 				}
+@@ -705,12 +723,15 @@ func (fc *funcContext) translateAssign(lhs, rhs ast.Expr, define bool) string {
+ 			if typesutil.IsJsObject(fc.typeOf(l.Index)) {
+ 				fc.pkgCtx.errList = append(fc.pkgCtx.errList, types.Error{Fset: fc.pkgCtx.fileSet, Pos: l.Index.Pos(), Msg: "cannot use js.Object as map key"})
+ 			}
++			mapVar := fc.newLocalVariable("_map")
+ 			keyVar := fc.newLocalVariable("_key")
+ 			return fmt.Sprintf(
+-				`%s = %s; (%s || $throwRuntimeError("assignment to entry in nil map")).set(%s.keyFor(%s), { k: %s, v: %s });`,
++				`%s = %s; %s = %s; (%s || $throwRuntimeError("assignment to entry in nil map")).set(%s.keyFor(%s), { k: %s, v: %s });`,
++				mapVar,
++				fc.translateExpr(l.X),
+ 				keyVar,
+ 				fc.translateImplicitConversionWithCloning(l.Index, t.Key()),
+-				fc.translateExpr(l.X),
++				mapVar,
+ 				fc.typeName(t.Key()),
+ 				keyVar,
+ 				keyVar,
+@@ -773,6 +794,71 @@ func (fc *funcContext) translateAssign(lhs, rhs ast.Expr, define bool) string {
+ 	}
+ }
+ 
++// evaluateAssignOperands evaluates the operands of index expressions and
++// pointer indirections of an assignment's left-hand side into temporary
++// variables and returns an equivalent expression that refers to them.
++//
++// The Go spec requires an assignment to take place in two phases: first all
++// such operands on the left and the expressions on the right are evaluated in
++// the usual order, then the assignments are carried out left to right. For
++// example, in `i, x[i] = 1, 2` the element is chosen with the old value of i.
++func (fc *funcContext) evaluateAssignOperands(lhs ast.Expr) ast.Expr {
++	lhs = astutil.RemoveParens(lhs)
++	capture := func(e ast.Expr) ast.Expr {
++		if fc.pkgCtx.Types[e].Value != nil {
++			return e // Constants can't change.
++		}
++		v := fc.newLocalVariable("_operand")
++		// Map keys are values, so a struct or array key must be copied.
++		fc.Printf("%s = %s;", v, fc.translateImplicitConversionWithCloning(e, fc.typeOf(e)))
++		return fc.newIdent(v, fc.typeOf(e))
++	}
++
++	switch l := lhs.(type) {
++	case *ast.IndexExpr:
++		var x ast.Expr
++		if _, isArray := fc.typeOf(l.X).Underlying().(*types.Array); isArray {
++			// The array is itself a variable, which may only have operands of its own.
++			x = fc.evaluateAssignOperands(l.X)
++		} else {
++			x = capture(l.X)
++		}
++		return fc.setType(&ast.IndexExpr{X: x, Index: capture(l.Index)}, fc.typeOf(l))
++	case *ast.StarExpr:
++		return fc.setType(&ast.StarExpr{X: capture(l.X)}, fc.typeOf(l))
++	case *ast.SelectorExpr:
++		sel, ok := fc.selectionOf(l)
++		if !ok || sel.Kind() != types.FieldVal {
++			return l // Qualified identifier.
++		}
++		if _, jsTag := fc.translateSelection(sel, l.Pos()); jsTag != "" {
++			return l
++		}
++		var x ast.Expr
++		if _, isPtr := fc.typeOf(l.X).Underlying().(*types.Pointer); isPtr {
++			x = capture(l.X)
++		} else {
++			x = fc.evaluateAssignOperands(l.X)
++		}
++		newSel := &ast.SelectorExpr{X: x, Sel: l.Sel}
++		fc.setType(newSel, fc.typeOf(l))
++		fc.pkgCtx.additionalSelections[newSel] = sel
++		return newSel
++	default:
++		return lhs
++	}
++}
++
++// evaluateRangeValueOperands returns the value expression of a range
++// statement, with its operands evaluated before the key is assigned when the
++// statement assigns to existing variables.
++func (fc *funcContext) evaluateRangeValueOperands(s *ast.RangeStmt) ast.Expr {
++	if s.Tok == token.DEFINE || isBlank(s.Key) || isBlank(s.Value) {
++		return s.Value
++	}
++	return fc.evaluateAssignOperands(s.Value)
++}
++
+ func (fc *funcContext) translateResults(results []ast.Expr) string {
+ 	tuple := fc.typeResolver.Substitute(fc.sig.Sig.Results()).(*types.Tuple)
+ 	switch tuple.Len() {
+diff --git a/compiler/utils.go b/compiler/utils.go
+index 0c464ea0..911c3282 100644
+--- a/compiler/utils.go
++++ b/compiler/utils.go
+@@ -148,6 +148,33 @@ func (fc *funcContext) expandTupleArgs(argExprs []ast.Expr) []ast.Expr {
+ 	return argExprs
+ }
+ 
++// isHoisted reports whether translating the expression emits statements that
++// are evaluated ahead of the expression it is a part of. This is the case for
++// blocking calls and for calls whose arguments are the results of a
++// multi-value call.
++func (fc *funcContext) isHoisted(expr ast.Expr) bool {
++	hoisted := false
++	ast.Inspect(expr, func(n ast.Node) bool {
++		switch n := n.(type) {
++		case nil:
++			return false
++		case *ast.FuncLit:
++			return false
++		case *ast.CallExpr:
++			if len(n.Args) == 1 {
++				if _, isTuple := fc.typeOf(n.Args[0]).(*types.Tuple); isTuple {
++					hoisted = true
++				}
++			}
++		}
++		if e, ok := n.(ast.Expr); ok && fc.Blocking[e] {
++			hoisted = true
++		}
++		return !hoisted
++	})
++	return hoisted
++}
++
+ func (fc *funcContext) translateArgs(sig *types.Signature, argExprs []ast.Expr, ellipsis bool) []string {
+ 	argExprs = fc.expandTupleArgs(argExprs)
+ 
+@@ -159,7 +186,7 @@ func (fc *funcContext) translateArgs(sig *types.Signature, argExprs []ast.Expr,
+ 
+ 	preserveOrder := false
+ 	for i := 1; i < len(argExprs); i++ {
+-		preserveOrder = preserveOrder || fc.Blocking[argExprs[i]]
++		preserveOrder = preserveOrder || fc.isHoisted(argExprs[i])
+ 	}
+ 
+ 	args := make([]string, len(argExprs))
+diff --git a/tests/gorepo/run.go b/tests/gorepo/run.go
+index d1da73b1..faa05586 100644
+--- a/tests/gorepo/run.go
++++ b/tests/gorepo/run.go
+@@ -90,7 +90,6 @@ var knownFails = map[string]failReason{
+ 	// These are new tests in Go 1.11.
+ 	"fixedbugs/issue21221.go": {category: usesUnsupportedPackage, desc: "uses unsafe package and compares nil pointers"},
+ 	"fixedbugs/issue22662.go": {desc: "line directives not fully working. Error: got /private/var/folders/b8/66r1c5856mqds1mrf2tjtq8w0000gn/T:1; want ??:1"},
+-	"fixedbugs/issue23188.go": {desc: "incorrect order of evaluation of index operations"},
+ 	"fixedbugs/issue24547.go": {desc: "incorrect computing method sets with shadowed methods"},
+ 
+ 	// These are new tests in Go 1.12.
+@@ -141,7 +140,6 @@ var knownFails = map[string]failReason{
+ 
+ 	// These are new tests in Go 1.19
+ 	"typeparam/issue51521.go": {category: lowLevelRuntimeDifference, desc: "different panic message when calling a method on nil interface"},
+-	"fixedbugs/issue50672.go": {category: other, desc: "https://github.com/gopherjs/gopherjs/issues/1271"},
+ 	"fixedbugs/issue53653.go": {category: lowLevelRuntimeDifference, desc: "GopherJS println format of int64 is different from Go's"},
+ 
+ 	// These are new tests in Go 1.20

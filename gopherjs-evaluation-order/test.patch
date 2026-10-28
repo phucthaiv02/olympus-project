@@ -1,0 +1,422 @@
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 00000000..18a71d12
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,68 @@
++#!/usr/bin/env bash
++# Usage: ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  the compiler's Go unit tests, plus the GopherJS test suite and a set
++#         of standard library packages compiled and run with GopherJS.
++#   new   the evaluation order tests compiled and run with GopherJS.
++set -uo pipefail
++
++cd /app
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  OUTPUT_PATH="$2"
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++TEST_LOG="$(mktemp)"
++STATUS=0
++
++# The gopherjs build cache isn't keyed on the compiler itself, so start every
++# run from an empty cache to make sure all packages are compiled by the
++# current compiler.
++export XDG_CACHE_HOME="$(mktemp -d)"
++
++run() {
++  "$@" 2>&1 | tee -a "$TEST_LOG"
++  status=${PIPESTATUS[0]}
++  if [ "$status" -ne 0 ]; then
++    STATUS=$status
++  fi
++}
++
++# Run the compiler straight from the sources in /app rather than a previously
++# installed binary, also for the tests that invoke `gopherjs` themselves.
++BIN_DIR="$(mktemp -d)"
++cat > "$BIN_DIR/gopherjs" <<'SH'
++#!/usr/bin/env bash
++exec go run github.com/gopherjs/gopherjs "$@"
++SH
++chmod +x "$BIN_DIR/gopherjs"
++export PATH="$BIN_DIR:$PATH"
++
++case "$MODE" in
++  base)
++    # Test_JSSourceMap_* compare stack traces against paths of a GOPATH-style
++    # checkout and can't pass with the sources in /app. tests/gorepo runs the
++    # upstream Go test suite, which isn't part of this module's quick checks.
++    run go test -count=1 -v -skip '^Test_JSSourceMap_' $(go list ./... | grep -v /tests/gorepo)
++    run gopherjs test -v --short ./tests fmt log reflect sort strings bytes \
++      strconv errors unicode/utf8 container/list sync/atomic encoding/binary \
++      encoding/json
++    ;;
++  new)
++    run gopherjs test -v ./tests/evalorder
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ]; then
++  go-junit-report -set-exit-code < "$TEST_LOG" > "$OUTPUT_PATH" || true
++fi
++
++exit "$STATUS"
+diff --git a/tests/evalorder/evalorder_test.go b/tests/evalorder/evalorder_test.go
+new file mode 100644
+index 00000000..92732125
+--- /dev/null
++++ b/tests/evalorder/evalorder_test.go
+@@ -0,0 +1,342 @@
++// Package evalorder tests that expressions are evaluated in the order
++// required by the Go specification.
++package evalorder
++
++import (
++	"fmt"
++	"reflect"
++	"strings"
++	"testing"
++)
++
++type recorder struct{ events []string }
++
++func (r *recorder) val(name string, v int) int {
++	r.events = append(r.events, name)
++	return v
++}
++
++func (r *recorder) slice(name string, s []int) []int {
++	r.events = append(r.events, name)
++	return s
++}
++
++func (r *recorder) mapOf(name string, m map[int]int) map[int]int {
++	r.events = append(r.events, name)
++	return m
++}
++
++func (r *recorder) pair(name string, a, b int) (int, int) {
++	r.events = append(r.events, name)
++	return a, b
++}
++
++func (r *recorder) fn(name string) func(int, int) int {
++	r.events = append(r.events, name)
++	return func(a, b int) int {
++		r.events = append(r.events, fmt.Sprintf("call(%d,%d)", a, b))
++		return a + b
++	}
++}
++
++func (r *recorder) check(t *testing.T, want ...string) {
++	t.Helper()
++	if !reflect.DeepEqual(r.events, want) {
++		t.Errorf("evaluation order: got [%s], want [%s]", strings.Join(r.events, " "), strings.Join(want, " "))
++	}
++	r.events = nil
++}
++
++func expectPanic(t *testing.T, f func()) {
++	t.Helper()
++	defer func() {
++		if recover() == nil {
++			t.Errorf("expected a panic")
++		}
++	}()
++	f()
++}
++
++func TestEvalOrderMultiAssignOperands(t *testing.T) {
++	r := &recorder{}
++	a, b := []int{0, 0}, []int{0, 0}
++	r.slice("a", a)[r.val("i", 0)], r.slice("b", b)[r.val("j", 1)] = r.val("x", 1), r.val("y", 2)
++	r.check(t, "a", "i", "b", "j", "x", "y")
++	if a[0] != 1 || b[1] != 2 {
++		t.Errorf("a = %v, b = %v", a, b)
++	}
++
++	m := map[int]int{}
++	r.mapOf("m", m)[r.val("k", 1)], a[r.val("i", 1)] = r.val("x", 10), r.val("y", 20)
++	r.check(t, "m", "k", "i", "x", "y")
++	if m[1] != 10 || a[1] != 20 {
++		t.Errorf("m = %v, a = %v", m, a)
++	}
++}
++
++func TestEvalOrderMultiAssignUsesOldValues(t *testing.T) {
++	xs := []int{1, 2, 3}
++	i := 0
++	i, xs[i] = 1, 9
++	if i != 1 || !reflect.DeepEqual(xs, []int{9, 2, 3}) {
++		t.Errorf("i, xs[i] = 1, 9: got i = %d, xs = %v", i, xs)
++	}
++
++	type T struct{ i int }
++	var x T
++	p := &x
++	p, p.i = new(T), 4
++	if p.i != 0 || x.i != 4 {
++		t.Errorf("p, p.i = new(T), 4: got p.i = %d, x.i = %d; want 0, 4", p.i, x.i)
++	}
++
++	q := &x
++	q, *q = &T{7}, T{5}
++	if q.i != 7 || x.i != 5 {
++		t.Errorf("q, *q = &T{7}, T{5}: got q.i = %d, x.i = %d; want 7, 5", q.i, x.i)
++	}
++
++	s := []*int{new(int), new(int), new(int)}
++	last := s[2]
++	del := 1
++	s, s[len(s)-1] = append(s[:del], s[del+1:]...), nil
++	if len(s) != 2 || s[1] != last {
++		t.Errorf("slice delete trick: got len %d, s[1] == last is %v", len(s), s[1] == last)
++	}
++
++	arr := [3]int{}
++	pa := &arr
++	j := 0
++	pa[j], j = 7, 2
++	if j != 2 || arr != [3]int{7, 0, 0} {
++		t.Errorf("pa[j], j = 7, 2: got j = %d, arr = %v", j, arr)
++	}
++	j, pa[j] = 1, 8
++	if j != 1 || arr != [3]int{7, 0, 8} {
++		t.Errorf("j, pa[j] = 1, 8: got j = %d, arr = %v", j, arr)
++	}
++
++	type key struct{ n int }
++	k := key{1}
++	km := map[key]int{}
++	k, km[k] = key{2}, 5
++	if _, ok := km[key{1}]; !ok || len(km) != 1 {
++		t.Errorf("k, km[k] = key{2}, 5: got %v, want the old key", km)
++	}
++}
++
++func TestEvalOrderTupleAssign(t *testing.T) {
++	r := &recorder{}
++	xs := []int{0, 0, 0}
++	i := 0
++	i, xs[i] = r.pair("pair", 2, 7)
++	if i != 2 || !reflect.DeepEqual(xs, []int{7, 0, 0}) {
++		t.Errorf("i, xs[i] = pair(): got i = %d, xs = %v", i, xs)
++	}
++	r.check(t, "pair")
++
++	xs[r.val("idx", 1)], i = r.pair("pair", 5, 0)
++	r.check(t, "idx", "pair")
++	if xs[1] != 5 || i != 0 {
++		t.Errorf("xs[idx()], i = pair(): got xs = %v, i = %d", xs, i)
++	}
++
++	m := map[int]int{}
++	var ok bool
++	r.mapOf("m", m)[r.val("k", 3)], ok = r.val("v", 4), true
++	r.check(t, "m", "k", "v")
++	if m[3] != 4 || !ok {
++		t.Errorf("m = %v, ok = %v", m, ok)
++	}
++}
++
++func TestEvalOrderRangeAssign(t *testing.T) {
++	xs := []int{0, 0}
++	i := 0
++	for i, xs[i] = range []int{5, 6} {
++	}
++	if i != 1 || !reflect.DeepEqual(xs, []int{6, 0}) {
++		t.Errorf("range over slice: got i = %d, xs = %v; want 1, [6 0]", i, xs)
++	}
++
++	ys := make([]rune, 3)
++	j := 0
++	for j, ys[j] = range "abc" {
++	}
++	if j != 2 || string(ys[:2]) != "bc" || ys[2] != 0 {
++		t.Errorf("range over string: got j = %d, ys = %q; want 2, \"bc\\x00\"", j, string(ys))
++	}
++
++	var arr [2]int
++	k := 1
++	for k, arr[k] = range [2]int{3, 4} {
++	}
++	if k != 1 || arr != [2]int{4, 3} {
++		t.Errorf("range over array: got k = %d, arr = %v; want 1, [4 3]", k, arr)
++	}
++
++	zs := []int{0, 0, 0}
++	n := 2
++	for n, zs[n] = range map[int]int{0: 9} {
++	}
++	if n != 0 || !reflect.DeepEqual(zs, []int{0, 0, 9}) {
++		t.Errorf("range over map: got n = %d, zs = %v; want 0, [0 0 9]", n, zs)
++	}
++}
++
++func TestEvalOrderMapElementAssign(t *testing.T) {
++	r := &recorder{}
++	m := map[int]int{}
++	r.mapOf("m", m)[r.val("k", 1)] = r.val("v", 2)
++	r.check(t, "m", "k", "v")
++	r.mapOf("m", m)[r.val("k", 2)] = 3
++	r.check(t, "m", "k")
++	if m[1] != 2 || m[2] != 3 {
++		t.Errorf("m = %v", m)
++	}
++}
++
++func TestEvalOrderPanicsAfterOperands(t *testing.T) {
++	r := &recorder{}
++	var empty []int
++	expectPanic(t, func() { empty[r.val("i", 5)] = r.val("v", 1) })
++	r.check(t, "i", "v")
++
++	var nilMap map[int]int
++	expectPanic(t, func() { nilMap[r.val("k", 1)] = r.val("v", 2) })
++	r.check(t, "k", "v")
++
++	var arr [2]int
++	idx := 3
++	expectPanic(t, func() { arr[idx] = r.val("v", 1) })
++	r.check(t, "v")
++
++	type T struct{ f int }
++	var p *T
++	expectPanic(t, func() { p.f = r.val("v", 1) })
++	r.check(t, "v")
++
++	xs := []int{1}
++	expectPanic(t, func() { xs[r.val("i", 0)], empty[r.val("j", 2)] = r.val("x", 7), r.val("y", 8) })
++	r.check(t, "i", "j", "x", "y")
++	if xs[0] != 7 {
++		t.Errorf("assignments before the failing one must be carried out: xs = %v", xs)
++	}
++}
++
++type adder struct{ r *recorder }
++
++func (a adder) add(x, y int) int {
++	a.r.events = append(a.r.events, "add")
++	return x + y
++}
++
++func (r *recorder) adder(name string) adder {
++	r.events = append(r.events, name)
++	return adder{r}
++}
++
++func TestEvalOrderFunctionBeforeTupleArguments(t *testing.T) {
++	r := &recorder{}
++	if got := r.fn("f")(r.pair("pair", 1, 2)); got != 3 {
++		t.Errorf("got %d, want 3", got)
++	}
++	r.check(t, "f", "pair", "call(1,2)")
++
++	if got := r.adder("recv").add(r.pair("pair", 3, 4)); got != 7 {
++		t.Errorf("got %d, want 7", got)
++	}
++	r.check(t, "recv", "pair", "add")
++
++	fs := []func(int, int) int{func(a, b int) int { return a * b }}
++	if got := fs[r.val("index", 0)](r.pair("pair", 3, 4)); got != 12 {
++		t.Errorf("got %d, want 12", got)
++	}
++	r.check(t, "index", "pair")
++
++	if got := r.fn("f")(r.fn("g")(r.pair("pair", 1, 1)), r.val("x", 5)); got != 7 {
++		t.Errorf("got %d, want 7", got)
++	}
++	r.check(t, "f", "g", "pair", "call(1,1)", "x", "call(2,5)")
++}
++
++type point struct{ x, y, z int }
++
++func TestEvalOrderCompositeLiterals(t *testing.T) {
++	r := &recorder{}
++	p := point{z: r.val("z", 3), x: r.val("x", 1), y: r.val("y", 2)}
++	r.check(t, "z", "x", "y")
++	if p != (point{1, 2, 3}) {
++		t.Errorf("p = %v", p)
++	}
++
++	pp := &point{y: r.val("y", 2), x: r.val("x", 1)}
++	r.check(t, "y", "x")
++	if *pp != (point{1, 2, 0}) {
++		t.Errorf("*pp = %v", *pp)
++	}
++
++	s := []int{2: r.val("a", 1), 0: r.val("b", 2), r.val("c", 3)}
++	r.check(t, "a", "b", "c")
++	if !reflect.DeepEqual(s, []int{2, 3, 1}) {
++		t.Errorf("s = %v", s)
++	}
++
++	a := [4]int{3: r.val("a", 1), 1: r.val("b", 2)}
++	r.check(t, "a", "b")
++	if a != [4]int{0, 2, 0, 1} {
++		t.Errorf("a = %v", a)
++	}
++
++	nested := []point{{y: r.val("y1", 1), x: r.val("x1", 2)}, {z: r.val("z2", 3), x: r.val("x2", 4)}}
++	r.check(t, "y1", "x1", "z2", "x2")
++	if nested[0] != (point{2, 1, 0}) || nested[1] != (point{4, 0, 3}) {
++		t.Errorf("nested = %v", nested)
++	}
++}
++
++func (r *recorder) recv(name string, c chan int) int {
++	r.events = append(r.events, name)
++	return <-c
++}
++
++func (r *recorder) pairRecv(name string, c chan int) (int, int) {
++	r.events = append(r.events, name)
++	return <-c, <-c
++}
++
++func TestEvalOrderWithBlockingCalls(t *testing.T) {
++	r := &recorder{}
++	c := make(chan int, 4)
++
++	xs, ys := []int{0, 0}, []int{0, 0}
++	c <- 5
++	r.slice("xs", xs)[r.val("i", 0)], r.slice("ys", ys)[r.val("j", 1)] = r.recv("recv", c), r.val("v", 6)
++	r.check(t, "xs", "i", "ys", "j", "recv", "v")
++	if xs[0] != 5 || ys[1] != 6 {
++		t.Errorf("xs = %v, ys = %v", xs, ys)
++	}
++
++	m := map[int]int{}
++	c <- 7
++	r.mapOf("m", m)[r.val("k", 1)] = r.recv("recv", c)
++	r.check(t, "m", "k", "recv")
++	if m[1] != 7 {
++		t.Errorf("m = %v", m)
++	}
++
++	c <- 1
++	c <- 2
++	if got := r.fn("f")(r.pairRecv("pair", c)); got != 3 {
++		t.Errorf("got %d, want 3", got)
++	}
++	r.check(t, "f", "pair", "call(1,2)")
++
++	i := 0
++	c <- 9
++	i, xs[i] = 1, r.recv("recv", c)
++	if i != 1 || xs[0] != 9 {
++		t.Errorf("i, xs[i] = 1, <-c: got i = %d, xs = %v", i, xs)
++	}
++	r.check(t, "recv")
++}
