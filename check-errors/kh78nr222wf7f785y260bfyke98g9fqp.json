@@ -1,0 +1,768 @@
+{
+  "prechecks": [
+    {
+      "_creationTime": 1792404131601.7842,
+      "_id": "ms70qj0vhas4ggresbvwqf7c1d8gjm25",
+      "checks": [
+        {
+          "_creationTime": 1792404133862.649,
+          "_id": "jn79czfd2pcm1tpazhbv517aeh8gkhhw",
+          "completedAt": 1792404133862,
+          "details": {
+            "canonicalKey": "gopherjs/gopherjs",
+            "checks": {
+              "activeMaintenance": "pass",
+              "benchmarkRepo": "pass",
+              "language": "pass",
+              "license": "pass",
+              "stars": "pass",
+              "validCommit": "pass"
+            },
+            "commitHash": "490705b1d6fc7d5bd9202ac41888e146183328eb",
+            "identityExempt": false,
+            "isFork": false,
+            "lineageKeys": [
+              "gopherjs/gopherjs"
+            ],
+            "owner": "gopherjs",
+            "repo": "gopherjs",
+            "repoInfo": {
+              "language": "go",
+              "license": "bsd-2-clause",
+              "stars": 13190
+            }
+          },
+          "key": "repository_compliance",
+          "message": "Repository gopherjs/gopherjs meets all compliance requirements",
+          "name": "Repository meets compliance requirements (500+ stars, permissive license, active maintenance)",
+          "stageRunId": "ms70qj0vhas4ggresbvwqf7c1d8gjm25",
+          "status": "pass"
+        }
+      ],
+      "completedAt": 1792404134043,
+      "inputsHash": "f27c479b698bdace481b6dd0b13c9b0160de78a0adb88a23c13d82ef0351b421",
+      "itemId": "kh78nr222wf7f785y260bfyke98g9fqp",
+      "stageId": "github_setup",
+      "stageName": "GitHub Repository",
+      "status": "pass",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd74f95s5dvggpbqac8wv13np98g8e03"
+    },
+    {
+      "_creationTime": 1792404131601.7844,
+      "_id": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+      "checks": [
+        {
+          "_creationTime": 1792404134233.3848,
+          "_id": "jn76sm93x8e704g18wcdq49my58gj5kn",
+          "completedAt": 1792404134233,
+          "details": {
+            "emdashes": 0,
+            "hardwrappedParagraphs": 0,
+            "wallOfText": 0,
+            "wordCount": 370
+          },
+          "key": "description_formatting",
+          "name": "Problem description doesn't look AI-generated (line wrapping, em-dashes)",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404134233.4412,
+          "_id": "jn74gcm4kg5zj5m2hagcnbwhgx8gjbht",
+          "completedAt": 1792404134233,
+          "details": {
+            "maxWords": 1000,
+            "wordCount": 381
+          },
+          "key": "description_word_count",
+          "message": "Word count: 381/1000",
+          "name": "Problem description stays within the hard word cap (pass ≤1000 words, fail >1000)",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404134233.4846,
+          "_id": "jn7c92cb8zwjajdg232ny521ed8gjvzt",
+          "completedAt": 1792404134233,
+          "details": {
+            "patchField": "testPatch"
+          },
+          "key": "valid_test_patch",
+          "message": "Patch has valid git diff syntax",
+          "name": "Test patch applies correctly",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404134233.5405,
+          "_id": "jn79sm2ndxqwrhjhenzfrrdx318gjs1w",
+          "completedAt": 1792404134233,
+          "details": {
+            "field": "description"
+          },
+          "key": "utf8_validation",
+          "message": "Text contains only valid ASCII characters",
+          "name": "Problem description should be valid UTF-8",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404138094.524,
+          "_id": "jn7bse7jgj5jr62mtq4vwvc1p58gjhfa",
+          "completedAt": 1792404138094,
+          "details": {
+            "feedback": "Pass. The primary goal is to correct GopherJS’s evaluation order to match the Go language specification so programs behave the same as with the gc compiler. The description explicitly says programs currently produce different results or call functions in a different order (e.g. `i, xs[i] = 1, 9`, `p, p.i = new(T), 4`, map assignments and call-order examples like `f()(g())`), which is incorrect behavior that needs fixing. This aligns with the bugfix definition (something that was supposed to work correctly is broken and must be corrected).",
+            "status": "pass",
+            "suggested_category": "none"
+          },
+          "key": "category_alignment",
+          "name": "Problem description matches the selected category",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404141894.38,
+          "_id": "jn754t02cp1yzdcbm0nwbfkya58gjbcj",
+          "completedAt": 1792404141894,
+          "details": {
+            "all_issues": "",
+            "no_urls_in_description": {
+              "explanation": "No URLs or web links (http://, https://, www., ftp://) found in the problem description. The content complies with the no-URLs requirement.",
+              "status": "OK"
+            }
+          },
+          "key": "description_technical",
+          "name": "Problem description sanity checks (AI, up to 1 min)",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404146538.4678,
+          "_id": "jn76z4txkend6gr8dyf6fc689n8gje3f",
+          "completedAt": 1792404146538,
+          "details": {
+            "similarProblems": [
+              {
+                "contentAuthoredAt": 1790285256502,
+                "isOlder": true,
+                "similarity": 0.8142855763435364
+              },
+              {
+                "contentAuthoredAt": 1785705416514,
+                "isOlder": true,
+                "similarity": 0.6745114326477051
+              },
+              {
+                "contentAuthoredAt": 1790522046333,
+                "isOlder": true,
+                "similarity": 0.6673799545850682
+              },
+              {
+                "contentAuthoredAt": 1789805161522,
+                "isOlder": true,
+                "similarity": 0.6564172506332397
+              },
+              {
+                "contentAuthoredAt": 1789662414382,
+                "isOlder": true,
+                "similarity": 0.6372498273849487
+              },
+              {
+                "contentAuthoredAt": 1790096487110,
+                "isOlder": true,
+                "similarity": 0.6347827315330505
+              },
+              {
+                "isOlder": true,
+                "similarity": 0.5115268397680889
+              },
+              {
+                "contentAuthoredAt": 1792061862493,
+                "isOlder": true,
+                "similarity": 0.4416708904774563
+              },
+              {
+                "contentAuthoredAt": 1782579642478,
+                "isOlder": true,
+                "similarity": 0.41760313160934154
+              },
+              {
+                "contentAuthoredAt": 1782688850333,
+                "isOlder": true,
+                "similarity": 0.3902402272473862
+              }
+            ],
+            "threshold": 0.9,
+            "topScore": 0.8142855763435364
+          },
+          "key": "plagiarism",
+          "name": "Problem is not plagiarized",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404154724.7502,
+          "_id": "jn75mmv4bzy92bjqc7hej8a4z18gjj2a",
+          "completedAt": 1792404154724,
+          "details": {
+            "newFiles": [
+              "tests/evalorder/evalorder_test.go"
+            ],
+            "predictedPaths": [
+              "tests/order_of_evaluation_test.go",
+              "tests/eval_order_test.go",
+              "tests/evaluation_order_test.go",
+              "tests/order_eval_test.go",
+              "tests/eval_ord_test.go",
+              "tests/assignments_calls_literals_test.go",
+              "tests/assignments_order_test.go",
+              "tests/calls_order_test.go",
+              "tests/composite_literals_order_test.go",
+              "tests/composite_literal_evaluation_test.go",
+              "tests/multi_value_call_order_test.go",
+              "tests/range_assignment_order_test.go",
+              "tests/assignment_evaluation_test.go",
+              "tests/call_evaluation_test.go",
+              "tests/receiver_eval_order_test.go",
+              "tests/order_of_evaluation_js_test.go",
+              "tests/eval_order_js_test.go",
+              "tests/order_of_evaluation_testdata/main.go",
+              "tests/order_of_evaluation_testdata/main.out",
+              "js/order_of_evaluation_test.go",
+              "js/eval_order_test.go",
+              "js/assignments_order_test.go",
+              "compiler/order_of_evaluation_test.go",
+              "compiler/eval_order_test.go",
+              "compiler/astutil/order_of_evaluation_test.go",
+              "tests/otherpkg/order_of_evaluation_test.go",
+              "tests/integration/order_of_evaluation_test.go",
+              "tests/order_of_evaluation_examples_test.go",
+              "tests/order_of_evaluation_fuzz_test.go"
+            ]
+          },
+          "key": "predictable_test_names",
+          "message": "Test file names do not collide with predictable defaults",
+          "name": "Test file names don't collide with predictable defaults (AI)",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404170321.899,
+          "_id": "jn745akf5ntarg5mtt5wvqee6d8gkses",
+          "completedAt": 1792404170321,
+          "details": {
+            "all_issues": "",
+            "problem_description_provides_sufficient_public_interface_information": {
+              "explanation": "OK: The tests rely entirely on Go evaluation-order semantics (two-phase assignment; LHS operand evaluation; use of old values; function/method value evaluated before arguments; composite literal element evaluation as written; map operand before key; panics occur after operand/RHS evaluation; range assignments to existing vars; behavior under blocking/chan receives). The problem description explicitly states all of these requirements. No surprising public interfaces, filenames, classes, or method names are imposed by the tests; they are self-contained Go tests that validate compiler behavior. A developer could implement the required semantic changes from the description alone and pass these tests.",
+              "status": "OK"
+            },
+            "tests_and_problem_agree_on_specific_behaviors": {
+              "explanation": "OK: The tests precisely check the behaviors described: evaluation order in multi-assignments (including tuple-return Rvalues and range assignments), preservation of old indices/keys/receivers, map-operand-before-key, delayed panics after evaluating operands/RHS with earlier assignments still taking effect, function/receiver evaluation before arguments (including when arguments arise from multi-value calls), composite literals evaluated in written order (including keyed/unkeyed and nested), and correctness even with blocking channel receives. There are no contradictions or unexpected behaviors beyond what the problem requests.",
+              "status": "OK"
+            }
+          },
+          "key": "test_patch_alignment",
+          "name": "Problem and tests are aligned (AI, up to 1 min)",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404190409.413,
+          "_id": "jn7frw7qc23wrdq1qf5jj32fdx8gkrt2",
+          "completedAt": 1792404190409,
+          "details": {
+            "all_issues": "ERROR: test.sh invokes `go install .`, which is a package installation/build command and is not allowed in the test runner script.",
+            "base_new_mode_support": {
+              "explanation": "test.sh supports both modes. base mode runs go test across the repo (excluding tests/gorepo and certain tests) and gopherjs tests for selected packages while not including ./tests/evalorder; new mode runs only gopherjs test -v ./tests/evalorder. Distinct test sets with appropriate exit code handling.",
+              "status": "OK"
+            },
+            "executable_permissions": {
+              "explanation": "test.sh is added with mode 100755 (executable).",
+              "status": "OK"
+            },
+            "no_environment_dockerfile": {
+              "explanation": "No Dockerfile is included in the patch.",
+              "status": "OK"
+            },
+            "no_irrelevant_changes": {
+              "explanation": "No unrelated or whitespace-only changes detected; only test-related additions.",
+              "status": "OK"
+            },
+            "no_malicious_code": {
+              "explanation": "No signs of obfuscation, data exfiltration, or malicious behavior. Script only builds and runs tests; test code is straightforward.",
+              "status": "OK"
+            },
+            "no_package_installation": {
+              "explanation": "test.sh invokes `go install .`, which is a package installation/build command and is not allowed in the test runner script.",
+              "status": "error"
+            },
+            "no_solution_code": {
+              "explanation": "Patch adds only a test runner and a Go test file under tests/evalorder. No implementation or core application code is added or modified.",
+              "status": "OK"
+            },
+            "relevant_files_only": {
+              "explanation": "All added files are test-related (test.sh and tests/evalorder/evalorder_test.go).",
+              "status": "OK"
+            },
+            "test_runner_present": {
+              "explanation": "A test runner script test.sh is added at the repository root.",
+              "status": "OK"
+            },
+            "valid_git_diff": {
+              "explanation": "Valid unified git diff with two new files. Each change has proper headers, new files start from /dev/null, and the patch is not empty.",
+              "status": "OK"
+            }
+          },
+          "key": "test_patch_format",
+          "message": "ERROR: test.sh invokes `go install .`, which is a package installation/build command and is not allowed in the test runner script.\n\nPlease ensure your test patch:\n1. Is a valid git diff format\n2. Includes a test.sh that supports both `base` and `new` modes\n3. Contains only test code (no solution implementation)\n4. Does not install packages in test.sh (use Dockerfile instead)",
+          "name": "Test patch sanity checks",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "fail"
+        },
+        {
+          "_creationTime": 1792404201191.6782,
+          "_id": "jn73yhhhmj9tydcqw01kecyg758gkyvj",
+          "completedAt": 1792404201191,
+          "details": {
+            "status_reasoning": "There are 5 suggestions total, including multiple HIGH-priority removals of redundant example text and obvious non-requirements. Per rules, 3+ suggestions or any HIGH items requires a request_changes verdict.",
+            "suggestions": [
+              {
+                "priority": "high",
+                "quote": "As a result `i, xs[i] = 1, 9` stores into the element chosen by the old value of `i`, `p, p.i = new(T), 4` sets the field of the struct `p` pointed to before the assignment, and `k, m[k] = k2, v` uses the old key.",
+                "suggestion": "Remove this entire sentence of examples. It restates the already-specified two-phase assignment rule without adding new requirements, and the tests cover these cases."
+              },
+              {
+                "priority": "medium",
+                "quote": "such as `i, xs[i] = f()`, and to range loops that assign to existing variables, as in `for i, xs[i] = range s`.",
+                "suggestion": "Remove the inline examples; the general requirement about multi-value calls and range loops is sufficient and the tests illustrate specifics."
+              },
+              {
+                "priority": "medium",
+                "quote": "as in `f()(g())` or `obj().m(g())`,",
+                "suggestion": "Remove these examples from the call-order paragraph; they add verbosity without introducing new requirements beyond the stated rule."
+              },
+              {
+                "priority": "high",
+                "quote": "Panic messages and output formatting are not part of this change.",
+                "suggestion": "Remove this sentence; it's an obvious non-requirement and not needed to implement evaluation order."
+              },
+              {
+                "priority": "low",
+                "quote": "for example on a channel receive.",
+                "suggestion": "Remove this example phrase; the preceding sentence already states the requirement that the rules hold even when calls block."
+              }
+            ],
+            "summary": "- [HIGH] Delete the full example sentence: \"As a result `i, xs[i] = 1, 9` ... `k, m[k] = k2, v` uses the old key.\" It redundantly restates the two-phase assignment rule already specified and covered by tests.\n- [MEDIUM] In the assignment paragraph, remove the inline examples: \"such as `i, xs[i] = f()`, and to range loops that assign to existing variables, as in `for i, xs[i] = range s`.\" Keep the general requirement (multi-value calls; range loops) without examples.\n- [MEDIUM] In the call-order paragraph, remove the examples: \"as in `f()(g())` or `obj().m(g())`,\" since they don’t add new constraints beyond the stated rule (function value evaluated before arguments).\n- [HIGH] Remove: \"Panic messages and output formatting are not part of this change.\" This is an obvious non-requirement and not needed for implementation.\n- [LOW] Trim the example phrase \"for example on a channel receive.\" from the blocking-calls sentence; the rule already states that ordering must hold even when calls block.",
+            "verdict": "request_changes"
+          },
+          "key": "description_conciseness",
+          "message": "**Suggestions for improvement** — These are AI-generated suggestions, not hard rules.\n\n- [HIGH] Delete the full example sentence: \"As a result `i, xs[i] = 1, 9` ... `k, m[k] = k2, v` uses the old key.\" It redundantly restates the two-phase assignment rule already specified and covered by tests.\n- [MEDIUM] In the assignment paragraph, remove the inline examples: \"such as `i, xs[i] = f()`, and to range loops that assign to existing variables, as in `for i, xs[i] = range s`.\" Keep the general requirement (multi-value calls; range loops) without examples.\n- [MEDIUM] In the call-order paragraph, remove the examples: \"as in `f()(g())` or `obj().m(g())`,\" since they don’t add new constraints beyond the stated rule (function value evaluated before arguments).\n- [HIGH] Remove: \"Panic messages and output formatting are not part of this change.\" This is an obvious non-requirement and not needed for implementation.\n- [LOW] Trim the example phrase \"for example on a channel receive.\" from the blocking-calls sentence; the rule already states that ordering must hold even when calls block.\n\n*Only high-severity issues are blocking. Medium and low severity suggestions are optional.*",
+          "name": "Problem description contains only necessary information (AI, up to 2 min)",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "warning"
+        },
+        {
+          "_creationTime": 1792404228198.1255,
+          "_id": "jn7f8ssbhj66qe0f97xx5mvd7s8gk8cg",
+          "completedAt": 1792404228198,
+          "details": {
+            "all_issues": "Summary: Problem and tests are aligned and sound; no changes needed.\n\nDetails:\n1. No Test Leakage [OK]: The problem description does not mention test files or logic added in the patch and contains only high-level requirements.\n\n2. Tests Cover Required Behavior [OK]: Tests validate two-phase assignment evaluation, old-value usage, left-to-right assignment application (including with panics), map-before-key evaluation, function/receiver-before-args across nested and multi-value calls, composite literal element order, and blocking-call scenarios.\n\n3. Tests Focus on Behavior [OK]: Assertions rely on observable outcomes (event order, state changes, panic occurrence) rather than implementation details, private APIs, or source inspection.\n\n4. Sanity Check [OK]: The test suite and script are coherent and feasible; no obvious malformations or contradictions. Any minor environment assumptions are typical and handled conservatively.",
+            "no_test_leakage": {
+              "explanation": "The problem description explains required Go evaluation-order semantics at a high level and does not reference any files, functions, or logic introduced by the test patch. No references to test.sh or tests/evalorder are present. This avoids leaking test details.",
+              "status": "OK"
+            },
+            "sanity_check": {
+              "explanation": "Problem and tests are coherent and professional. The test script rebuilds the gopherjs binary, clears cache to avoid stale builds, and runs either the project’s existing suites (base) or the new eval-order tests (new). Tests are deterministic (map range uses single element; channels are buffered and loaded before receives). No inappropriate content or obvious runtime errors are apparent. Minor environment assumptions (gopherjs on PATH after go install, availability of go-junit-report) are standard and guarded (report step is non-fatal).",
+              "status": "OK"
+            },
+            "tests_cover_required_behavior": {
+              "explanation": "The tests comprehensively exercise the behaviors specified: two-phase assignment evaluation (LHS operands and RHS expressions evaluated first, then assignments left-to-right), use of old values in multi-assignments (including i, xs[i], p, p.i, q, *q, map key reuse), tuple-return assignments, range loops assigning to existing variables over slice/string/array/map, map-element assignment order (map before key), panic timing and partial assignment effects, function/method calls where function/receiver is evaluated before arguments (including when function value itself is produced by a call and nested multi-value argument calls), composite literal element evaluation order, and scenarios involving blocking channel receives. The coverage matches all major points from the description, with both success-result checks and event-order verification.",
+              "status": "OK"
+            },
+            "tests_focus_on_behavior": {
+              "explanation": "The tests verify observable behavior: recorded event order, produced values in arrays/slices/maps/structs, and presence of panics. They do not assert internal implementation details or algorithms of GopherJS; they only rely on public language semantics. The recorder helper is a test-only mechanism to observe evaluation ordering and is consistent with behavior-focused testing.",
+              "status": "OK"
+            }
+          },
+          "key": "problem_and_test_quality",
+          "name": "Problem and tests are good quality (AI, up to 1 min)",
+          "stageRunId": "ms75qqnt3s26fvc3hd3n3ffh4x8gjwkw",
+          "status": "pass"
+        }
+      ],
+      "completedAt": 1792404228302,
+      "inputsHash": "f27c479b698bdace481b6dd0b13c9b0160de78a0adb88a23c13d82ef0351b421",
+      "itemId": "kh78nr222wf7f785y260bfyke98g9fqp",
+      "stageId": "problem_and_tests",
+      "stageName": "Problem Description & Tests",
+      "status": "fail",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd74f95s5dvggpbqac8wv13np98g8e03"
+    },
+    {
+      "_creationTime": 1792404131601.7847,
+      "_id": "ms76p2vfgx2sfbanz6ttatyxch8gk5wf",
+      "checks": [
+        {
+          "_creationTime": 1792404283321.6682,
+          "_id": "jn758r46k8gehah8b3jxhpnn3s8gkbb0",
+          "completedAt": 1792404283321,
+          "details": {
+            "inputsFingerprint": "d1e674eac2f106c70f1a6a26dae68cf0c36ce76a270c4e26ba9ec5c8562d9632",
+            "overall": "derivative",
+            "perCandidate": [
+              {
+                "confidence": 0.9,
+                "contentAuthoredAt": 1790285256502,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "The candidate covers additional core cases not present in the submission: short‑circuiting &&/|| with hoisted right operands, and shift expressions ensuring the left operand is evaluated before the count even when the result is predetermined.",
+                  "The candidate pre‑evaluates operands for index/slice/binary expressions more generally via evalBeforeHoisted and handles built‑ins, send/select clauses, and return values (including copying aggregate tuple components and interface conversions) to preserve order; the submission does not.",
+                  "The candidate centralizes evaluation‑order logic in a new compiler/evalorder.go (captureLocation/captureOperand/assignTargets/assignIteration, etc.) and adds delegatedCall/function‑value hoisting paths; the submission implements a narrower set of changes inline.",
+                  "The candidate handles x op= y ensuring x is evaluated once and panic timing matches Go, which the submission does not explicitly address."
+                ],
+                "one_liner": "Both patches rework GopherJS to honor Go’s left‑to‑right order of evaluation, implementing two‑phase assignments, proper call/receiver vs. argument ordering, and composite‑literal element ordering; the candidate is a broader, more comprehensive version of the same task.",
+                "overlap": {
+                  "shared_apis": [
+                    "compiler/expressions.go: CompositeLit handling now pre‑evaluates elements with side effects to preserve written order when keyed elements reorder initialization.",
+                    "compiler/expressions.go: Call handling hoists evaluation of the function value/receiver before arguments when arguments are hoisted (multi‑value spread or blocking).",
+                    "compiler/statements.go: Assignment translation implements two‑phase semantics by evaluating LHS index/deref operands and RHS values first, then assigning left‑to‑right; range assignments updated accordingly.",
+                    "compiler/statements.go translateAssign (map element): ensure the map operand is evaluated before the key and store both in temporaries to match spec.",
+                    "compiler/utils.go: Introduce/extend isHoisted and use it in translateArgs to preserve operand evaluation order when arguments are hoisted.",
+                    "tests/gorepo/run.go: Remove known‑fail entries for Go fixedbugs related to evaluation order (e.g., issue23188, issue50672), asserting the same behaviors now pass."
+                  ],
+                  "shared_test_behaviors": [
+                    "Map element assignment evaluates map before key; out‑of‑range/nil map panics occur only at the assignment stage after RHS evaluation.",
+                    "Multiple/tuple assignments evaluate RHS first and then assign LHS targets left‑to‑right using old operand values (e.g., i, x[i] = ... uses old i).",
+                    "Function/method call evaluation evaluates function value/receiver before arguments, even when arguments are multi‑value calls or may block."
+                  ]
+                },
+                "reason": "Both patches modify the same internal compiler surfaces for the same purpose: enforce Go’s order of evaluation across assignments, calls/receivers vs. arguments, and composite literals, and they align map element assignment order; they even update the same fixedbugs known‑fail entries. The candidate is a broader, earlier pass that extends the same change to additional constructs (short‑circuit, shifts, select/builtins/returns) and factors logic into helpers. This makes the candidate essentially a superset of the submission’s core behavior, so the latter is a derivative of the former rather than a distinct task.",
+                "similarity": 0.8142855763435364,
+                "submission_summary": "Imposes Go’s order of evaluation by pre‑evaluating composite‑literal elements when needed, hoisting function/receiver evaluation before arguments when arguments are hoisted, and implementing two‑phase assignment (including range) with correct map‑before‑key order; adds isHoisted and adjusts translateArgs to preserve order.",
+                "verdict": "derivative"
+              },
+              {
+                "confidence": 0.79,
+                "contentAuthoredAt": 1785705416514,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "They target different compilers and backends: GopherJS (Go→JavaScript) versus So’s C emitter (Go→C), modifying entirely different code surfaces.",
+                  "The candidate implements package-level initialization ordering and non-numeric constant emission at compile time; the submission does not touch package init or constant folding emission.",
+                  "The submission explicitly fixes composite literal element evaluation (including keyed struct/array elements) by pre-evaluating to temporaries; the candidate patch does not show keyed-element reordering logic and focuses more on general operand sequencing.",
+                  "The submission adjusts range loops to pre-evaluate value operands when assigning to existing variables; the candidate explicitly states range keeps its prior behavior and adds no such change.",
+                  "The candidate adds support for map compound assignments (e.g., m[k] += v), short-circuit handling via inline groups, and sequencing in switch/if conditions; the submission does not add these behaviors."
+                ],
+                "one_liner": "Both implement Go’s left-to-right, single-evaluation semantics in their compilers’ code generation, especially for assignments and calls, but in different repos and with different scopes and surfaces (JS vs C backends).",
+                "overlap": {
+                  "shared_apis": [],
+                  "shared_test_behaviors": []
+                },
+                "reason": "Although both changes address Go’s evaluation order semantics, they live in different repos and instrument different compiler backends and surfaces. The overlapping claims are high-level (ordering of calls and assignments), while concrete implementations, affected files, and extended scope (package init, constants, map compound ops, range handling) diverge materially. There is no shared purpose-matched surface or tests; thus they should co-exist as distinct tasks.",
+                "similarity": 0.6745114326477051,
+                "submission_summary": "Adjusts GopherJS code generation to honor Go’s evaluation order: hoists function/receiver evaluation before arguments, evaluates composite literal elements in written order when side effects matter, and enforces two-phase assignments by pre-evaluating LHS operands and RHS before performing assignments; also tweaks range and map assignment ordering.",
+                "verdict": "distinct"
+              },
+              {
+                "confidence": 0.72,
+                "contentAuthoredAt": 1790522046333,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "The submission implements Go’s full two‑phase assignment semantics globally (pre‑evaluate LHS operands and RHS, then assign left‑to‑right, with correct panic timing); the candidate does not.",
+                  "The submission fixes operand order for map element assignments (map before key) and for range loops assigning to existing variables; the candidate does not touch these.",
+                  "The candidate adds js‑tagged field/array semantics: externalizes writes to the underlying JavaScript object, preserves array element writes with Go-length bounds checks, and ensures js‑tagged composite literals update the JS property; the submission does not address js‑tagged behavior.",
+                  "For composite literals, the submission detects any side-effect reordering (e.g., keyed fields ending up out of declaration order) and pre‑evaluates accordingly; the candidate’s ordering logic is limited to blocking cases and js‑tagged structs.",
+                  "For call order, the submission handles general function values and multi-value argument hoisting; the candidate narrowly ensures method receivers are stored before blocking arguments."
+                ],
+                "one_liner": "Both adjust GopherJS’s translation to honor Go’s left-to-right evaluation in places where side effects can occur, especially in composite literals and call operands, but one is a general spec‐compliance pass while the other targets js‑tagged field/array semantics.",
+                "overlap": {
+                  "shared_apis": [
+                    "compiler/expressions.go: composite literal translation modified to evaluate elements in source order by staging side-effecting elements into temporaries when needed (purpose: preserve evaluation order)",
+                    "compiler/expressions.go: call/method-call path modified to ensure the callable (function value/receiver) is evaluated before arguments when arguments may be hoisted/blocking (purpose: enforce operand order)"
+                  ],
+                  "shared_test_behaviors": [
+                    "Composite literal element expressions run in source order, even when final storage order differs or later elements may block; side effects occur left-to-right.",
+                    "In calls where arguments may be hoisted (blocking or multi-value), the callable (function value or receiver) is evaluated first, before argument evaluation begins.",
+                    "Pre-evaluations are sequenced as part of the expression so they don’t run if the expression is not evaluated (short-circuit/branching contexts)."
+                  ]
+                },
+                "reason": "Both patches work in the same compiler layer and share the concrete theme of preserving Go’s evaluation order in composite literals and call operands, with similar staging into temporaries. However, the submission is a broad spec‑compliance change covering assignments (including two‑phase semantics, map/key, and range), while the candidate is a targeted feature for js‑tagged field/array externalization with some localized ordering fixes. These are related but teach different core behaviors, so they should co‑exist as similar ideas rather than duplicates.",
+                "similarity": 0.6673799545850682,
+                "submission_summary": "Implements Go-spec order of evaluation across the compiler: stages composite literal elements to preserve side-effect order, hoists function values before arguments when needed, pre‑evaluates LHS operands and RHS for assignments (including multi-assign and range), and fixes map/key and panic timing semantics.",
+                "verdict": "similar_idea"
+              },
+              {
+                "confidence": 0.93,
+                "contentAuthoredAt": 1789805161522,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "Different repos and layers: a Go-to-JS compiler (GopherJS) vs. a reflection-driven expression evaluator (gval).",
+                  "Submission implements Go’s left-to-right evaluation order and two-phase assignment semantics across assignments, calls, composite literals, map element assignment, and range loops; candidate reworks selection via reflection (fields/keys/indexes/methods), pointer following, map key conversion from text to typed keys, nil handling, equality/short-circuit semantics, and function argument nil acceptance.",
+                  "Submission modifies compiler code paths (translateExpr/translateCall/translateAssign, adding operand pre-evaluation and hoisting) to enforce observable evaluation sequencing; candidate adds reflective helpers (nilReceiver, methodReceiverPath, reflectSelect/Method/Field) and operator/type-conversion utilities, not evaluation sequencing within expressions.",
+                  "Submission touches test expectations for Go fixedbugs to reflect spec compliance; candidate changes operator behavior (==, !=, &&, ||, ??, in) and EvalString formatting semantics, unrelated to Go spec evaluation order."
+                ],
+                "one_liner": "They change different systems: one makes the GopherJS compiler honor Go’s specification for evaluation order, while the other overhauls gval’s reflection-based selection, typing, and nil handling across maps/slices/structs/methods and operators.",
+                "overlap": {
+                  "shared_apis": [],
+                  "shared_test_behaviors": []
+                },
+                "reason": "The patches target unrelated surfaces and behaviors: the GopherJS change enforces the Go spec’s evaluation order in the compiler pipeline, while the gval change revises how arbitrary Go values are navigated and compared via reflection, plus operator and nil semantics. There is no purpose-matched file or behavior overlap beyond generic “evaluation” terminology, so they teach different debugging lessons.",
+                "similarity": 0.6564172506332397,
+                "submission_summary": "Adjusts GopherJS to follow Go’s required order of evaluation: pre-evaluates LHS operands and RHS values before assignments, evaluates function values before arguments, preserves element evaluation order in composite literals (hoisting side-effecting elements as needed), orders map assignments (map before key), and fixes range assignment semantics. Updates compiler helpers and removes now-passing fixedbugs from known fails.",
+                "verdict": "distinct"
+              },
+              {
+                "confidence": 0.9,
+                "contentAuthoredAt": 1789662414382,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "They modify entirely different systems and layers: one changes a Go-to-JS compiler’s code generation (translateExpr/translateAssign/translateArgs, etc.), while the other adds a runtime assignment engine to a template interpreter with reflection-based destinations and parser changes.",
+                  "The submission also fixes function/method call evaluation order (evaluate function value before arguments, including hoisted/blocked cases) and composite literal element evaluation ordering; the candidate does not alter call or literal semantics.",
+                  "The candidate adds rich destination validation (comparable map keys, numeric index checks, pointer/interface following with cycle detection, error reporting) and declaration semantics for templates; the submission adheres to Go’s existing typing/runtime rules and focuses on ordering without adding such validations.",
+                  "The submission enforces map-before-key and RHS-before-panicking-LHS behaviors in generated JS; the candidate implements snapshot/commit semantics and error handling specific to the template engine (including value/found form) not present in the compiler change."
+                ],
+                "one_liner": "Both implement left-to-right, two-phase assignment semantics that preserve evaluation order, but one fixes a Go-to-JS compiler’s code generation while the other augments a template engine’s runtime with indexed/simultaneous assignments and validation rules.",
+                "overlap": {
+                  "shared_apis": [],
+                  "shared_test_behaviors": []
+                },
+                "reason": "Despite thematic overlap around assignment evaluation order, the patches target different repos and unrelated code surfaces: a compiler’s translation logic versus a template engine’s runtime and parser. The shared ordering concepts are generic to assignment semantics; the submission also covers call and composite literal ordering while the candidate focuses on indexed/simultaneous assignments with template-specific validations. These differences are foundational, so they should coexist as distinct tasks.",
+                "similarity": 0.6372498273849487,
+                "submission_summary": "Adjusts the GopherJS compiler to match Go’s specified evaluation order: pre-evaluates LHS operands for assignments, evaluates RHS before any LHS-caused panics, evaluates function/receiver before arguments (handling hoisted/blocked cases), and preserves element evaluation order in composite literals by pre-evaluating side-effecting elements. Also fixes range header operand evaluation and ensures map-before-key evaluation, with tests unskipped for related Go fixedbugs.",
+                "verdict": "distinct"
+              }
+            ]
+          },
+          "key": "llm_dedup",
+          "message": "Your submission shares the same idea and structural approach as an existing submission. To differentiate meaningfully, see the suggested differences below.",
+          "name": "LLM compares against flagged similar problems (AI, only runs when prior plagiarism step finds candidates)",
+          "stageRunId": "ms76p2vfgx2sfbanz6ttatyxch8gk5wf",
+          "status": "warning"
+        }
+      ],
+      "completedAt": 1792404283487,
+      "inputsHash": "f27c479b698bdace481b6dd0b13c9b0160de78a0adb88a23c13d82ef0351b421",
+      "itemId": "kh78nr222wf7f785y260bfyke98g9fqp",
+      "stageId": "plagiarism_review",
+      "stageName": "Plagiarism Review",
+      "status": "warning",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd74f95s5dvggpbqac8wv13np98g8e03"
+    },
+    {
+      "_creationTime": 1792404131601.785,
+      "_id": "ms72e6yy9v6t4qjp9jchnn41ns8gkra5",
+      "checks": [
+        {
+          "_creationTime": 1792404283703.3208,
+          "_id": "jn70b7ewyv6eeebtz23q8ksc918gkkcs",
+          "completedAt": 1792404283703,
+          "details": {
+            "installMode": "not_python"
+          },
+          "key": "editable_install_guidance",
+          "message": "Not a Python environment — editable-install guidance does not apply",
+          "name": "Python installs are editable or test invocation is documented",
+          "stageRunId": "ms72e6yy9v6t4qjp9jchnn41ns8gkra5",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404313004.3066,
+          "_id": "jn7bvk74jxz8cm8zey75n8ym8s8gkm9c",
+          "completedAt": 1792404313004,
+          "details": {
+            "all_issues": "WARNING: The Dockerfile downloads and installs a second Go distribution via curl/tar into /usr/local/go1.21 while using the olympus-base-go image which already includes a Go toolchain. Installing the same language toolchain on top of a per-language Olympus base is redundant and potentially error-prone. If you require a specific Go distribution (go1.21.13) for a good reason, document that reason in the Dockerfile and keep the SHA256 verification (which you do). Otherwise prefer using the Go already provided by the base image to reduce image size and complexity. Problematic lines: RUN curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o /tmp/go.tar.gz && echo \"502fc16d5910562461e6a6631fb6377de2322aad7304bf2bcd23500ba9dab4a7  /tmp/go.tar.gz\" | sha256sum -c - && mkdir -p /usr/local/go1.21 && tar -C /usr/local/go1.21 --strip-components=1 -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz",
+            "base_image_compliant": {
+              "explanation": "Base image is FROM public.ecr.aws/d3j8x8q7/olympus-base-go:latest which is one of the accepted Olympus per-language slim images. This is compliant.",
+              "status": "OK"
+            },
+            "dependencies_installed": {
+              "explanation": "The Dockerfile runs go mod download to populate module cache and also runs go install . to build/install the project binary. It also installs a pinned tool (github.com/jstemmer/go-junit-report/v2@v2.1.0). For a Go project, dependency installation and a project install/build step are present.",
+              "status": "OK"
+            },
+            "interactive_shell": {
+              "explanation": "The image ends with CMD [\"/bin/bash\"], which provides an interactive shell for developers. Good.",
+              "status": "OK"
+            },
+            "no_test_execution": {
+              "explanation": "No test scripts are run during image build (no pytest, npm test, test.sh, git apply test.patch, etc.). This complies with the testing restrictions.",
+              "status": "OK"
+            },
+            "package_manager_installation": {
+              "explanation": "WARNING: The Dockerfile downloads and installs a second Go distribution via curl/tar into /usr/local/go1.21 while using the olympus-base-go image which already includes a Go toolchain. Installing the same language toolchain on top of a per-language Olympus base is redundant and potentially error-prone. If you require a specific Go distribution (go1.21.13) for a good reason, document that reason in the Dockerfile and keep the SHA256 verification (which you do). Otherwise prefer using the Go already provided by the base image to reduce image size and complexity. Problematic lines: RUN curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o /tmp/go.tar.gz && echo \"502fc16d5910562461e6a6631fb6377de2322aad7304bf2bcd23500ba9dab4a7  /tmp/go.tar.gz\" | sha256sum -c - && mkdir -p /usr/local/go1.21 && tar -C /usr/local/go1.21 --strip-components=1 -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz",
+              "status": "warning"
+            },
+            "registry_compliant": {
+              "explanation": "The Dockerfile uses an accepted Olympus registry image (public.ecr.aws/d3j8x8q7/olympus-base-go:latest). This is registry-compliant.",
+              "status": "OK"
+            },
+            "repository_setup": {
+              "explanation": "WORKDIR /app and COPY . . are present. The Dockerfile sets the working directory to /app and copies the repository contents into the image. There is no git clone and no evidence that only built artifacts are copied. This meets the repository setup requirements.",
+              "status": "OK"
+            },
+            "security_safety": {
+              "explanation": "No obfuscated/encoded commands, no attempts to access host docker socket, no hardcoded secrets, and no crypto-mining or obvious exfiltration. The Dockerfile downloads a Go tarball from go.dev but verifies its SHA256 checksum, which is a good safety practice. No other security violations detected.",
+              "status": "OK"
+            },
+            "user_creation_compatible": {
+              "explanation": "No user/group is created in the Dockerfile. This is acceptable (the rubric allows not creating any user).",
+              "status": "OK"
+            },
+            "version_pinning": {
+              "explanation": "Version pinning appears correct: the downloaded Go tarball uses an explicit version (go1.21.13) and a SHA256 checksum is verified; the go-junit-report install is pinned to v2.1.0. go mod download and go install . operate against the repo's go.mod/go.sum (considered pinned). No uses of @latest/:latest/* were detected in install lines besides the allowed base image :latest.",
+              "status": "OK"
+            }
+          },
+          "key": "dockerfile_validation",
+          "message": "WARNING: The Dockerfile downloads and installs a second Go distribution via curl/tar into /usr/local/go1.21 while using the olympus-base-go image which already includes a Go toolchain. Installing the same language toolchain on top of a per-language Olympus base is redundant and potentially error-prone. If you require a specific Go distribution (go1.21.13) for a good reason, document that reason in the Dockerfile and keep the SHA256 verification (which you do). Otherwise prefer using the Go already provided by the base image to reduce image size and complexity. Problematic lines: RUN curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o /tmp/go.tar.gz && echo \"502fc16d5910562461e6a6631fb6377de2322aad7304bf2bcd23500ba9dab4a7  /tmp/go.tar.gz\" | sha256sum -c - && mkdir -p /usr/local/go1.21 && tar -C /usr/local/go1.21 --strip-components=1 -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz\n\nNote: Internet access is available during `docker build`, but not when running the container. Test patch is injected into the container after build. Ensure your Dockerfile installs all dependencies at build time so the environment works fully offline after build.",
+          "name": "Dockerfile guidelines",
+          "stageRunId": "ms72e6yy9v6t4qjp9jchnn41ns8gkra5",
+          "status": "warning"
+        }
+      ],
+      "completedAt": 1792404313100,
+      "inputsHash": "f27c479b698bdace481b6dd0b13c9b0160de78a0adb88a23c13d82ef0351b421",
+      "itemId": "kh78nr222wf7f785y260bfyke98g9fqp",
+      "stageId": "dockerfile",
+      "stageName": "Dockerfile",
+      "status": "warning",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd74f95s5dvggpbqac8wv13np98g8e03"
+    },
+    {
+      "_creationTime": 1792404131601.7852,
+      "_id": "ms79528zbx4mr5ed8hxr0b4z958gkccr",
+      "checks": [
+        {
+          "_creationTime": 1792404313302.2046,
+          "_id": "jn77r53hb32fshm1z40pyen4h18gjv71",
+          "completedAt": 1792404313302,
+          "details": {
+            "patchField": "solutionPatch"
+          },
+          "key": "valid_solution_patch",
+          "message": "Patch has valid git diff syntax",
+          "name": "Solution patch is valid",
+          "stageRunId": "ms79528zbx4mr5ed8hxr0b4z958gkccr",
+          "status": "pass"
+        }
+      ],
+      "completedAt": 1792404313391,
+      "inputsHash": "f27c479b698bdace481b6dd0b13c9b0160de78a0adb88a23c13d82ef0351b421",
+      "itemId": "kh78nr222wf7f785y260bfyke98g9fqp",
+      "stageId": "solution_patch",
+      "stageName": "Solution Patch",
+      "status": "pass",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd74f95s5dvggpbqac8wv13np98g8e03"
+    }
+  ],
+  "dynamicChecks": {
+    "_autoReviewSkipReverted": false,
+    "_descriptionQualityContested": false,
+    "_problemLastDraftEditedAt": 1792401159849,
+    "_solutionQualityContestNote": null,
+    "_solutionQualityContested": false,
+    "_verifierIncompletenessRunsEnabled": true,
+    "_verifyFairnessContestNote": null,
+    "_verifyFairnessContested": false
+  },
+  "readiness": {
+    "canSubmit": false,
+    "canSubmitWithoutBypass": false,
+    "cooldownAppliesToProblem": false,
+    "criteria": [
+      {
+        "detail": "4/5 passing",
+        "id": "prechecks",
+        "label": "Prechecks",
+        "stale": false,
+        "status": "fail"
+      },
+      {
+        "detail": "not run yet",
+        "id": "scopeGate",
+        "label": "Scope Gate",
+        "status": "pending"
+      },
+      {
+        "detail": "not run yet",
+        "id": "dynamicChecks",
+        "label": "Quality Checks",
+        "stale": false,
+        "status": "pending"
+      },
+      {
+        "id": "agentFair",
+        "label": "Fair task",
+        "status": "pending"
+      },
+      {
+        "id": "agentSolvable",
+        "label": "Solvable",
+        "status": "pending"
+      },
+      {
+        "id": "agentNovaCoverage",
+        "label": "Nova rollouts",
+        "status": "pending"
+      },
+      {
+        "id": "agentNovaSequenceLength",
+        "label": "Long horizon",
+        "status": "pending"
+      },
+      {
+        "id": "agentStrongCoverage",
+        "label": "Orion / Vega rollouts",
+        "status": "pending"
+      },
+      {
+        "id": "agentStrongSequenceLength",
+        "label": "Long horizon (Orion / Vega)",
+        "status": "pending"
+      },
+      {
+        "id": "agentNoCheating",
+        "label": "No cheating",
+        "status": "pending"
+      },
+      {
+        "id": "agentNoEnvBlocker",
+        "label": "No environment blockers",
+        "status": "pending"
+      },
+      {
+        "detail": "not run yet",
+        "id": "autoReview",
+        "label": "Auto Review",
+        "status": "pending"
+      },
+      {
+        "detail": "build to verify the image rebuilds hermetically",
+        "id": "rebuildSafe",
+        "label": "Rebuild-safe",
+        "status": "pending"
+      },
+      {
+        "detail": "the rebuildability check hasn't run for this image yet — rebuild to (re)run it",
+        "id": "harborSafe",
+        "label": "Harbor rebuild-safe",
+        "status": "pending"
+      }
+    ],
+    "isBypassed": false
+  },
+  "version": 0
+}

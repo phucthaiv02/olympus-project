@@ -1,0 +1,94 @@
+
+  ID          kh7cnm6syf87kby102esrpc5858gbdzb
+  Title       Pointer conversions lose the destination type, nil and pointer identity
+  Status      [90m○[0m draft
+  Version     v0 (unlocked)
+  Language    go
+  Category    bugfix
+  Repo        https://github.com/gopherjs/gopherjs
+  Commit      490705b1
+  Test Patch  yes
+  Solution    yes
+  Dockerfile  yes
+
+  Description:
+    Fix conversions between pointer types so that the result behaves like a pointer of the destination type, the way it does in Go. This covers explicit conversions such as `P(p)` or `(*MyInt)(p)`, and the implicit conversions that happen when a `*T` value is used where an assignable named pointer type such as `type P *T` is expected, or the other way around: function and variadic arguments, multiple results passed straight to another call, return values, struct, array, slice and map literal elements and keys, map assignments, `append`, channel sends (including in `select`), variable declarations and assignments.
+    
+    Several of these go wrong today. A pointer to a basic type that is passed as an argument or stored in a composite literal keeps reporting its original type to `%T`, reflection, type assertions and type switches. Converting a nil pointer to an array into another pointer type gives a value that is not equal to nil. An explicit conversion of a pointer to a basic type creates a new pointer that is not equal to the original after converting it back, nor to a second conversion of the same pointer, so it can't be relied on as a map key either.
+    
+    After the fix, a converted pointer has the destination type, is nil exactly when the source is nil, and refers to the same variable, so writes through either pointer are visible through the other. Converting a pointer to another type and back gives a pointer equal to the original, and converting the same pointer to the same type twice gives equal pointers, also when they are used as map keys or compared inside interfaces. This applies to pointers to basic types (including element types that differ only by name, like `*int` and `*MyInt` or `*int64` and `*MyInt64`), pointers to pointers and pointers to arrays, including pointers to slice elements and struct fields. Conversions between pointers to structs already work this way and must keep working.
+    
+    `unsafe.Pointer` follows the same rule for nil. Converting the zero `unsafe.Pointer` to any pointer type, including a pointer to a struct, gives that type's nil pointer, and converting a nil pointer of any type to `unsafe.Pointer` gives a value equal to nil. A non-nil pointer that goes through `unsafe.Pointer` and back to its own type keeps its identity.
+    
+
+  Submission Readiness:
+    [31m✗[0m fail  Prechecks  4/5 passing
+    [90m○[0m pending  Scope Gate  not run yet
+    [90m○[0m pending  Quality Checks  not run yet
+    [90m○[0m pending  Fair task
+    [90m○[0m pending  Solvable
+    [90m○[0m pending  Nova rollouts
+    [90m○[0m pending  Long horizon
+    [90m○[0m pending  Orion / Vega rollouts
+    [90m○[0m pending  Long horizon (Orion / Vega)
+    [90m○[0m pending  No cheating
+    [90m○[0m pending  No environment blockers
+    [90m○[0m pending  Auto Review  not run yet
+    [90m○[0m pending  Rebuild-safe  build to verify the image rebuilds hermetically
+    [90m○[0m pending  Harbor rebuild-safe  the rebuildability check hasn't run for this image yet — rebuild to (re)run it
+
+  Prechecks:
+    [32m✓[0m pass  GitHub Repository
+      [32m✓[0m pass  Repository meets compliance requirements (500+ stars, permissive license, active maintenance)  Repository gopherjs/gopherjs meets all compliance requirements
+    [31m✗[0m fail  Problem Description & Tests
+      [32m✓[0m pass  Problem description stays within the hard word cap (pass ≤1000 words, fail >1000)  Word count: 391/1000
+      [32m✓[0m pass  Problem description doesn't look AI-generated (line wrapping, em-dashes)
+      [32m✓[0m pass  Problem description should be valid UTF-8  Text contains only valid ASCII characters
+      [32m✓[0m pass  Test patch applies correctly  Patch has valid git diff syntax
+      [32m✓[0m pass  Problem description matches the selected category
+      [32m✓[0m pass  Problem description sanity checks (AI, up to 1 min)
+      [32m✓[0m pass  Problem is not plagiarized
+      [31m✗[0m fail  Test file names don't collide with predictable defaults (AI)  Some new test files use predictable names that an implementer would...
+      [32m✓[0m pass  Problem and tests are good quality (AI, up to 1 min)
+      [31m✗[0m fail  Test patch sanity checks  ERROR: test.sh contains a package installation command: `go install...
+      [32m✓[0m pass  Problem and tests are aligned (AI, up to 1 min)
+      [33m![0m warning  Problem description contains only necessary information (AI, up to 2 min)  **Suggestions for improvement** — These are AI-generated suggestion...
+    [32m✓[0m pass  Plagiarism Review
+      [32m✓[0m pass  LLM compares against flagged similar problems (AI, only runs when prior plagiarism step finds candidates)
+    [33m![0m warning  Dockerfile
+      [32m✓[0m pass  Python installs are editable or test invocation is documented  Not a Python environment — editable-install guidance does not apply
+      [33m![0m warning  Dockerfile guidelines  WARNING: The Dockerfile downloads and installs an additional Go dis...
+    [32m✓[0m pass  Solution Patch
+      [32m✓[0m pass  Solution patch is valid  Patch has valid git diff syntax
+
+  Rollouts:
+    [90mNo rollouts yet.[0m
+
+  Rollout Criteria:
+    [90m○[0m pending  Fair task
+      [90mTarget: No agent run flagged the task as unfair or broken[0m
+    [90m○[0m pending  Solvable
+      [90mTarget: At least 1 agent run must solve the problem[0m
+    [90m○[0m pending  Nova rollouts
+      [90mTarget: At least 8 Nova runs must complete. 0% solved.[0m
+    [90m○[0m pending  Long horizon
+      [90mTarget: Nova runs must average more than 256K tokens of sequence length[0m
+    [90m○[0m pending  Orion / Vega rollouts
+      [90mTarget: At least 4 runs on Orion or 4 runs on Vega, solved more than 0% and at most 25% of the time[0m
+    [90m○[0m pending  Long horizon (Orion / Vega)
+      [90mTarget: The passing runs on the qualifying codename must average more than 256K tokens of sequence length[0m
+    [90m○[0m pending  No cheating
+      [90mTarget: Cheat rate must be below 20% (across all agents)[0m
+    [90m○[0m pending  No environment blockers
+      [90mTarget: No run should be blocked by environment or verifier issues[0m
+
+  Commands:
+    olympus problems download kh7cnm6syf87kby102esrpc5858gbdzb        Download the current version locally
+    olympus checks view kh7cnm6syf87kby102esrpc5858gbdzb              Checks + readiness detail
+    olympus checks run-all kh7cnm6syf87kby102esrpc5858gbdzb           Run the default quality-check set
+    olympus runs view kh7cnm6syf87kby102esrpc5858gbdzb                Rollout batches + criteria
+    olympus runs presets kh7cnm6syf87kby102esrpc5858gbdzb             Show quick/full rollout mixes
+    olympus runs run kh7cnm6syf87kby102esrpc5858gbdzb --preset full   Trigger the production full rollout preset
+    olympus problems edit kh7cnm6syf87kby102esrpc5858gbdzb --help     Edit draft fields
+    olympus problems version list kh7cnm6syf87kby102esrpc5858gbdzb    List all versions
+

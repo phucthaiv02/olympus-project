@@ -1,0 +1,759 @@
+{
+  "prechecks": [
+    {
+      "_creationTime": 1792404160530.1987,
+      "_id": "ms72bthja43fk73r1dt25xgxxx8gk5ge",
+      "checks": [
+        {
+          "_creationTime": 1792404162586.261,
+          "_id": "jn7bx554tzycxwybx39ap68skn8gkhp5",
+          "completedAt": 1792404162586,
+          "details": {
+            "canonicalKey": "gopherjs/gopherjs",
+            "checks": {
+              "activeMaintenance": "pass",
+              "benchmarkRepo": "pass",
+              "language": "pass",
+              "license": "pass",
+              "stars": "pass",
+              "validCommit": "pass"
+            },
+            "commitHash": "490705b1d6fc7d5bd9202ac41888e146183328eb",
+            "identityExempt": false,
+            "isFork": false,
+            "lineageKeys": [
+              "gopherjs/gopherjs"
+            ],
+            "owner": "gopherjs",
+            "repo": "gopherjs",
+            "repoInfo": {
+              "language": "go",
+              "license": "bsd-2-clause",
+              "stars": 13190
+            }
+          },
+          "key": "repository_compliance",
+          "message": "Repository gopherjs/gopherjs meets all compliance requirements",
+          "name": "Repository meets compliance requirements (500+ stars, permissive license, active maintenance)",
+          "stageRunId": "ms72bthja43fk73r1dt25xgxxx8gk5ge",
+          "status": "pass"
+        }
+      ],
+      "completedAt": 1792404162774,
+      "inputsHash": "fc4a3bef074da3512e73aea29adbfb30447e0f913b54815e85cfdd58e08b2d8a",
+      "itemId": "kh7cnm6syf87kby102esrpc5858gbdzb",
+      "stageId": "github_setup",
+      "stageName": "GitHub Repository",
+      "status": "pass",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd723y91mb0zs7mg6km8hdwbbx8gak4a"
+    },
+    {
+      "_creationTime": 1792404160530.199,
+      "_id": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+      "checks": [
+        {
+          "_creationTime": 1792404162980.891,
+          "_id": "jn70y7zvrzb8hps6p0qkyt0s858gjv0z",
+          "completedAt": 1792404162980,
+          "details": {
+            "maxWords": 1000,
+            "wordCount": 391
+          },
+          "key": "description_word_count",
+          "message": "Word count: 391/1000",
+          "name": "Problem description stays within the hard word cap (pass ≤1000 words, fail >1000)",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404162981.0918,
+          "_id": "jn7drqn9eaykbv1f27jvsve8758gjfsy",
+          "completedAt": 1792404162981,
+          "details": {
+            "emdashes": 0,
+            "hardwrappedParagraphs": 0,
+            "wallOfText": 0,
+            "wordCount": 381
+          },
+          "key": "description_formatting",
+          "name": "Problem description doesn't look AI-generated (line wrapping, em-dashes)",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404162981.247,
+          "_id": "jn73g45df5n5y6w0qxkmkqwtgx8gjzpg",
+          "completedAt": 1792404162981,
+          "details": {
+            "field": "description"
+          },
+          "key": "utf8_validation",
+          "message": "Text contains only valid ASCII characters",
+          "name": "Problem description should be valid UTF-8",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404162981.3018,
+          "_id": "jn734g0ex8169jxcmcka5rprh98gjcwd",
+          "completedAt": 1792404162981,
+          "details": {
+            "patchField": "testPatch"
+          },
+          "key": "valid_test_patch",
+          "message": "Patch has valid git diff syntax",
+          "name": "Test patch applies correctly",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404167215.376,
+          "_id": "jn77bxmstanncgmpq3rp2ktf9x8gkrzp",
+          "completedAt": 1792404167215,
+          "details": {
+            "feedback": "Pass. The primary goal is to correct incorrect pointer conversion behavior (e.g. pointers reporting their original type to %T and reflection when converted, nil pointer-to-array converting to a non-nil value, explicit conversions producing distinct pointer identities that break comparisons and map keys). The description repeatedly says these behaviors are wrong today and describes the expected correct semantics after the change (preserve destination type, nil-ness, pointer identity, comparisons, and behavior through unsafe.Pointer). That matches the bugfix definition: something that was supposed to work correctly is broken and needs to be corrected.",
+            "status": "pass",
+            "suggested_category": "none"
+          },
+          "key": "category_alignment",
+          "name": "Problem description matches the selected category",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404171004.4695,
+          "_id": "jn7c0gm4we9t5fzdgyfm01rv0s8gj5a7",
+          "completedAt": 1792404171004,
+          "details": {
+            "all_issues": "",
+            "no_urls_in_description": {
+              "explanation": "No URLs or web links were found in the problem description. All references are to language features and code snippets; no http/https/www/ftp patterns detected. This satisfies the 'No URLs in Problem Description' requirement.",
+              "status": "OK"
+            }
+          },
+          "key": "description_technical",
+          "name": "Problem description sanity checks (AI, up to 1 min)",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404172874.0613,
+          "_id": "jn70c8ssemc5afpnr5rbfdeew18gkqt2",
+          "completedAt": 1792404172874,
+          "details": {
+            "similarProblems": [
+              {
+                "contentAuthoredAt": 1782579642478,
+                "isOlder": true,
+                "similarity": 0.3201486323312958
+              },
+              {
+                "contentAuthoredAt": 1790285256502,
+                "isOlder": true,
+                "similarity": 0.5121506937719801
+              },
+              {
+                "contentAuthoredAt": 1790522046333,
+                "isOlder": true,
+                "similarity": 0.47606273467435406
+              },
+              {
+                "contentAuthoredAt": 1782688850333,
+                "isOlder": true,
+                "similarity": 0.378666531994696
+              },
+              {
+                "contentAuthoredAt": 1792061862493,
+                "isOlder": true,
+                "similarity": 0.2832380749533154
+              },
+              {
+                "contentAuthoredAt": 1792401159849,
+                "isOlder": false,
+                "similarity": 0.5115268397680889
+              },
+              {
+                "contentAuthoredAt": 1790098566633,
+                "isOlder": true,
+                "similarity": 0.6963781714439392
+              },
+              {
+                "contentAuthoredAt": 1792159901856,
+                "isOlder": true,
+                "similarity": 0.6808225512504578
+              },
+              {
+                "contentAuthoredAt": 1789805161522,
+                "isOlder": true,
+                "similarity": 0.6681604385375977
+              },
+              {
+                "contentAuthoredAt": 1790456461668,
+                "isOlder": true,
+                "similarity": 0.6557199954986572
+              }
+            ],
+            "threshold": 0.9,
+            "topScore": 0.6963781714439392
+          },
+          "key": "plagiarism",
+          "name": "Problem is not plagiarized",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404180165.3745,
+          "_id": "jn78xr6a6f19bbmppsa6cgz40h8gkqpj",
+          "completedAt": 1792404180165,
+          "details": {
+            "collisions": [
+              {
+                "actual": "tests/ptrconv/ptrconv_test.go",
+                "predicted": "tests/ptrconv_test.go"
+              }
+            ],
+            "newFiles": [
+              "tests/ptrconv/ptrconv_test.go"
+            ],
+            "predictedPaths": [
+              "tests/pointer_conversions_test.go",
+              "tests/pointerconversions_test.go",
+              "tests/ptrconv_test.go",
+              "tests/ptr_conv_test.go",
+              "tests/pointer_identity_test.go",
+              "tests/pointer_id_test.go",
+              "tests/pointer_nil_test.go",
+              "tests/ptr_nil_test.go",
+              "tests/pointer_reflection_test.go",
+              "tests/pointer_mapkey_test.go",
+              "tests/pointer_map_key_test.go",
+              "tests/pointer_basic_types_test.go",
+              "tests/pointer_basic_test.go",
+              "tests/pointer_composite_literals_test.go",
+              "tests/pointer_composites_test.go",
+              "tests/pointer_variadic_test.go",
+              "tests/pointer_assignments_test.go",
+              "tests/pointer_append_test.go",
+              "tests/pointer_channel_select_test.go",
+              "tests/pointer_slice_elem_test.go",
+              "tests/pointer_struct_array_test.go",
+              "tests/unsafe_pointer_test.go",
+              "tests/unsafe_ptr_nil_test.go",
+              "tests/unsafe_pointer_identity_test.go",
+              "compiler/pointer_conversions_test.go",
+              "compiler/ptrconv_test.go",
+              "compiler/ptrconv_mapkey_test.go",
+              "compiler/unsafe_pointer_test.go",
+              "compiler/convert_pointer_test.go",
+              "internal/pointer_conversions_test.go",
+              "internal/unsafe_pointer_test.go",
+              "test/pointer_conversions_test.go",
+              "spec/pointer_conversions_test.go",
+              "__tests__/pointer_conversions_test.go"
+            ],
+            "reasoning": "The fix affects Go pointer conversion behavior (explicit/implicit conversions, nil identity, map keys, reflection and unsafe.Pointer), so tests will be Go _test.go files named for pointer conversions/identity/nil/reflection/unsafe cases; I included variants of common naming patterns and plausible directories found in this repo (tests/, compiler/, internal/) plus reasonable alternatives (test/, spec/, __tests__).",
+            "softFail": false
+          },
+          "key": "predictable_test_names",
+          "message": "Some new test files use predictable names that an implementer would also pick. This risks downstream naming collisions when the implementer's tests overwrite or conflict with yours.\n\nColliding files:\n  - \"tests/ptrconv/ptrconv_test.go\" test file may cause test name collisions\n\nPlease rename these test files to include a random hash so an implementer cannot predict the path — for example: test_{name}_a3f9b2.py, {name}.4c8e1f.test.ts, {name}_9d2c7e_test.go. Do NOT use \"shipd\" or \"datacurve\" — those are banned.\n\nIf a flagged file's NAME is mandated by the toolchain (a package manifest like Forc.toml/Cargo.toml, or an entrypoint like src/lib.rs), randomize its parent DIRECTORY name instead — the collision then clears because the implementer cannot predict the directory.\n\nGenerate one with: openssl rand -hex 3",
+          "name": "Test file names don't collide with predictable defaults (AI)",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "fail"
+        },
+        {
+          "_creationTime": 1792404205902.259,
+          "_id": "jn70k6m3dhveq6h48adt5qxy418gjaj4",
+          "completedAt": 1792404205902,
+          "details": {
+            "all_issues": "Summary: Overall strong alignment and quality; consider minor additions to broaden coverage.\n\nDetails:\n1. No Test Leakage [OK]: Problem description does not mention or rely on new test files or logic added in the patch.\n\n2. Tests Cover Required Behavior [OK]: Broad coverage of explicit/implicit conversions, identity, nil semantics, interface behavior, map keys, channels (including select), composites, and unsafe.Pointer. Minor potential gaps: lack of a non-nil pointer-to-pointer identity conversion test and no direct test of conversions between different pointer-to-struct types (noted as already working in the description). Consider improving tests by adding these cases.\n\n3. Tests Focus on Behavior [OK]: Tests assert public, user-visible behavior (type reporting via %T/reflect, equality/identity, nil handling) rather than internal implementation details.\n\n4. Sanity and Professionalism [OK]: test.sh is coherent and robust; tests are well-structured and readable; no obvious parsing/runtime issues apparent.",
+            "no_test_leakage": {
+              "explanation": "The problem description does not reference any test files, functions, or logic added in this patch. It describes desired behaviors and scenarios at a high level without leaking specifics about the new tests.",
+              "status": "OK"
+            },
+            "sanity_check": {
+              "explanation": "Problem and tests are coherent, professional, and feasible. The test runner script is reasonable, rebuilds gopherjs, handles modes, and captures output for JUnit conversion. Tests are valid Go tests and appear to run reliably, with a note to keep a potentially risky test last, which is sensible. No malformed or inappropriate content detected.",
+              "status": "OK"
+            },
+            "tests_cover_required_behavior": {
+              "explanation": "The tests thoroughly exercise explicit and implicit pointer conversions across many contexts described in the problem: function/variadic args, returns, multiple results, composite literals (struct/array/slice/map), map assignments, append, channel sends (including select), var declarations and assignments, interface interactions, equality and identity preservation, nil semantics, map keys, and unsafe.Pointer roundtrips and nil behavior. They also cover pointers to basic types, named types, arrays, pointers to slice elements and struct fields. Minor gaps: there is no explicit test for non-nil pointer-to-pointer identity conversion, and no direct test for conversions between different pointer-to-struct types (the problem notes these already work and must keep working). These are edge coverage gaps rather than major omissions.",
+              "status": "OK"
+            },
+            "tests_focus_on_behavior": {
+              "explanation": "Tests validate observable behavior (types reported via %T and reflect, equality, identity preservation, nil behavior, interface assertions/switches, map behavior, channel sends) rather than implementation details. They do not enforce internal algorithms or source inspection.",
+              "status": "OK"
+            }
+          },
+          "key": "problem_and_test_quality",
+          "name": "Problem and tests are good quality (AI, up to 1 min)",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404206616.9307,
+          "_id": "jn75qv9mn5d46mq4m5ze0kyj258gjsk4",
+          "completedAt": 1792404206616,
+          "details": {
+            "all_issues": "ERROR: test.sh contains a package installation command: `go install .` is executed to rebuild the binary, but installing packages/binaries in test.sh is not allowed.",
+            "base_new_mode_support": {
+              "explanation": "test.sh supports both modes via a case statement: base runs `go test ...` and `gopherjs test ... ./tests fmt log ...` (which excludes tests/ptrconv), while new runs only `gopherjs test -v ./tests/ptrconv`. The modes run distinct test sets, with base excluding the newly added tests and new including them.",
+              "status": "OK"
+            },
+            "executable_permissions": {
+              "explanation": "test.sh is added with mode 100755, making it executable.",
+              "status": "OK"
+            },
+            "no_environment_dockerfile": {
+              "explanation": "No Dockerfile or similar environment file is included in the patch.",
+              "status": "OK"
+            },
+            "no_irrelevant_changes": {
+              "explanation": "No unrelated or cosmetic changes detected; only test-related additions are present.",
+              "status": "OK"
+            },
+            "no_malicious_code": {
+              "explanation": "No signs of malicious, obfuscated, or exfiltrating code. The script runs test commands and log conversion only.",
+              "status": "OK"
+            },
+            "no_package_installation": {
+              "explanation": "test.sh runs `go install .` to rebuild the binary, which counts as a package installation command and is not allowed in the test runner.",
+              "status": "error"
+            },
+            "no_solution_code": {
+              "explanation": "Patch only adds a test runner (test.sh) and a Go test file at tests/ptrconv/ptrconv_test.go. No application or implementation code is added or modified.",
+              "status": "OK"
+            },
+            "relevant_files_only": {
+              "explanation": "All added files are directly related to testing (test.sh and a test file).",
+              "status": "OK"
+            },
+            "test_runner_present": {
+              "explanation": "A test runner script /test.sh is added at the repository root.",
+              "status": "OK"
+            },
+            "valid_git_diff": {
+              "explanation": "Patch is a valid unified git diff with two new files. New files correctly use --- /dev/null and +++ b/path headers. Diff is not empty and contains proper hunks.",
+              "status": "OK"
+            }
+          },
+          "key": "test_patch_format",
+          "message": "ERROR: test.sh contains a package installation command: `go install .` is executed to rebuild the binary, but installing packages/binaries in test.sh is not allowed.\n\nPlease ensure your test patch:\n1. Is a valid git diff format\n2. Includes a test.sh that supports both `base` and `new` modes\n3. Contains only test code (no solution implementation)\n4. Does not install packages in test.sh (use Dockerfile instead)",
+          "name": "Test patch sanity checks",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "fail"
+        },
+        {
+          "_creationTime": 1792404213059.3367,
+          "_id": "jn769tpbfxtkbmz1zs3ys5j0wx8gj8ec",
+          "completedAt": 1792404213059,
+          "details": {
+            "all_issues": "",
+            "problem_description_provides_sufficient_public_interface_information": {
+              "explanation": "The problem describes semantic requirements for pointer conversions (explicit and implicit) across many contexts and explicitly lists the scenarios: arguments (including variadic), returns, multiple-result forwarding, composite literals (struct/array/slice/map keys and values), append, map assignments, channel sends (including select), variable declarations/assignments, interfaces, and unsafe.Pointer interactions. It also states the expected behaviors: destination type identity for %T/reflect/type assertions/switches, nil preservation, pointer identity/equality preservation (including round-trips and map keys), and coverage including basic types, pointers to pointers, arrays, slice elements, and struct fields. No surprising API surface, filenames, or structural constraints are required by the tests; they only verify runtime semantics. A developer implementing the described semantics could pass these tests without seeing the tests.",
+              "status": "OK"
+            },
+            "tests_and_problem_agree_on_specific_behaviors": {
+              "explanation": "The tests directly exercise the behaviors specified: type identity via %T/reflect and assertions, equality and identity after conversions (including repeated conversions and round-trips), nil conversions, aliasing through converted pointers, operations in all listed implicit-conversion contexts, interface comparisons, map key behavior, and unsafe.Pointer nil and identity semantics. No test expects behavior outside or contradictory to the problem description. Minor checks like fmt.Sprint on nil pointers or writing through an unsafe round-trip are consistent with the stated semantics and Go norms.",
+              "status": "OK"
+            }
+          },
+          "key": "test_patch_alignment",
+          "name": "Problem and tests are aligned (AI, up to 1 min)",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404225168.7869,
+          "_id": "jn71z9g6ytenhcvzmgmedtj2298gj5em",
+          "completedAt": 1792404225168,
+          "details": {
+            "status_reasoning": "There are 5 suggestions total, including 2 high-priority removals (exhaustive context enumeration and the whole broken-behavior paragraph). Per rules, any high priority or 3+ suggestions require a request_changes verdict.",
+            "suggestions": [
+              {
+                "priority": "high",
+                "quote": "..., and the implicit conversions that happen when a `*T` value is used where an assignable named pointer type such as `type P *T` is expected, or the other way around: function and variadic arguments, multiple results passed straight to another call, return values, struct, array, slice and map literal elements and keys, map assignments, `append`, channel sends (including in `select`), variable declarations and assignments.",
+                "suggestion": "Remove the exhaustive enumeration of contexts (after the colon). It’s standard for assignment/implicit conversion sites and fully covered by tests; keep only the high-level statement that implicit conversions apply wherever `*T` and assignable named pointer types are used."
+              },
+              {
+                "priority": "high",
+                "quote": "Several of these go wrong today. A pointer to a basic type that is passed as an argument or stored in a composite literal keeps reporting its original type to `%T`, reflection, type assertions and type switches. Converting a nil pointer to an array into another pointer type gives a value that is not equal to nil. An explicit conversion of a pointer to a basic type creates a new pointer that is not equal to the original after converting it back, nor to a second conversion of the same pointer, so it can't be relied on as a map key either.",
+                "suggestion": "Remove the entire “current broken behavior” paragraph. The failing behaviors are demonstrated by tests and don’t need to be restated in the task description."
+              },
+              {
+                "priority": "medium",
+                "quote": "... pointers to basic types (including element types that differ only by name, like `*int` and `*MyInt` or `*int64` and `*MyInt64`), ...",
+                "suggestion": "Remove the parenthetical named-type examples. They restate the general rule and add verbosity without new requirements."
+              },
+              {
+                "priority": "low",
+                "quote": "Converting the zero `unsafe.Pointer` to any pointer type, including a pointer to a struct, gives that type's nil pointer, ...",
+                "suggestion": "Delete “including a pointer to a struct”. It’s implied by “any pointer type”."
+              },
+              {
+                "priority": "medium",
+                "quote": "..., and converting the same pointer to the same type twice gives equal pointers, also when they are used as map keys or compared inside interfaces.",
+                "suggestion": "Remove the trailing examples “also when they are used as map keys or compared inside interfaces.” Equality already implies those use-cases; tests cover them."
+              }
+            ],
+            "summary": "- [HIGH] Remove the long enumeration of implicit-conversion contexts (\"function and variadic arguments, multiple results..., variable declarations and assignments\"). Keep only the high-level statement that implicit conversions apply wherever `*T` and assignable named pointer types are used; the tests cover all specific contexts.\n- [HIGH] Delete the entire paragraph describing current broken behavior (\"Several of these go wrong today... %T, reflection, ... map key either\"). It’s redundant with tests and not needed in the problem brief.\n- [MEDIUM] Trim the parenthetical examples for named basic types (\"including element types that differ only by name, like `*int` and `*MyInt`...\"). The general rule already covers this and the examples add verbosity without new requirements.\n- [MEDIUM] Remove the trailing examples in the equality statement (\"also when they are used as map keys or compared inside interfaces\"). Equality implies those behaviors; tests verify them.\n- [LOW] Drop the redundant clause \"including a pointer to a struct\" from the `unsafe.Pointer` nil-conversion sentence; it’s implied by \"any pointer type\".",
+            "verdict": "request_changes"
+          },
+          "key": "description_conciseness",
+          "message": "**Suggestions for improvement** — These are AI-generated suggestions, not hard rules.\n\n- [HIGH] Remove the long enumeration of implicit-conversion contexts (\"function and variadic arguments, multiple results..., variable declarations and assignments\"). Keep only the high-level statement that implicit conversions apply wherever `*T` and assignable named pointer types are used; the tests cover all specific contexts.\n- [HIGH] Delete the entire paragraph describing current broken behavior (\"Several of these go wrong today... %T, reflection, ... map key either\"). It’s redundant with tests and not needed in the problem brief.\n- [MEDIUM] Trim the parenthetical examples for named basic types (\"including element types that differ only by name, like `*int` and `*MyInt`...\"). The general rule already covers this and the examples add verbosity without new requirements.\n- [MEDIUM] Remove the trailing examples in the equality statement (\"also when they are used as map keys or compared inside interfaces\"). Equality implies those behaviors; tests verify them.\n- [LOW] Drop the redundant clause \"including a pointer to a struct\" from the `unsafe.Pointer` nil-conversion sentence; it’s implied by \"any pointer type\".\n\n*Only high-severity issues are blocking. Medium and low severity suggestions are optional.*",
+          "name": "Problem description contains only necessary information (AI, up to 2 min)",
+          "stageRunId": "ms7f768yj6x369b9xq6rnprfq98gkv59",
+          "status": "warning"
+        }
+      ],
+      "completedAt": 1792404225264,
+      "inputsHash": "fc4a3bef074da3512e73aea29adbfb30447e0f913b54815e85cfdd58e08b2d8a",
+      "itemId": "kh7cnm6syf87kby102esrpc5858gbdzb",
+      "stageId": "problem_and_tests",
+      "stageName": "Problem Description & Tests",
+      "status": "fail",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd723y91mb0zs7mg6km8hdwbbx8gak4a"
+    },
+    {
+      "_creationTime": 1792404160530.1992,
+      "_id": "ms73vfrmc3hg6x4wgz4yxx4gnx8gj9d3",
+      "checks": [
+        {
+          "_creationTime": 1792404263905.0442,
+          "_id": "jn7895ntw140wjg4kv65nx5q8h8gjj7q",
+          "completedAt": 1792404263905,
+          "details": {
+            "inputsFingerprint": "fe7a3eefcd6ec36830f7251c7f1043872939192128aed2f929514f3748a83286",
+            "overall": "distinct",
+            "perCandidate": [
+              {
+                "confidence": 0.97,
+                "contentAuthoredAt": 1790098566633,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "Submission modifies GopherJS’s compiler translation and JS prelude to preserve destination pointer type identity, nil semantics, and pointer equality across explicit and implicit pointer and unsafe.Pointer conversions; candidate changes Go utility functions to enforce bounded integer conversions, rounding/truncation rules, and recursive reflect-based container conversion.",
+                  "Submission introduces and uses runtime helpers for pointer handling ($isNilPointer, $pointerConversion, $pointerToUnsafe) and alters translateConversion/translateImplicitConversion for pointer types; candidate extends mathutil ToInt/ToInt64/ToUint/ToUint64, TryStr* helpers, and reflects.ValueByType/prepareArg/SetValue with cycle detection, key-collision checks, and strict modes.",
+                  "Submission focuses on pointer identity, nil mapping per target pointer type, and unsafe.Pointer zero semantics within compiled JavaScript; candidate focuses on numeric overflow/underflow checks, NaN/Inf rejection, string rounding behavior, and deep conversion of maps/slices/pointers via reflection in native Go."
+                ],
+                "one_liner": "Both rework conversion logic to align runtime behavior with Go’s expectations, but one targets pointer/unsafe conversions in the GopherJS compiler/runtime while the other enforces numeric and reflective conversions with overflow and container recursion in a utility library.",
+                "overlap": {
+                  "shared_apis": [],
+                  "shared_test_behaviors": []
+                },
+                "reason": "The two patches operate in different repositories and layers with different goals: the submission fixes pointer and unsafe conversions in GopherJS’s compiler/runtime to preserve type identity and nil semantics, while the candidate tightens numeric and reflective conversions in a utility library, adding bounds checking, rounding, and recursive container conversion. There is no shared modified surface or common API/behavior beyond the generic notion of 'conversion,' so they teach different debugging lessons and should co-exist.",
+                "similarity": 0.6963781714439392,
+                "submission_summary": "Adjusts GopherJS compiler conversion logic and JS prelude to ensure pointer conversions (including via unsafe.Pointer) yield values of the destination pointer type, preserve nil semantics, and maintain pointer identity and equality. Adds runtime helpers and updates translateConversion/translateImplicitConversion to route all pointer conversions through consistent logic.",
+                "verdict": "distinct"
+              },
+              {
+                "confidence": 0.93,
+                "contentAuthoredAt": 1792159901856,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "Different repositories and layers: the submission changes GopherJS compiler codegen and JS runtime helpers ($pointerConversion, $pointerToUnsafe) to implement Go’s pointer-conversion semantics globally; the candidate modifies a Go code generator (goverter) to introduce per-invocation pointer-graph state in generated converters.",
+                  "Submission scope is broad: covers explicit and implicit conversions among all pointer types (basic types, arrays, pointers to pointers, structs) and unsafe.Pointer, affecting %T, reflection, type assertions, map keys, channel sends, etc.; candidate scope is narrow: only when a new PreservePointerIdentity flag is enabled, and only for pointer-to-struct conversions, preserving sharing/cycles during a single conversion call.",
+                  "Submission ensures destination-type identity and consistent nil representations across pointer types, including mapping unsafe.Pointer zero to typed nils; candidate keeps public signatures but threads hidden state, prohibits certain methods, and does not alter language-level type identity or unsafe.Pointer semantics.",
+                  "Submission’s identity coherence is achieved by proxy caching on pointer objects in the runtime; candidate achieves identity via per-method maps in a generated pointerState struct passed through recursive conversions."
+                ],
+                "one_liner": "Both address pointer identity around conversions, but one fixes Go pointer-type semantics in the GopherJS compiler/runtime while the other adds an optional pointer-graph state to a code generator to preserve sharing/cycles during struct-pointer conversions.",
+                "overlap": {
+                  "shared_apis": [],
+                  "shared_test_behaviors": []
+                },
+                "reason": "Despite both mentioning pointer identity, the modified surfaces and behaviors are unrelated: one is a language/runtime semantic fix in gopherjs for all pointer conversions (including unsafe.Pointer), while the other is an optional code-generation feature in goverter to maintain object graph sharing only for struct pointers per invocation. There is no shared purpose-matched API or file surface, and the scopes teach different lessons (runtime semantics vs generator stateful graph mapping).",
+                "similarity": 0.6808225512504578,
+                "submission_summary": "Adjusts GopherJS’s conversion translation and runtime to ensure pointer conversions produce destination-typed pointers with correct nil handling and stable identity, adding $pointerConversion and $pointerToUnsafe and routing pointer cases in translateConversion/translateImplicitConversion through them.",
+                "verdict": "distinct"
+              },
+              {
+                "confidence": 0.94,
+                "contentAuthoredAt": 1789805161522,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "Different repositories and domains: a Go-to-JS compiler (gopherjs) vs. a Go expression evaluator (gval).",
+                  "Submission modifies the compiler’s conversion translation (translateConversion/translateImplicitConversion) and adds JS runtime helpers to preserve pointer type/identity and nil semantics, including unsafe.Pointer mapping; candidate changes reflection-based selection/method dispatch, argument handling, truthiness, equality, and operators across multiple files.",
+                  "Submission’s behavior centers on explicit/implicit pointer-to-pointer and unsafe.Pointer conversions preserving destination type, identity, and nil equivalence; candidate focuses on dereferencing through pointers/interfaces during selection, safe nil handling (no panics), method resolution on values/pointers (including promoted/embedded), typed key conversion for maps/slices/arrays, equality and string rendering for named/pointer basic types, and function-call nil argument typing.",
+                  "Submission’s scope includes pointers to arrays/structs and interface comparisons within compiled JS semantics; candidate’s scope includes selector parsing, “in” operator over slices/arrays, short-circuit ops (&&, ||, ??), date() argument typing, and wrapping function call errors with full names."
+                ],
+                "one_liner": "Both address Go pointer/nil semantics, but one fixes a compiler’s pointer conversion behavior and JS runtime helpers while the other overhauls an expression evaluator’s reflection-based selection, method calls, operators, and nil handling.",
+                "overlap": {
+                  "shared_apis": [],
+                  "shared_test_behaviors": []
+                },
+                "reason": "There is no purpose-matched surface overlap: the submission changes a compiler’s conversion translation and JS prelude to implement correct pointer conversion and unsafe.Pointer semantics, while the candidate revises a reflection-driven evaluator’s selection, method dispatch, equality, and operator semantics. Any similarity (pointers, nil) is generic category overlap, not the same behavioral change on the same surface. They teach different debugging lessons and should co-exist.",
+                "similarity": 0.6681604385375977,
+                "submission_summary": "Adjusts gopherjs’s translation of pointer and unsafe.Pointer conversions and adds JS runtime helpers so converted pointers have the destination type, preserve identity across conversions, and map nil correctly (including unsafe.Pointer <-> typed pointer).",
+                "verdict": "distinct"
+              },
+              {
+                "confidence": 0.92,
+                "contentAuthoredAt": 1790456461668,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "Different repositories and layers: the submission changes GopherJS’s compiler and runtime (prelude) to implement pointer conversion semantics; the candidate changes go-tools’ U1000 analyzer to infer field usage across conversions.",
+                  "Submission’s behavior is observable at runtime (pointer identity, typed nils, conversions to/from unsafe.Pointer yield correct nil and equality); candidate’s behavior is static analysis metadata (which fields are considered used) with no runtime effect.",
+                  "Submission introduces concrete runtime helpers ($pointerConversion, $pointerToUnsafe, $isNilPointer) and integrates them in translateConversion/translateImplicitConversion; candidate adds a new conversions pipeline (collectStructuralTypes, processConversions, conversionMembers/conversionFields) and unions field-usage sets across type-parameter constraints.",
+                  "Submission addresses pointers to arrays, pointers to basic types, nil mapping, identity preservation and proxy reuse; candidate focuses on composing field-usage relationships across struct/pointer conversions, type parameters, constraints, and unsafe.Pointer without implementing conversion semantics."
+                ],
+                "one_liner": "One implements correct runtime pointer-conversion semantics in a Go-to-JS compiler; the other extends a static analyzer to propagate field usage across generic and unsafe.Pointer conversions.",
+                "overlap": {
+                  "shared_apis": [],
+                  "shared_test_behaviors": []
+                },
+                "reason": "Although both mention conversions and unsafe.Pointer, they target different repos and completely different purposes: one implements runtime pointer-conversion semantics in GopherJS, the other augments a static analyzer’s field-usage inference across generic conversions. There is no purpose-matched modified surface or shared API/behavior; any overlap is conceptual and boilerplate to the domain, not the same task.",
+                "similarity": 0.6557199954986572,
+                "submission_summary": "Updates GopherJS’s translateConversion/translateImplicitConversion and prelude to ensure pointer conversions produce values of the destination pointer type, preserve identity, and correctly map nil, including to/from unsafe.Pointer, via new runtime helpers ($pointerConversion, $pointerToUnsafe, $isNilPointer).",
+                "verdict": "distinct"
+              },
+              {
+                "confidence": 0.92,
+                "contentAuthoredAt": 1790285256502,
+                "evalStatus": "ok",
+                "evidence_gaps": [],
+                "isOlder": true,
+                "meaningful_differences": [
+                  "Submission focuses on pointer conversions: preserving destination pointer type, nil mapping (including unsafe.Pointer), and pointer identity across conversions; introduces runtime helpers to canonicalize and proxy pointers.",
+                  "Candidate focuses on evaluation order: ensuring left-to-right evaluation for calls/receives/assignments, correct short-circuiting, map/index/slice operand ordering, and single-evaluation of assignment-ops; introduces a new compiler pass and many ordering utilities.",
+                  "Modified surfaces overlap only incidentally (both touch compiler/expressions.go) but for entirely different purposes: submission adds/rewires conversion logic; candidate inserts evaluation-order rewrites and hoisting guards throughout expression/statement translation."
+                ],
+                "one_liner": "Both patches align GopherJS with Go semantics, but one fixes pointer conversion identity/nil behavior while the other enforces Go’s operand evaluation order across expressions, calls, and assignments.",
+                "overlap": {
+                  "shared_apis": [],
+                  "shared_test_behaviors": []
+                },
+                "reason": "Despite living in the same repo, the patches implement unrelated semantics. The submission introduces pointer-conversion machinery and runtime support to maintain destination type, nil semantics, and identity; the candidate adds a comprehensive evaluation-order framework and rewrites expression/statement translation to honor Go’s left-to-right rules. There is no purpose-matched surface or shared behavior; overlapping files are touched for different goals, so these teach different debugging lessons.",
+                "similarity": 0.5121506937719801,
+                "submission_summary": "Adjusts conversion code so that converting between pointer types (including via unsafe.Pointer) preserves the destination type, nil semantics, and pointer identity; adds runtime helpers to convert/canonicalize pointers and update nil handling.",
+                "verdict": "distinct"
+              }
+            ]
+          },
+          "key": "llm_dedup",
+          "name": "LLM compares against flagged similar problems (AI, only runs when prior plagiarism step finds candidates)",
+          "stageRunId": "ms73vfrmc3hg6x4wgz4yxx4gnx8gj9d3",
+          "status": "pass"
+        }
+      ],
+      "completedAt": 1792404264008,
+      "inputsHash": "fc4a3bef074da3512e73aea29adbfb30447e0f913b54815e85cfdd58e08b2d8a",
+      "itemId": "kh7cnm6syf87kby102esrpc5858gbdzb",
+      "stageId": "plagiarism_review",
+      "stageName": "Plagiarism Review",
+      "status": "pass",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd723y91mb0zs7mg6km8hdwbbx8gak4a"
+    },
+    {
+      "_creationTime": 1792404160530.1995,
+      "_id": "ms71n74zsq0qjvd06mf40289718gk53r",
+      "checks": [
+        {
+          "_creationTime": 1792404264226.8018,
+          "_id": "jn74ptr1h4f2223t37y76n18js8gkp0w",
+          "completedAt": 1792404264226,
+          "details": {
+            "installMode": "not_python"
+          },
+          "key": "editable_install_guidance",
+          "message": "Not a Python environment — editable-install guidance does not apply",
+          "name": "Python installs are editable or test invocation is documented",
+          "stageRunId": "ms71n74zsq0qjvd06mf40289718gk53r",
+          "status": "pass"
+        },
+        {
+          "_creationTime": 1792404298606.9531,
+          "_id": "jn71fmac360r1v09fr3mv13eyn8gjecy",
+          "completedAt": 1792404298606,
+          "details": {
+            "all_issues": "WARNING: The Dockerfile downloads and installs an additional Go distribution even though the base image (public.ecr.aws/d3j8x8q7/olympus-base-go:latest) already provides a Go toolchain. Installing another Go distribution may be redundant and can cause confusion about which toolchain is used. If you need a different GOROOT for GopherJS, justify it in a comment and consider using an image with the desired Go version rather than installing another distribution during build. Problematic snippet:\n\nRUN curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o /tmp/go.tar.gz \\\n    && echo \"502fc16d5910562461e6a6631fb6377de2322aad7304bf2bcd23500ba9dab4a7  /tmp/go.tar.gz\" | sha256sum -c - \\\n    && mkdir -p /usr/local/go1.21 \\\n    && tar -C /usr/local/go1.21 --strip-components=1 -xzf /tmp/go.tar.gz \\\n    && rm /tmp/go.tar.gz\n\n(Although the tarball is checksum-verified—which is good—fetching/installing a language runtime already present in the base image should be explicitly justified or avoided.)",
+            "base_image_compliant": {
+              "explanation": "FROM public.ecr.aws/d3j8x8q7/olympus-base-go:latest is one of the allowed Olympus per-language base images; this is compliant with the rubric.",
+              "status": "OK"
+            },
+            "dependencies_installed": {
+              "explanation": "The Dockerfile runs `go mod download` to fetch module dependencies and installs project binaries with `go install .`. This satisfies the requirement to install dependencies for a Go project.",
+              "status": "OK"
+            },
+            "interactive_shell": {
+              "explanation": "The image ends with CMD [\"/bin/bash\"], providing an interactive shell for developers.",
+              "status": "OK"
+            },
+            "no_test_execution": {
+              "explanation": "No tests are executed during build (no pytest, go test, npm test, nor explicit calls to test.sh/test.patch). COPY . . is used which may include test files, but they are not run during build.",
+              "status": "OK"
+            },
+            "package_manager_installation": {
+              "explanation": "WARNING: The Dockerfile downloads and installs an additional Go distribution into /usr/local/go1.21 using curl/tar. The chosen base image (olympus-base-go) already provides a Go toolchain. Installing another Go distribution in the image may be redundant and can lead to confusion about which Go is in use. If you truly need a different GOROOT (for example GopherJS requiring a specific Go layout), this must be clearly justified. Although the tarball SHA256 is checked (good), fetching and installing language runtimes/tools via curl should be justified when the base already supplies that toolchain.",
+              "status": "warning"
+            },
+            "registry_compliant": {
+              "explanation": "Base image is hosted at public.ecr.aws and is one of the allowed Olympus images.",
+              "status": "OK"
+            },
+            "repository_setup": {
+              "explanation": "WORKDIR /app is set and the Dockerfile uses COPY . . to copy repository files into /app. The Dockerfile does not attempt to git clone the repository.",
+              "status": "OK"
+            },
+            "security_safety": {
+              "explanation": "No obfuscated commands, no credentials, no docker.sock mounts, and no network exfiltration patterns are present. The tarball downloaded from go.dev is checksum-verified which mitigates tampering risk. Downloading and extracting external binaries is still a safety consideration—see package_manager_installation warning—however the download is from an official domain and verified.",
+              "status": "OK"
+            },
+            "user_creation_compatible": {
+              "explanation": "No user/group creation is performed in the Dockerfile. This is acceptable per the rubric.",
+              "status": "OK"
+            },
+            "version_pinning": {
+              "explanation": "Version pinning is present for the added Go distribution (go1.21.13 with an explicit SHA256) and for the installed tool `github.com/jstemmer/go-junit-report/v2@v2.1.0`. Dependency resolution relies on go.mod/go.sum (which is considered pinned). The base image uses :latest (allowed by the rubric for the required base images).",
+              "status": "OK"
+            }
+          },
+          "key": "dockerfile_validation",
+          "message": "WARNING: The Dockerfile downloads and installs an additional Go distribution even though the base image (public.ecr.aws/d3j8x8q7/olympus-base-go:latest) already provides a Go toolchain. Installing another Go distribution may be redundant and can cause confusion about which toolchain is used. If you need a different GOROOT for GopherJS, justify it in a comment and consider using an image with the desired Go version rather than installing another distribution during build. Problematic snippet:\n\nRUN curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz -o /tmp/go.tar.gz \\\n    && echo \"502fc16d5910562461e6a6631fb6377de2322aad7304bf2bcd23500ba9dab4a7  /tmp/go.tar.gz\" | sha256sum -c - \\\n    && mkdir -p /usr/local/go1.21 \\\n    && tar -C /usr/local/go1.21 --strip-components=1 -xzf /tmp/go.tar.gz \\\n    && rm /tmp/go.tar.gz\n\n(Although the tarball is checksum-verified—which is good—fetching/installing a language runtime already present in the base image should be explicitly justified or avoided.)\n\nNote: Internet access is available during `docker build`, but not when running the container. Test patch is injected into the container after build. Ensure your Dockerfile installs all dependencies at build time so the environment works fully offline after build.",
+          "name": "Dockerfile guidelines",
+          "stageRunId": "ms71n74zsq0qjvd06mf40289718gk53r",
+          "status": "warning"
+        }
+      ],
+      "completedAt": 1792404298993,
+      "inputsHash": "fc4a3bef074da3512e73aea29adbfb30447e0f913b54815e85cfdd58e08b2d8a",
+      "itemId": "kh7cnm6syf87kby102esrpc5858gbdzb",
+      "stageId": "dockerfile",
+      "stageName": "Dockerfile",
+      "status": "warning",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd723y91mb0zs7mg6km8hdwbbx8gak4a"
+    },
+    {
+      "_creationTime": 1792404160530.1997,
+      "_id": "ms74m308s9bptdk8bygyc6s2f98gjxaj",
+      "checks": [
+        {
+          "_creationTime": 1792404299659.5288,
+          "_id": "jn7fngt5mvc1wwf4nybd1zxwyd8gkwx2",
+          "completedAt": 1792404299659,
+          "details": {
+            "patchField": "solutionPatch"
+          },
+          "key": "valid_solution_patch",
+          "message": "Patch has valid git diff syntax",
+          "name": "Solution patch is valid",
+          "stageRunId": "ms74m308s9bptdk8bygyc6s2f98gjxaj",
+          "status": "pass"
+        }
+      ],
+      "completedAt": 1792404299992,
+      "inputsHash": "fc4a3bef074da3512e73aea29adbfb30447e0f913b54815e85cfdd58e08b2d8a",
+      "itemId": "kh7cnm6syf87kby102esrpc5858gbdzb",
+      "stageId": "solution_patch",
+      "stageName": "Solution Patch",
+      "status": "pass",
+      "userId": "user_3B0ZuigTrU0XjvWMMtsSfZ9Zgz9",
+      "versionId": "kd723y91mb0zs7mg6km8hdwbbx8gak4a"
+    }
+  ],
+  "dynamicChecks": {
+    "_autoReviewSkipReverted": false,
+    "_descriptionQualityContested": false,
+    "_problemLastDraftEditedAt": 1792399390215,
+    "_solutionQualityContestNote": null,
+    "_solutionQualityContested": false,
+    "_verifierIncompletenessRunsEnabled": true,
+    "_verifyFairnessContestNote": null,
+    "_verifyFairnessContested": false
+  },
+  "readiness": {
+    "canSubmit": false,
+    "canSubmitWithoutBypass": false,
+    "cooldownAppliesToProblem": false,
+    "criteria": [
+      {
+        "detail": "4/5 passing",
+        "id": "prechecks",
+        "label": "Prechecks",
+        "stale": false,
+        "status": "fail"
+      },
+      {
+        "detail": "not run yet",
+        "id": "scopeGate",
+        "label": "Scope Gate",
+        "status": "pending"
+      },
+      {
+        "detail": "not run yet",
+        "id": "dynamicChecks",
+        "label": "Quality Checks",
+        "stale": false,
+        "status": "pending"
+      },
+      {
+        "id": "agentFair",
+        "label": "Fair task",
+        "status": "pending"
+      },
+      {
+        "id": "agentSolvable",
+        "label": "Solvable",
+        "status": "pending"
+      },
+      {
+        "id": "agentNovaCoverage",
+        "label": "Nova rollouts",
+        "status": "pending"
+      },
+      {
+        "id": "agentNovaSequenceLength",
+        "label": "Long horizon",
+        "status": "pending"
+      },
+      {
+        "id": "agentStrongCoverage",
+        "label": "Orion / Vega rollouts",
+        "status": "pending"
+      },
+      {
+        "id": "agentStrongSequenceLength",
+        "label": "Long horizon (Orion / Vega)",
+        "status": "pending"
+      },
+      {
+        "id": "agentNoCheating",
+        "label": "No cheating",
+        "status": "pending"
+      },
+      {
+        "id": "agentNoEnvBlocker",
+        "label": "No environment blockers",
+        "status": "pending"
+      },
+      {
+        "detail": "not run yet",
+        "id": "autoReview",
+        "label": "Auto Review",
+        "status": "pending"
+      },
+      {
+        "detail": "build to verify the image rebuilds hermetically",
+        "id": "rebuildSafe",
+        "label": "Rebuild-safe",
+        "status": "pending"
+      },
+      {
+        "detail": "the rebuildability check hasn't run for this image yet — rebuild to (re)run it",
+        "id": "harborSafe",
+        "label": "Harbor rebuild-safe",
+        "status": "pending"
+      }
+    ],
+    "isBypassed": false
+  },
+  "version": 0
+}
