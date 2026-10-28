@@ -1,0 +1,13 @@
+FAIL N1 NewAt struct from int panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL N2 NewAt write through panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL N3 NewAt round trip panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL N4 Convert unsafe -> *S panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL N5 direct (*S)(unsafe(&n)) panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL N6 (*int)(unsafe(&s)) first field panic: JavaScript error: Cannot create property '$proxies' on number '5'
+FAIL N7 struct -> array
+FAIL N8 array -> struct panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL N9 element -> struct panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL N10 struct element -> int
+FAIL N11 NewAt int from struct
+FAIL N12 *int -> *[2]int extra elems
+ok N13 nil stays nil

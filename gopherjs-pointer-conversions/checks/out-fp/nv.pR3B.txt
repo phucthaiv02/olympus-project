@@ -1,0 +1,25 @@
+FAIL B1 &p.X == &p.X panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL B2 *&p.X panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL B3 unsafe(&p.X) == unsafe(&x) panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL B4 &p.X == &x panic: JavaScript error: Cannot read properties of undefined (reading '0')
+ok B5 prefix struct diff names
+ok B5b prefix struct read
+FAIL B6 flat array -> struct with array field panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL B7 *O -> *int
+FAIL B8 *[2]Pair -> *[4]int32
+FAIL B9 NewAt S from &arr panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL B10 foreign Value.Convert panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL B11 foreign Elem().Addr() panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL B12 foreign Field.Addr == &p.X panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL B13 foreign %T and Println panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL B14 foreign ptr to array %T panic: JavaScript error: Cannot read properties of undefined (reading 'subarray')
+FAIL B15 foreign array slice p[:] panic: runtime error: index out of range
+FAIL B16 foreign array range
+FAIL B17 foreign array &p[1] identity
+FAIL B18 foreign array copy into panic: JavaScript error: dst.set is not a function
+FAIL B19 foreign array deref value panic: JavaScript error: Cannot read properties of undefined (reading 'subarray')
+FAIL B20 foreign array reflect Index
+FAIL B21 foreign array to slice conv
+FAIL B22 foreign struct DeepEqual panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL B23 *int -> *MyInt from foreign int panic: JavaScript error: Cannot create property '$proxies' on number '4'
+FAIL B24 foreign array len/cap panic: runtime error: slice bounds out of range
