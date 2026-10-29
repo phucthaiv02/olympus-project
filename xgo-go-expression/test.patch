@@ -1,0 +1,600 @@
+diff --git a/cl/goexpr_39ed2d_test.go b/cl/goexpr_39ed2d_test.go
+new file mode 100644
+index 00000000..e2d322fe
+--- /dev/null
++++ b/cl/goexpr_39ed2d_test.go
+@@ -0,0 +1,545 @@
++//go:build !genjs
++
++package cl_test
++
++import (
++	"bytes"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/goplus/xgo/cl"
++	"github.com/goplus/xgo/cl/cltest"
++	"github.com/goplus/xgo/format"
++	"github.com/goplus/xgo/parser"
++	"github.com/goplus/xgo/parser/fsx/memfs"
++)
++
++func geGen(src string) (code []byte, err error) {
++	defer func() {
++		if e := recover(); e != nil {
++			err = fmt.Errorf("panic: %v", e)
++		}
++	}()
++	fs := memfs.SingleFile("/foo", "bar.xgo", src)
++	pkgs, err := parser.ParseFSDir(cltest.Conf.Fset, fs, "/foo", parser.Config{Mode: parser.ParseComments})
++	if err != nil {
++		return nil, fmt.Errorf("parse: %w", err)
++	}
++	pkg, err := cl.NewPackage("", pkgs["main"], cltest.Conf)
++	if err != nil {
++		return nil, err
++	}
++	var b bytes.Buffer
++	if err = pkg.WriteTo(&b); err != nil {
++		return nil, err
++	}
++	return b.Bytes(), nil
++}
++
++func geGoRun(code []byte) (string, error) {
++	dir, err := os.MkdirTemp(tmpDir, "ge")
++	if err != nil {
++		return "", err
++	}
++	defer os.RemoveAll(dir)
++	infile := filepath.Join(dir, "main.go")
++	if err = os.WriteFile(infile, code, 0666); err != nil {
++		return "", err
++	}
++	var stdout, stderr bytes.Buffer
++	cmd := exec.Command("go", "run", infile)
++	cmd.Dir = tmpDir
++	cmd.Stdout = &stdout
++	cmd.Stderr = &stderr
++	if err = cmd.Run(); err != nil {
++		return "", fmt.Errorf("%v\n%s", err, stderr.String())
++	}
++	return stdout.String(), nil
++}
++
++// geRun compiles src, runs the generated program and compares its output.
++func geRun(t *testing.T, src, expected string) {
++	t.Helper()
++	code, err := geGen(src)
++	if err != nil {
++		t.Fatalf("compile failed: %v", err)
++	}
++	result, err := geGoRun(code)
++	if err != nil {
++		t.Fatalf("running the generated code failed: %v\n%s", err, code)
++	}
++	if result != expected {
++		t.Fatalf("=> Result:\n%s\n=> Expected:\n%s\n=> Generated:\n%s", result, expected, code)
++	}
++}
++
++func geErrorLine(src string) int {
++	for i, l := range strings.Split(src, "\n") {
++		if strings.Contains(l, "// ERROR") {
++			return i + 1
++		}
++	}
++	return 0
++}
++
++// geError checks that compiling src fails with a compile (not syntax) error
++// reported on the line marked with `// ERROR`.
++func geError(t *testing.T, src string) {
++	t.Helper()
++	line := geErrorLine(src)
++	if line == 0 {
++		t.Fatal("no // ERROR marker in test source")
++	}
++	_, err := geGen(src)
++	if err == nil {
++		t.Fatalf("compiling succeeded, want an error on line %d:\n%s", line, src)
++	}
++	msg := err.Error()
++	if strings.HasPrefix(msg, "panic: ") || strings.HasPrefix(msg, "parse: ") {
++		t.Fatalf("want a compile error on line %d, got: %v", line, err)
++	}
++	if want := fmt.Sprintf("bar.xgo:%d:", line); !strings.Contains(msg, want) {
++		t.Fatalf("want an error reported on line %d (%s), got: %v", line, want, err)
++	}
++}
++
++// geSyntaxError checks that parsing src fails on the line marked with
++// `// ERROR`.
++func geSyntaxError(t *testing.T, src string) {
++	t.Helper()
++	line := geErrorLine(src)
++	if line == 0 {
++		t.Fatal("no // ERROR marker in test source")
++	}
++	fs := memfs.SingleFile("/foo", "bar.xgo", src)
++	_, err := parser.ParseFSDir(cltest.Conf.Fset, fs, "/foo", parser.Config{})
++	if err == nil {
++		t.Fatalf("parsing succeeded, want a syntax error on line %d:\n%s", line, src)
++	}
++	if want := fmt.Sprintf("bar.xgo:%d:", line); !strings.Contains(err.Error(), want) {
++		t.Fatalf("want a syntax error on line %d (%s), got: %v", line, want, err)
++	}
++}
++
++func geOK(t *testing.T, src string) {
++	t.Helper()
++	if _, err := geGen(src); err != nil {
++		t.Fatalf("unexpected error: %v\n%s", err, src)
++	}
++}
++
++const geFuncs = `
++import (
++	"errors"
++	"slices"
++	"strconv"
++)
++
++func sq(x int) int {
++	return x * x
++}
++
++func split(s string) (int, string, error) {
++	n, err := strconv.Atoi(s)
++	return n, "<" + s + ">", err
++}
++
++func pair(a, b string) (string, string) {
++	return b, a
++}
++
++func sum(xs ...int) int {
++	s := 0
++	for _, x := range xs {
++		s += x
++	}
++	return s
++}
++
++var _ = errors.New
++var _ = slices.Max[[]int]
++`
++
++func TestSingleResult_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++fut := go sq(3)
++printf "%T %d\n", fut, cap(fut)
++println <-fut
++x := <-go sq(4)
++println x
++var c chan int = go sq(5)
++println <-c
++`, `chan int 1
++9
++16
++25
++`)
++}
++
++func TestResultIsBuffered_39ed2d(t *testing.T) {
++	geRun(t, strings.Replace(geFuncs, "import (", "import (\n\t\"time\"", 1)+`
++func store(done chan bool, v int) int {
++	done <- true
++	return v
++}
++
++done := make(chan bool)
++fut := go store(done, 7)
++<-done
++deadline := time.Now().Add(10 * time.Second)
++for len(fut) == 0 && time.Now().Before(deadline) {
++	time.Sleep(time.Millisecond)
++}
++println len(fut), cap(fut)
++println <-fut
++`, `1 1
++7
++`)
++}
++
++func TestMultipleResults_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++a, b, err := <-go split("12")
++println a, b, err
++r := <-go split("z")
++println r.0, r.1, r.2 != nil
++var fut chan (int, string, error) = go split("7")
++n, s, e := <-fut
++println n, s, e
++p, q := <-go pair("x", "y")
++println p, q
++`, `12 <12> <nil>
++0 <z> true
++7 <7> <nil>
++y x
++`)
++}
++
++func TestNoResult_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++var log []string
++
++func work(name string) {
++	log = append(log, name)
++}
++
++<-go work("a")
++fut := go work("b")
++printf "%T %d\n", fut, cap(fut)
++v := <-fut
++println log, v == struct{}{}
++`, `chan struct {} 1
++[a b] true
++`)
++}
++
++func TestRunsConcurrently_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++func waitFor(c chan int) int {
++	return <-c + 1
++}
++
++func relay(in chan int, out chan int) {
++	out <- <-in * 10
++}
++
++c := make(chan int)
++fut := go waitFor(c)
++c <- 41
++println <-fut
++in, out := make(chan int), make(chan int)
++done := go relay(in, out)
++in <- 5
++println <-out
++<-done
++println "done"
++`, `42
++50
++done
++`)
++}
++
++func TestArgumentsEvaluatedFirst_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++var calls []string
++
++func next(name string, v int) int {
++	calls = append(calls, name)
++	return v
++}
++
++type Acc struct {
++	n int
++}
++
++func (a Acc) get(d int) int {
++	return a.n + d
++}
++
++func (a *Acc) ptr(d int) int {
++	return a.n + d
++}
++
++i := 10
++fi := go sq(i)
++i = 20
++println <-fi
++
++acc := Acc{n: 100}
++fa := go acc.get(5)
++acc.n = 0
++println <-fa
++
++p := &Acc{n: 1}
++fp := go p.ptr(1)
++p = &Acc{n: 50}
++println <-fp
++
++fn := sq
++ff := go fn(6)
++fn = func(int) int { return -1 }
++println <-ff
++
++fs := go sum(next("a", 1), next("b", 2))
++println calls
++println <-fs
++`, `100
++105
++2
++36
++[a b]
++3
++`)
++}
++
++func TestCallForms_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++xs := []int{4, 5}
++println <-go sum(1, 2, 3), <-go sum(xs...), <-go sum()
++println <-go slices.Max([]int{3, 9, 2})
++println <-go strconv.Itoa(77)
++k := 2
++println <-go func(v int) int { return v * k }(21)
++f := func(a, b int) (int, int) { return b, a }
++m, n := <-go f(1, 2)
++println m, n
++`, `6 9 0
++9
++77
++42
++2 1
++`)
++}
++
++func TestInExpressions_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++func wait(c chan int) int {
++	return <-c
++}
++
++func start(n int) chan int {
++	return go sq(n)
++}
++
++println <-go sq(2) + <-go sq(3)
++println wait(go sq(4))
++println <-start(5)
++futs := []chan int{go sq(1), go sq(2), go sq(3)}
++total := 0
++for _, f := range futs {
++	total += <-f
++}
++println total
++println <-(go sq(7))
++`, `13
++16
++25
++14
++49
++`)
++}
++
++func TestSelect_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++func block(c chan int) int {
++	return <-c
++}
++
++func noop() {}
++
++never := make(chan int)
++select {
++case v := <-go block(never):
++	println "block", v
++case a, b, err := <-go split("5"):
++	println "split", a, b, err
++}
++select {
++case <-go block(never):
++	println "block"
++case <-go noop():
++	println "noop"
++}
++var p, q string
++select {
++case v := <-go block(never):
++	println "block", v
++case p, q = <-go pair("1", "2"):
++	println "pair", p, q
++}
++`, `split 5 <5> <nil>
++noop
++pair 2 1
++`)
++}
++
++func TestTupleReceive_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++c := make(chan (int, string, bool), 2)
++c <- (1, "a", true)
++c <- (2, "b", false)
++x, y, z := <-c
++println x, y, z
++r, ok := <-c
++println r.0, r.1, r.2, ok
++
++var a int
++var b string
++a, b, _ = <-go split("3")
++println a, b
++var u, w = <-go pair("p", "q")
++println u, w
++
++d := make(chan (string, int), 1)
++d <- ("k", 9)
++s, n := <-d
++println s, n
++close(d)
++s, n = <-d
++println s == "", n
++`, `1 a true
++2 b false true
++3 <3>
++q p
++k 9
++true 0
++`)
++}
++
++func TestNoResultValueError_39ed2d(t *testing.T) {
++	const decl = `
++func noop() {}
++
++func one() int {
++	return 1
++}
++`
++	geError(t, decl+`
++x := <-go noop() // ERROR
++println x
++`)
++	geError(t, decl+`
++println(<-go noop()) // ERROR
++`)
++	geError(t, decl+`
++select {
++case v := <-go noop(): // ERROR
++	println v
++}
++`)
++	geOK(t, decl+`
++<-go noop()
++f := go noop()
++v := <-f
++println v, <-go one()
++`)
++}
++
++func TestBuiltinAndConversionError_39ed2d(t *testing.T) {
++	const decl = `
++type ID int
++
++func one() int {
++	return 1
++}
++
++s := []int{1, 2}
++`
++	geError(t, decl+`f := go len(s) // ERROR
++println f
++`)
++	geError(t, decl+`f := go ID(3) // ERROR
++println f
++`)
++	geError(t, decl+`f := go int(3) // ERROR
++println f
++`)
++	geOK(t, decl+`f := go one()
++println <-f, s
++`)
++}
++
++func TestSyntaxErrors_39ed2d(t *testing.T) {
++	geSyntaxError(t, `
++func one() int {
++	return 1
++}
++
++f := go one // ERROR
++`)
++	geSyntaxError(t, `
++x := <-go 1 // ERROR
++`)
++	geOK(t, `
++func one() int {
++	return 1
++}
++
++f := go one()
++println <-f
++`)
++}
++
++func TestGoStatementUnchanged_39ed2d(t *testing.T) {
++	geRun(t, geFuncs+`
++func send(c chan int, v int) {
++	c <- v
++}
++
++func run(c chan int) {
++	go send(c, 1)
++}
++
++done := make(chan int)
++go send(done, 3)
++println <-done
++run(done)
++println <-done
++println <-go sq(8)
++`, `3
++1
++64
++`)
++}
++
++func TestFormat_39ed2d(t *testing.T) {
++	for _, src := range []string{
++		"fut := go sq(3)\nprintln <-fut\n",
++		"x := <-go obj.Method(a, b...)\n",
++		"println(<-go f(), wait(go g(1)))\n",
++		"select {\ncase a, b, c := <-go split(s):\n\tprintln a, b, c\ncase <-go noop():\n}\n",
++		"go worker(1)\nfutures := []chan int{go sq(1), go sq(2)}\n",
++	} {
++		out, err := format.Source([]byte(src), nil)
++		if err != nil {
++			t.Fatalf("format %q: %v", src, err)
++		}
++		if string(out) != src {
++			t.Fatalf("format %q:\ngot  %q\nwant %q", src, out, src)
++		}
++	}
++}
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 00000000..3759490e
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,43 @@
++#!/usr/bin/env bash
++# Usage: ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  the existing tests.
++#   new   the go expression tests.
++set -uo pipefail
++
++cd /app
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  OUTPUT_PATH="$2"
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++TEST_LOG="$(mktemp)"
++
++case "$MODE" in
++  base)
++    # TestTestxgo/domaintext-md imports a module that go.mod doesn't require,
++    # so it needs the network; it is left out.
++    go test -count=1 -v -skip '_39ed2d$|^TestTestxgo$' ./... 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    go test -count=1 -v -run '^TestTestxgo$' -skip '^TestTestxgo$/^domaintext-md$' ./cl/ 2>&1 | tee -a "$TEST_LOG"
++    [ "${PIPESTATUS[0]}" -eq 0 ] || STATUS=1
++    ;;
++  new)
++    go test -count=1 -v -run '_39ed2d$' ./cl/ 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ]; then
++  go-junit-report -set-exit-code < "$TEST_LOG" > "$OUTPUT_PATH" || true
++fi
++
++exit "$STATUS"

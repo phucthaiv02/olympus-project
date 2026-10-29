@@ -1,0 +1,651 @@
+diff --git a/ast/ast_xgo.go b/ast/ast_xgo.go
+index caad490f..849fe713 100644
+--- a/ast/ast_xgo.go
++++ b/ast/ast_xgo.go
+@@ -481,6 +481,27 @@ func (*ElemEllipsis) exprNode() {}
+ 
+ // -----------------------------------------------------------------------------
+ 
++// GoExpr represents a `go f(args)` expression. It starts f in a new goroutine
++// and evaluates to a channel that receives f's result.
++type GoExpr struct {
++	Go   token.Pos // position of "go" keyword
++	Call *CallExpr
++}
++
++// Pos - position of first character belonging to the node.
++func (p *GoExpr) Pos() token.Pos {
++	return p.Go
++}
++
++// End - position of first character immediately after the node.
++func (p *GoExpr) End() token.Pos {
++	return p.Call.End()
++}
++
++func (*GoExpr) exprNode() {}
++
++// -----------------------------------------------------------------------------
++
+ // ErrWrapExpr represents `expr!`, `expr?` or `expr?:defaultValue`.
+ type ErrWrapExpr struct {
+ 	X       Expr
+diff --git a/ast/walk.go b/ast/walk.go
+index 35234e17..8eb4c28c 100644
+--- a/ast/walk.go
++++ b/ast/walk.go
+@@ -453,6 +453,9 @@ func Walk(v Visitor, node Node) {
+ 			Walk(v, n.Expr3)
+ 		}
+ 
++	case *GoExpr:
++		Walk(v, n.Call)
++
+ 	case *ErrWrapExpr:
+ 		Walk(v, n.X)
+ 		if n.Default != nil {
+diff --git a/cl/expr.go b/cl/expr.go
+index b623cf73..4b884141 100644
+--- a/cl/expr.go
++++ b/cl/expr.go
+@@ -449,6 +449,8 @@ func compileExpr(ctx *blockCtx, lhs int, expr ast.Expr, inFlags ...int) {
+ 		compileExpr(ctx, lhs, v.X, inFlags...)
+ 	case *ast.ErrWrapExpr:
+ 		compileErrWrapExpr(ctx, lhs, v, 0)
++	case *ast.GoExpr:
++		compileGoExpr(ctx, v)
+ 	case *ast.FuncType:
+ 		ctx.cb.Typ(toFuncType(ctx, v, nil, nil), v)
+ 	case *ast.EnvExpr:
+@@ -478,6 +480,19 @@ func compileExprOrNone(ctx *blockCtx, expr ast.Expr) {
+ }
+ 
+ func compileUnaryExpr(ctx *blockCtx, lhs int, v *ast.UnaryExpr) {
++	if v.Op == token.ARROW {
++		if lhs > 0 && isVoidGoExpr(ctx, v.X) {
++			panic(ctx.newCodeErrorf(v.Pos(), v.End(),
++				"%s (no value) used as value", ctx.LoadExpr(v)))
++		}
++		compileExpr(ctx, 1, v.X)
++		if st := tupleChanElem(ctx.cb, ctx.cb.Get(-1).Type, lhs); st != nil {
++			compileTupleRecv(ctx, st, v)
++			return
++		}
++		ctx.cb.UnaryOpEx(gotoken.ARROW, lhs, v)
++		return
++	}
+ 	compileExpr(ctx, 1, v.X)
+ 	ctx.cb.UnaryOpEx(gotoken.Token(v.Op), lhs, v)
+ }
+diff --git a/cl/goexpr.go b/cl/goexpr.go
+new file mode 100644
+index 00000000..0e69ea6e
+--- /dev/null
++++ b/cl/goexpr.go
+@@ -0,0 +1,457 @@
++/*
++ * Copyright (c) 2026 The XGo Authors (xgo.dev). All rights reserved.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package cl
++
++import (
++	gotoken "go/token"
++	"go/types"
++	"strconv"
++
++	"github.com/goplus/gogen"
++	"github.com/goplus/xgo/ast"
++	"github.com/goplus/xgo/token"
++)
++
++// -----------------------------------------------------------------------------
++// go expression (https://github.com/goplus/xgo/issues/2558)
++//
++//	go f(args)
++//
++// is compiled into
++//
++//	func(f F, a0 A0, ...) chan R {
++//		c := make(chan R, 1)
++//		go func() {
++//			c <- f(a0, ...)
++//		}()
++//		return c
++//	}(f, args...)
++//
++// so that the function value and the arguments are evaluated by the calling
++// goroutine, just like in a go statement. R is the result type of f, the tuple
++// of its results if it has more than one, or struct{} if it has none.
++
++const (
++	goExprFunc   = "_xgo_fn"
++	goExprArg    = "_xgo_arg"
++	goExprChan   = "_xgo_ch"
++	goExprResult = "_xgo_ret"
++)
++
++// goExprResultType returns the element type of the channel returned by a go
++// expression whose function has the specified results.
++func goExprResultType(pkg *gogen.Package, results *types.Tuple) types.Type {
++	switch n := results.Len(); n {
++	case 0:
++		return types.NewStruct(nil, nil)
++	case 1:
++		return results.At(0).Type()
++	default:
++		flds := make([]*types.Var, n)
++		for i := 0; i < n; i++ {
++			flds[i] = types.NewField(token.NoPos, pkg.Types, "", results.At(i).Type(), false)
++		}
++		return pkg.NewTuple(false, flds...)
++	}
++}
++
++// goExprCallee returns the signature of the function called by a go expression
++// if it can be evaluated as a function value (that is not generic).
++func goExprCallee(ctx *blockCtx, call *ast.CallExpr) *types.Signature {
++	fn := unparen(call.Fun)
++	switch v := fn.(type) {
++	case *ast.Ident:
++		if o := lookupFuncObj(ctx, v.Name); o != nil {
++			if _, ok := o.(*types.Var); !ok {
++				return nil // a declared function: no need to evaluate it first
++			}
++		}
++	case *ast.SelectorExpr:
++		if id, ok := v.X.(*ast.Ident); ok {
++			if o := lookupFuncObj(ctx, id.Name); o != nil {
++				if _, ok := o.(*types.PkgName); ok {
++					return nil // pkg.Func
++				}
++			} else if _, ok := ctx.findImport(id.Name); ok {
++				return nil // pkg.Func
++			}
++		}
++	}
++	stk := ctx.cb.InternalStack()
++	base := stk.Len()
++	defer stk.SetLen(base)
++	if err := tryCompileExpr(ctx, fn); err != nil {
++		return nil
++	}
++	if stk.Len() != base+1 {
++		return nil
++	}
++	sig, ok := types.Unalias(stk.Get(-1).Type).(*types.Signature)
++	if !ok || sig.TypeParams() != nil {
++		return nil
++	}
++	if sig.Recv() != nil { // method value
++		sig = types.NewSignatureType(nil, nil, nil, sig.Params(), sig.Results(), sig.Variadic())
++	}
++	return sig
++}
++
++func lookupFuncObj(ctx *blockCtx, name string) types.Object {
++	_, o := ctx.cb.Scope().LookupParent(name, gotoken.NoPos)
++	return o
++}
++
++func tryCompileExpr(ctx *blockCtx, expr ast.Expr) (err error) {
++	defer func() {
++		if e := recover(); e != nil {
++			if e2, ok := e.(error); ok {
++				err = e2
++			} else {
++				err = ctx.newCodeErrorf(expr.Pos(), expr.End(), "%v", e)
++			}
++		}
++	}()
++	compileExpr(ctx, 1, expr, clInCallExpr)
++	return nil
++}
++
++// isInlineArg reports whether an argument of a go expression can be evaluated
++// in the new goroutine without any observable difference.
++func isInlineArg(ctx *blockCtx, arg ast.Expr) bool {
++	switch v := unparen(arg).(type) {
++	case *ast.BasicLit, *ast.FuncLit, *ast.ArrowExpr, *ast.LambdaExpr:
++		return true
++	case *ast.CompositeLit:
++		return v.Type == nil
++	case *ast.SliceLit:
++		return true
++	case *ast.Ident:
++		if o := lookupFuncObj(ctx, v.Name); o != nil {
++			switch o.(type) {
++			case *types.Const, *types.Nil, *types.Func:
++				return true
++			}
++		}
++	}
++	return false
++}
++
++func compileArgOf(ctx *blockCtx, arg ast.Expr, typ types.Type) {
++	switch e := unparen(arg).(type) {
++	case *ast.ArrowExpr, *ast.LambdaExpr:
++		sig, err := checkLambdaFuncType(ctx, e, typ, clLambaArgument, arg)
++		if err != nil {
++			panic(err)
++		}
++		compileLambda(ctx, e, sig)
++	case *ast.SliceLit:
++		compileSliceLit(ctx, e, typ)
++	case *ast.CompositeLit:
++		compileCompositeLit(ctx, e, typ, false)
++	default:
++		compileExpr(ctx, 1, arg)
++	}
++}
++
++func checkGoExprCall(ctx *blockCtx, v *ast.GoExpr) {
++	call := v.Call
++	if len(call.Kwargs) > 0 {
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(), "keyword arguments are not supported in go expression"))
++	}
++	if id, ok := unparen(call.Fun).(*ast.Ident); ok {
++		if o := lookupFuncObj(ctx, id.Name); o != nil {
++			switch o.(type) {
++			case *types.Builtin:
++				panic(ctx.newCodeErrorf(v.Pos(), v.End(), "go expression requires function call, not built-in %s", id.Name))
++			case *types.TypeName:
++				panic(ctx.newCodeErrorf(v.Pos(), v.End(), "go expression requires function call, not conversion"))
++			}
++		}
++	}
++}
++
++// compileGoExpr compiles `go f(args)`.
++func compileGoExpr(ctx *blockCtx, v *ast.GoExpr) {
++	checkGoExprCall(ctx, v)
++	if sig := goExprCallee(ctx, v.Call); sig != nil {
++		compileGoExprWithFunc(ctx, v, sig)
++		return
++	}
++	compileGoExprWithCall(ctx, v)
++}
++
++func goExprArgTypes(ctx *blockCtx, v *ast.GoExpr, sig *types.Signature) []types.Type {
++	call := v.Call
++	params := sig.Params()
++	n, ellipsis := params.Len(), call.Ellipsis != token.NoPos
++	ret := make([]types.Type, len(call.Args))
++	for i := range call.Args {
++		switch {
++		case i < n-1 || (i == n-1 && (!sig.Variadic() || ellipsis)):
++			ret[i] = params.At(i).Type()
++		case sig.Variadic() && n > 0:
++			ret[i] = params.At(n - 1).Type().(*types.Slice).Elem()
++		default:
++			panic(ctx.newCodeErrorf(v.Pos(), v.End(),
++				"too many arguments in call to %s", ctx.LoadExpr(call.Fun)))
++		}
++	}
++	if len(call.Args) < n && !(sig.Variadic() && !ellipsis && len(call.Args) == n-1) {
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(),
++			"not enough arguments in call to %s", ctx.LoadExpr(call.Fun)))
++	}
++	if ellipsis && !sig.Variadic() {
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(),
++			"have (...) arguments in call to non-variadic %s", ctx.LoadExpr(call.Fun)))
++	}
++	return ret
++}
++
++// compileGoExprWithFunc compiles a go expression whose function is evaluated as
++// a function value before the goroutine starts.
++func compileGoExprWithFunc(ctx *blockCtx, v *ast.GoExpr, sig *types.Signature) {
++	cb, pkg := ctx.cb, ctx.pkg
++	call := v.Call
++	argTypes := goExprArgTypes(ctx, v, sig)
++	params := make([]*types.Var, 0, len(argTypes)+1)
++	params = append(params, types.NewParam(token.NoPos, pkg.Types, goExprFunc, sig))
++	for i, t := range argTypes {
++		params = append(params, types.NewParam(token.NoPos, pkg.Types, goExprArg+strconv.Itoa(i), t))
++	}
++	elem := goExprResultType(pkg, sig.Results())
++	chanType := types.NewChan(types.SendRecv, elem)
++	results := types.NewTuple(types.NewParam(token.NoPos, pkg.Types, "", chanType))
++	cb.NewClosure(types.NewTuple(params...), results, false).BodyStart(pkg, v)
++	goExprBody(ctx, v, elem, sig.Results().Len(), func() {
++		cb.VarVal(goExprFunc)
++		for i := range argTypes {
++			cb.VarVal(goExprArg + strconv.Itoa(i))
++		}
++		var flags gogen.InstrFlags
++		if call.Ellipsis != token.NoPos {
++			flags = gogen.InstrFlagEllipsis
++		}
++		cb.CallWith(len(argTypes), sig.Results().Len(), flags, call)
++	})
++	cb.End(v)
++	compileExpr(ctx, 1, call.Fun, clInCallExpr)
++	for i, arg := range call.Args {
++		compileArgOf(ctx, arg, argTypes[i])
++	}
++	cb.CallWith(len(params), 1, 0, v)
++}
++
++// compileGoExprWithCall compiles a go expression that calls a declared function
++// (possibly overloaded or generic). The arguments are evaluated before the
++// goroutine starts and the call itself is compiled in the goroutine.
++func compileGoExprWithCall(ctx *blockCtx, v *ast.GoExpr) {
++	cb, pkg := ctx.cb, ctx.pkg
++	call := v.Call
++	stk := cb.InternalStack()
++
++	// result types of the call
++	base := stk.Len()
++	compileCallExpr(ctx, -1, call, 0)
++	var resTuple *types.Tuple
++	if stk.Len() == base+1 {
++		switch t := stk.Get(-1).Type.(type) {
++		case *types.Tuple:
++			resTuple = t
++		default:
++			if t == nil || isVoidType(t) {
++				resTuple = types.NewTuple()
++			} else {
++				resTuple = types.NewTuple(types.NewParam(token.NoPos, nil, "", t))
++			}
++		}
++	} else {
++		resTuple = types.NewTuple()
++	}
++	stk.SetLen(base)
++
++	// arguments evaluated before the goroutine starts
++	newArgs := make([]ast.Expr, len(call.Args))
++	var params []*types.Var
++	var hoisted []ast.Expr
++	for i, arg := range call.Args {
++		if isInlineArg(ctx, arg) {
++			newArgs[i] = arg
++			continue
++		}
++		compileExpr(ctx, 1, arg)
++		t := types.Default(stk.Get(-1).Type)
++		stk.Pop()
++		name := goExprArg + strconv.Itoa(i)
++		params = append(params, types.NewParam(token.NoPos, pkg.Types, name, t))
++		hoisted = append(hoisted, arg)
++		newArgs[i] = &ast.Ident{NamePos: arg.Pos(), Name: name}
++	}
++	newCall := *call
++	newCall.Args = newArgs
++
++	elem := goExprResultType(pkg, resTuple)
++	chanType := types.NewChan(types.SendRecv, elem)
++	results := types.NewTuple(types.NewParam(token.NoPos, pkg.Types, "", chanType))
++	cb.NewClosure(types.NewTuple(params...), results, false).BodyStart(pkg, v)
++	goExprBody(ctx, v, elem, resTuple.Len(), func() {
++		compileCallExpr(ctx, resTuple.Len(), &newCall, 0)
++	})
++	cb.End(v)
++	for _, arg := range hoisted {
++		compileExpr(ctx, 1, arg)
++	}
++	cb.CallWith(len(params), 1, 0, v)
++}
++
++func isVoidType(t types.Type) bool {
++	tup, ok := t.(*types.Tuple)
++	return ok && tup.Len() == 0
++}
++
++// goExprBody generates the body of the closure of a go expression:
++//
++//	c := make(chan R, 1)
++//	go func() { c <- call() }()
++//	return c
++func goExprBody(ctx *blockCtx, v *ast.GoExpr, elem types.Type, nres int, call func()) {
++	cb, pkg := ctx.cb, ctx.pkg
++	chanType := types.NewChan(types.SendRecv, elem)
++	cb.DefineVarStart(token.NoPos, goExprChan).
++		Val(pkg.Builtin().Ref("make")).Typ(chanType).Val(1).CallWith(2, 1, 0).
++		EndInit(1)
++	cb.NewClosure(nil, nil, false).BodyStart(pkg)
++	switch nres {
++	case 0:
++		call()
++		cb.EndStmt()
++		cb.VarVal(goExprChan).StructLit(elem, 0, false).Send()
++	case 1:
++		cb.VarVal(goExprChan)
++		call()
++		cb.Send()
++	default:
++		names := make([]string, nres)
++		for i := range names {
++			names[i] = goExprResult + strconv.Itoa(i)
++		}
++		cb.DefineVarStart(token.NoPos, names...)
++		call()
++		cb.EndInit(1)
++		cb.VarVal(goExprChan)
++		for _, name := range names {
++			cb.VarVal(name)
++		}
++		cb.TupleLit(elem, nres).Send()
++	}
++	cb.End()
++	cb.CallWith(0, 0, 0).Go()
++	cb.VarVal(goExprChan).Return(1)
++}
++
++// -----------------------------------------------------------------------------
++
++// isVoidGoExpr reports whether x is a go expression whose function has no
++// results.
++func isVoidGoExpr(ctx *blockCtx, x ast.Expr) bool {
++	g, ok := unparen(x).(*ast.GoExpr)
++	if !ok {
++		return false
++	}
++	stk := ctx.cb.InternalStack()
++	base := stk.Len()
++	defer stk.SetLen(base)
++	compileGoExpr(ctx, g)
++	ch, ok := types.Unalias(stk.Get(-1).Type).(*types.Chan)
++	if !ok {
++		return false
++	}
++	st, ok := ch.Elem().(*types.Struct)
++	return ok && st.NumFields() == 0 && types.Identical(ch.Elem(), types.NewStruct(nil, nil))
++}
++
++// tupleChanElem returns the tuple element type of the channel typ if it has n
++// fields.
++func tupleChanElem(cb *gogen.CodeBuilder, typ types.Type, n int) *types.Struct {
++	ch, ok := types.Unalias(typ).Underlying().(*types.Chan)
++	if !ok || n < 2 || !cb.IsTupleType(ch.Elem()) {
++		return nil
++	}
++	st := ch.Elem().Underlying().(*types.Struct)
++	if st.NumFields() != n {
++		return nil
++	}
++	return st
++}
++
++// compileTupleRecv compiles <-ch as n values when ch carries tuples of n fields.
++// The channel is on the stack:
++//
++//	func(c chan T) (T0, T1, ...) { t := <-c; return t.X_0, t.X_1, ... }(ch)
++func compileTupleRecv(ctx *blockCtx, st *types.Struct, v ast.Node) {
++	cb, pkg := ctx.cb, ctx.pkg
++	stk := cb.InternalStack()
++	ch := stk.Pop()
++	n := st.NumFields()
++	param := types.NewParam(token.NoPos, pkg.Types, goExprChan, ch.Type)
++	rets := make([]*types.Var, n)
++	for i := 0; i < n; i++ {
++		rets[i] = types.NewParam(token.NoPos, pkg.Types, "", st.Field(i).Type())
++	}
++	cb.NewClosure(types.NewTuple(param), types.NewTuple(rets...), false).BodyStart(pkg)
++	cb.DefineVarStart(token.NoPos, goExprResult).VarVal(goExprChan).UnaryOp(gotoken.ARROW).EndInit(1)
++	for i := 0; i < n; i++ {
++		cb.VarVal(goExprResult).MemberVal(st.Field(i).Name(), 0)
++	}
++	cb.Return(n).End()
++	stk.Push(ch)
++	cb.CallWith(1, n, 0, v)
++}
++
++// selectTupleRecv rewrites a select case `case a, b := <-ch` (or `a, b = <-ch`)
++// receiving tuples into `case t := <-ch` and returns the statement that unpacks
++// t, or nil if the case doesn't receive tuples.
++func selectTupleRecv(ctx *blockCtx, comm ast.Stmt) (ast.Stmt, ast.Stmt) {
++	as, ok := comm.(*ast.AssignStmt)
++	if !ok || len(as.Lhs) < 2 || len(as.Rhs) != 1 {
++		return comm, nil
++	}
++	ue, ok := unparen(as.Rhs[0]).(*ast.UnaryExpr)
++	if !ok || ue.Op != token.ARROW {
++		return comm, nil
++	}
++	stk := ctx.cb.InternalStack()
++	base := stk.Len()
++	compileExpr(ctx, 1, ue.X)
++	st := tupleChanElem(ctx.cb, stk.Get(-1).Type, len(as.Lhs))
++	stk.SetLen(base)
++	if st == nil {
++		return comm, nil
++	}
++	tmp := &ast.Ident{NamePos: as.Pos(), Name: goExprResult}
++	recv := &ast.AssignStmt{Lhs: []ast.Expr{tmp}, TokPos: as.TokPos, Tok: token.DEFINE, Rhs: as.Rhs}
++	rhs := make([]ast.Expr, len(as.Lhs))
++	for i := range rhs {
++		rhs[i] = &ast.SelectorExpr{
++			X:   &ast.Ident{NamePos: as.Pos(), Name: goExprResult},
++			Sel: &ast.Ident{NamePos: as.Pos(), Name: st.Field(i).Name()},
++		}
++	}
++	unpack := &ast.AssignStmt{Lhs: as.Lhs, TokPos: as.TokPos, Tok: as.Tok, Rhs: rhs}
++	return recv, unpack
++}
++
++// -----------------------------------------------------------------------------
+diff --git a/cl/recorder.go b/cl/recorder.go
+index 0acdcb05..7a37ba43 100644
+--- a/cl/recorder.go
++++ b/cl/recorder.go
+@@ -298,6 +298,8 @@ func (rec *goxRecorder) recordExpr(ctx *blockCtx, expr ast.Expr, _ bool) {
+ 	case *ast.ParenExpr:
+ 		rec.recordTypeValue(ctx, v, typesutil.Value)
+ 	case *ast.ErrWrapExpr:
++	case *ast.GoExpr:
++		rec.recordTypeValue(ctx, v, typesutil.Value)
+ 	case *ast.FuncType:
+ 		rec.recordTypeValue(ctx, v, typesutil.TypExpr)
+ 	case *ast.Ellipsis:
+diff --git a/cl/stmt.go b/cl/stmt.go
+index 7b32d41e..da702b0b 100644
+--- a/cl/stmt.go
++++ b/cl/stmt.go
+@@ -938,10 +938,16 @@ func compileSelectStmt(ctx *blockCtx, v *ast.SelectStmt) {
+ 			log.Panicln("TODO: compile SelectStmt failed - comm clause expected.")
+ 		}
+ 		cb.CommCase(c)
++		var unpack ast.Stmt
+ 		if c.Comm != nil {
+-			compileStmt(ctx, c.Comm)
++			var comm ast.Stmt
++			comm, unpack = selectTupleRecv(ctx, c.Comm)
++			compileStmt(ctx, comm)
+ 		}
+ 		cb.Then()
++		if unpack != nil {
++			compileStmt(ctx, unpack)
++		}
+ 		compileStmts(ctx, c.Body)
+ 		commentStmt(ctx, stmt)
+ 		if rec := ctx.recorder(); rec != nil {
+diff --git a/parser/parser.go b/parser/parser.go
+index 490d80a1..38c25ad6 100644
+--- a/parser/parser.go
++++ b/parser/parser.go
+@@ -2565,6 +2565,7 @@ func (p *parser) checkExpr(x ast.Expr) ast.Expr {
+ 	case *ast.BinaryExpr:
+ 	case *ast.RangeExpr:
+ 	case *ast.ErrWrapExpr:
++	case *ast.GoExpr:
+ 	case *ast.ArrowExpr:
+ 	case *ast.LambdaExpr:
+ 	case *ast.TupleLit:
+@@ -2923,6 +2924,19 @@ func (p *parser) parseUnaryExpr(flags int) (ast.Expr, int) {
+ 		p.next()
+ 		x, _ := p.parseUnaryExpr(0)
+ 		return &ast.StarExpr{Star: pos, X: p.checkExprOrType(x)}, 0
++
++	case token.GO:
++		// go expression: go f(args)
++		pos := p.pos
++		p.next()
++		x, _ := p.parseUnaryExpr(0)
++		if call, ok := x.(*ast.CallExpr); ok && !call.IsCommand() {
++			return &ast.GoExpr{Go: pos, Call: call}, 0
++		}
++		if _, isBad := x.(*ast.BadExpr); !isBad {
++			p.error(p.safePos(x.End()), "function must be invoked in go expression")
++		}
++		return &ast.BadExpr{From: pos, To: p.safePos(x.End())}, 0
+ 	}
+ 
+ 	return p.parseErrWrapExpr(flags)
+@@ -3669,12 +3683,8 @@ func (p *parser) parseCommClause() *ast.CommClause {
+ 		} else {
+ 			// RecvStmt
+ 			if tok := p.tok; tok == token.ASSIGN || tok == token.DEFINE {
+-				// RecvStmt with assignment
+-				if len(lhs) > 2 {
+-					p.errorExpected(lhs[0].Pos(), "1 or 2 expressions", 2)
+-					// continue with first two expressions
+-					lhs = lhs[0:2]
+-				}
++				// RecvStmt with assignment. More than two expressions are
++				// allowed for unpacking a received tuple.
+ 				pos := p.pos
+ 				p.next()
+ 				rhs := p.parseRHS()
+diff --git a/printer/nodes.go b/printer/nodes.go
+index 038bdb11..dd9bd3c8 100644
+--- a/printer/nodes.go
++++ b/printer/nodes.go
+@@ -1123,6 +1123,9 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
+ 			p.listForPhrase(x.Fors)
+ 			p.print(token.RBRACE)
+ 		}
++	case *ast.GoExpr:
++		p.print(token.GO, blank)
++		p.expr(x.Call)
+ 	case *ast.ErrWrapExpr:
+ 		p.expr(x.X)
+ 		p.print(x.Tok)
+diff --git a/x/format/stmt_expr_or_type.go b/x/format/stmt_expr_or_type.go
+index 85884d64..14c2c3f7 100644
+--- a/x/format/stmt_expr_or_type.go
++++ b/x/format/stmt_expr_or_type.go
+@@ -143,6 +143,8 @@ func formatExpr(ctx *formatCtx, expr ast.Expr, ref *ast.Expr) {
+ 		formatComprehensionExpr(ctx, v)
+ 	case *ast.ForPhrase:
+ 		formatForPhrase(ctx, v)
++	case *ast.GoExpr:
++		formatCallExpr(ctx, v.Call)
+ 	case *ast.ErrWrapExpr:
+ 		formatExpr(ctx, v.X, &v.X)
+ 		formatExpr(ctx, v.Default, &v.Default)
