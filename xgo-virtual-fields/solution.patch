@@ -1,0 +1,528 @@
+diff --git a/cl/expr.go b/cl/expr.go
+index b623cf73..55b35445 100644
+--- a/cl/expr.go
++++ b/cl/expr.go
+@@ -478,6 +478,9 @@ func compileExprOrNone(ctx *blockCtx, expr ast.Expr) {
+ }
+ 
+ func compileUnaryExpr(ctx *blockCtx, lhs int, v *ast.UnaryExpr) {
++	if v.Op == token.AND && compileVFieldAddr(ctx, v) {
++		return
++	}
+ 	compileExpr(ctx, 1, v.X)
+ 	ctx.cb.UnaryOpEx(gotoken.Token(v.Op), lhs, v)
+ }
+@@ -548,6 +551,10 @@ func compileSelectorExprLHS(ctx *blockCtx, v *ast.SelectorExpr) {
+ 	default:
+ 		compileExpr(ctx, 1, v.X)
+ 	}
++	if vf := lookupVField(ctx, ctx.cb.Get(-1).Type, v.Sel.Name, v); vf != nil {
++		vf.loadRef(ctx, v)
++		return
++	}
+ 	ctx.cb.MemberRef(v.Sel.Name, v)
+ }
+ 
+@@ -690,6 +697,12 @@ func compileSelectorExpr(ctx *blockCtx, lhs int, v *ast.SelectorExpr, flags int)
+ 		name = unquote(name)
+ 		fallthrough
+ 	default:
++		if name == sel.Name {
++			if vf := lookupVField(ctx, cb.Get(-1).Type, name, v); vf != nil {
++				vf.load(ctx, lhs, v)
++				return
++			}
++		}
+ 		if err := compileMember(cb, lhs, v, name, flags); err != nil {
+ 			if kind, _ := cb.Member("XGo_Elem", 0, 0, v); kind == gogen.MemberInvalid {
+ 				panic(err) // rethrow original error
+diff --git a/cl/stmt.go b/cl/stmt.go
+index 7b32d41e..afc03c66 100644
+--- a/cl/stmt.go
++++ b/cl/stmt.go
+@@ -243,6 +243,9 @@ func compileReturnStmt(ctx *blockCtx, expr *ast.ReturnStmt) {
+ }
+ 
+ func compileIncDecStmt(ctx *blockCtx, expr *ast.IncDecStmt) {
++	if compileVFieldIncDec(ctx, expr) {
++		return
++	}
+ 	compileExprLHS(ctx, expr.X)
+ 	ctx.cb.IncDec(gotoken.Token(expr.Tok))
+ }
+@@ -341,6 +344,9 @@ func compileAssignStmt(ctx *blockCtx, expr *ast.AssignStmt) {
+ 		ctx.cb.EndInit(stk.Len() - base)
+ 		return
+ 	}
++	if compileVFieldAssign(ctx, expr) {
++		return
++	}
+ 	for _, lhs := range expr.Lhs {
+ 		compileExprLHS(ctx, lhs)
+ 	}
+diff --git a/cl/vfield.go b/cl/vfield.go
+new file mode 100644
+index 00000000..ff9a79dc
+--- /dev/null
++++ b/cl/vfield.go
+@@ -0,0 +1,460 @@
++/*
++ * Copyright (c) 2026 The XGo Authors (xgo.dev). All rights reserved.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package cl
++
++import (
++	gotoken "go/token"
++	"go/types"
++	"strconv"
++
++	"github.com/goplus/gogen"
++	"github.com/goplus/xgo/ast"
++	"github.com/goplus/xgo/token"
++)
++
++// -----------------------------------------------------------------------------
++// Virtual fields (https://github.com/goplus/xgo/issues/2860)
++//
++// A virtual field `f` is backed by methods instead of storage:
++//   - reference form:     XGof_ref_f() *T
++//   - getter/setter form: XGof_get_f() T and/or XGof_set_f(v T)
++
++const (
++	vfRefPrefix = "XGof_ref_"
++	vfGetPrefix = "XGof_get_"
++	vfSetPrefix = "XGof_set_"
++)
++
++type vField struct {
++	name     string
++	ref      *types.Func // reference form
++	get, set *types.Func // getter/setter form
++	typ      types.Type  // type of the field
++	ptrRecv  bool        // some backing method has a pointer receiver
++}
++
++// memberDepth returns the embedding depth at which name is found in typ, or -1
++// if it isn't found. obj is nil if name is ambiguous at that depth.
++func memberDepth(typ types.Type, pkg *types.Package, name string) (depth int, obj types.Object) {
++	obj, index, _ := types.LookupFieldOrMethod(typ, true, pkg, name)
++	if index == nil {
++		return -1, nil
++	}
++	return len(index) - 1, obj
++}
++
++func isValidVFieldName(name string) bool {
++	c := name[0]
++	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
++}
++
++// lookupVField looks up the virtual field `name` of a value of type typ.
++// It returns nil if the selector doesn't denote a virtual field.
++func lookupVField(ctx *blockCtx, typ types.Type, name string, src ast.Node) *vField {
++	if typ == nil || !isValidVFieldName(name) {
++		return nil
++	}
++	switch types.Unalias(typ).(type) {
++	case *gogen.TypeType:
++		return nil
++	case *types.Named, *types.Pointer, *types.Struct, *types.Interface:
++	default:
++		return nil
++	}
++	pkg := ctx.pkg.Types
++	prefixes := [...]string{vfRefPrefix, vfGetPrefix, vfSetPrefix}
++	var depths [3]int
++	var objs [3]types.Object
++	depth := -1
++	for i, prefix := range prefixes {
++		depths[i], objs[i] = memberDepth(typ, pkg, prefix+name)
++		if d := depths[i]; d >= 0 && (depth < 0 || d < depth) {
++			depth = d
++		}
++	}
++	if depth < 0 {
++		return nil
++	}
++	if d, _ := memberDepth(typ, pkg, name); d >= 0 && d <= depth {
++		if d == depth {
++			panic(ctx.newCodeErrorf(src.Pos(), src.End(),
++				"ambiguous selector %s: %s is both a virtual field and a field or method of %v", ctx.LoadExpr(src), name, typ))
++		}
++		return nil // a real field or method at a shallower depth wins
++	}
++	vf := &vField{name: name}
++	for i := range prefixes {
++		if depths[i] != depth {
++			continue
++		}
++		mname := prefixes[i] + name
++		fn, ok := objs[i].(*types.Func)
++		if objs[i] == nil {
++			panic(ctx.newCodeErrorf(src.Pos(), src.End(), "ambiguous selector %s: ambiguous method %s", ctx.LoadExpr(src), mname))
++		}
++		if !ok {
++			return nil // a field named XGof_xxx isn't a backing method
++		}
++		sig := fn.Type().(*types.Signature)
++		params, results := sig.Params(), sig.Results()
++		switch i {
++		case 0: // ref
++			if params.Len() == 0 && results.Len() == 1 {
++				if pt, ok := types.Unalias(results.At(0).Type()).(*types.Pointer); ok {
++					vf.ref, vf.typ = fn, pt.Elem()
++					break
++				}
++			}
++			panic(ctx.newCodeErrorf(src.Pos(), src.End(), "invalid virtual field method %s: must have no parameters and return a pointer", mname))
++		case 1: // get
++			if params.Len() != 0 || results.Len() != 1 {
++				panic(ctx.newCodeErrorf(src.Pos(), src.End(), "invalid virtual field method %s: must have no parameters and one result", mname))
++			}
++			vf.get = fn
++		case 2: // set
++			if params.Len() != 1 || results.Len() != 0 || sig.Variadic() {
++				panic(ctx.newCodeErrorf(src.Pos(), src.End(), "invalid virtual field method %s: must have one parameter and no results", mname))
++			}
++			vf.set = fn
++		}
++		if recv := sig.Recv(); recv != nil {
++			if _, ok := types.Unalias(recv.Type()).(*types.Pointer); ok {
++				vf.ptrRecv = true
++			}
++		}
++	}
++	if vf.ref != nil && (vf.get != nil || vf.set != nil) {
++		panic(ctx.newCodeErrorf(src.Pos(), src.End(),
++			"virtual field %s of %v has both a reference form and a getter/setter form", name, typ))
++	}
++	if vf.ref == nil {
++		var tget, tset types.Type
++		if vf.get != nil {
++			tget = vf.get.Type().(*types.Signature).Results().At(0).Type()
++			vf.typ = tget
++		}
++		if vf.set != nil {
++			tset = vf.set.Type().(*types.Signature).Params().At(0).Type()
++			vf.typ = tset
++		}
++		if tget != nil && tset != nil && !types.Identical(tget, tset) {
++			panic(ctx.newCodeErrorf(src.Pos(), src.End(),
++				"virtual field %s of %v: getter returns %v but setter takes %v", name, typ, tget, tset))
++		}
++	}
++	return vf
++}
++
++// probeVField reports the virtual field denoted by the selector v, if any. It
++// compiles v.X only to find out its type: nothing is emitted.
++func probeVField(ctx *blockCtx, v *ast.SelectorExpr) *vField {
++	cb := ctx.cb
++	stk := cb.InternalStack()
++	base := stk.Len()
++	if x, ok := v.X.(*ast.Ident); ok {
++		if _, kind := compileIdent(ctx, 1, x, clIdentSelectorExpr); kind != objNormal {
++			stk.SetLen(base)
++			return nil
++		}
++	} else {
++		compileExpr(ctx, 1, v.X)
++	}
++	if stk.Len() != base+1 {
++		stk.SetLen(base)
++		return nil
++	}
++	typ := stk.Get(-1).Type
++	stk.SetLen(base)
++	return lookupVField(ctx, typ, v.Sel.Name, v)
++}
++
++func vfieldSelector(expr ast.Expr) (*ast.SelectorExpr, bool) {
++	sel, ok := unparen(expr).(*ast.SelectorExpr)
++	return sel, ok
++}
++
++func (vf *vField) checkRecv(ctx *blockCtx, x ast.Expr, xType types.Type, src ast.Node) {
++	if !vf.ptrRecv {
++		return
++	}
++	if _, ok := types.Unalias(xType).(*types.Pointer); ok {
++		return
++	}
++	switch unparen(x).(type) {
++	case *ast.Ident, *ast.StarExpr, *ast.SelectorExpr, *ast.IndexExpr:
++		return
++	}
++	panic(ctx.newCodeErrorf(src.Pos(), src.End(),
++		"cannot use virtual field %s of non-addressable value %s", vf.name, ctx.LoadExpr(x)))
++}
++
++// load compiles a read of the virtual field. The operand is on the stack.
++func (vf *vField) load(ctx *blockCtx, lhs int, v *ast.SelectorExpr) {
++	cb := ctx.cb
++	vf.checkRecv(ctx, v.X, cb.Get(-1).Type, v)
++	switch {
++	case vf.ref != nil:
++		cb.MemberVal(vf.ref.Name(), 0, v).CallWith(0, 1, 0, v).Star(v)
++	case vf.get != nil:
++		cb.MemberVal(vf.get.Name(), 0, v).CallWith(0, lhs, 0, v)
++	default:
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(), "cannot read write-only virtual field %s", ctx.LoadExpr(v)))
++	}
++}
++
++// loadRef compiles a reference to the virtual field (reference form only). The
++// operand is on the stack.
++func (vf *vField) loadRef(ctx *blockCtx, v *ast.SelectorExpr) {
++	cb := ctx.cb
++	vf.checkRecv(ctx, v.X, cb.Get(-1).Type, v)
++	if vf.ref == nil {
++		if vf.set == nil {
++			panic(ctx.newCodeErrorf(v.Pos(), v.End(), "cannot assign to read-only virtual field %s", ctx.LoadExpr(v)))
++		}
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(), "cannot use virtual field %s here: it has no reference form", ctx.LoadExpr(v)))
++	}
++	cb.MemberVal(vf.ref.Name(), 0, v).CallWith(0, 1, 0, v).ElemRef(v)
++}
++
++// compileVFieldAddr compiles &x.f for a virtual field.
++func compileVFieldAddr(ctx *blockCtx, v *ast.UnaryExpr) bool {
++	sel, ok := vfieldSelector(v.X)
++	if !ok {
++		return false
++	}
++	vf := probeVField(ctx, sel)
++	if vf == nil {
++		return false
++	}
++	if vf.ref == nil {
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(), "cannot take address of virtual field %s", ctx.LoadExpr(sel)))
++	}
++	compileExpr(ctx, 1, sel.X)
++	cb := ctx.cb
++	vf.checkRecv(ctx, sel.X, cb.Get(-1).Type, sel)
++	cb.MemberVal(vf.ref.Name(), 0, sel).CallWith(0, 1, 0, v)
++	return true
++}
++
++// setterTarget returns the virtual field assigned through a setter by the
++// assignment target lhs, or nil.
++func setterTarget(ctx *blockCtx, lhs ast.Expr) (*ast.SelectorExpr, *vField) {
++	sel, ok := vfieldSelector(lhs)
++	if !ok {
++		return nil, nil
++	}
++	if vf := probeVField(ctx, sel); vf != nil && vf.ref == nil {
++		if vf.set == nil {
++			panic(ctx.newCodeErrorf(sel.Pos(), sel.End(), "cannot assign to read-only virtual field %s", ctx.LoadExpr(sel)))
++		}
++		return sel, vf
++	}
++	return nil, nil
++}
++
++func compileRHSOf(ctx *blockCtx, rhs ast.Expr, typ types.Type) {
++	switch e := unparen(rhs).(type) {
++	case *ast.ArrowExpr, *ast.LambdaExpr:
++		sig, err := checkLambdaFuncType(ctx, e, typ, clLambaAssign, rhs)
++		if err != nil {
++			panic(err)
++		}
++		compileLambda(ctx, e, sig)
++	case *ast.SliceLit:
++		compileSliceLit(ctx, e, typ)
++	case *ast.CompositeLit:
++		compileCompositeLit(ctx, e, typ, false)
++	default:
++		compileExpr(ctx, 1, rhs)
++	}
++}
++
++// callSetter compiles x.XGof_set_f(<value pushed by val>).
++func (vf *vField) callSetter(ctx *blockCtx, sel *ast.SelectorExpr, recv func(), val func(), src ast.Node) {
++	cb := ctx.cb
++	recv()
++	vf.checkRecv(ctx, sel.X, cb.Get(-1).Type, sel)
++	cb.MemberVal(vf.set.Name(), 0, sel)
++	val()
++	cb.CallWith(1, 0, 0, src).EndStmt()
++}
++
++const vfRecvVar = "_xgo_vf_recv"
++
++// compileVFieldUpdate compiles x.f op= v and x.f++/x.f-- for the getter/setter
++// form. x is evaluated only once.
++func compileVFieldUpdate(ctx *blockCtx, sel *ast.SelectorExpr, vf *vField, op gotoken.Token, rhs ast.Expr, src ast.Node) {
++	if vf.get == nil {
++		panic(ctx.newCodeErrorf(sel.Pos(), sel.End(), "cannot read write-only virtual field %s", ctx.LoadExpr(sel)))
++	}
++	cb := ctx.cb
++	recv := func() { compileExpr(ctx, 1, sel.X) }
++	_, simple := unparen(sel.X).(*ast.Ident)
++	if !simple {
++		compileExpr(ctx, 1, sel.X)
++		xType := cb.Get(-1).Type
++		vf.checkRecv(ctx, sel.X, xType, sel)
++		cb.InternalStack().Pop()
++		cb.Block(src)
++		cb.DefineVarStart(token.NoPos, vfRecvVar)
++		compileExpr(ctx, 1, sel.X)
++		if _, isPtr := types.Unalias(xType).(*types.Pointer); !isPtr && vf.ptrRecv {
++			cb.UnaryOp(gotoken.AND)
++		}
++		cb.EndInit(1)
++		recv = func() { cb.VarVal(vfRecvVar) }
++	}
++	vf.callSetter(ctx, sel, recv, func() {
++		recv()
++		cb.MemberVal(vf.get.Name(), 0, sel).CallWith(0, 1, 0, sel)
++		if rhs == nil {
++			cb.Val(1, src)
++		} else {
++			compileExpr(ctx, 1, rhs)
++		}
++		cb.BinaryOp(op, src)
++	}, src)
++	if !simple {
++		cb.End(src)
++	}
++}
++
++func assignOpToBinary(tok token.Token) gotoken.Token {
++	switch tok {
++	case token.ADD_ASSIGN:
++		return gotoken.ADD
++	case token.SUB_ASSIGN:
++		return gotoken.SUB
++	case token.MUL_ASSIGN:
++		return gotoken.MUL
++	case token.QUO_ASSIGN:
++		return gotoken.QUO
++	case token.REM_ASSIGN:
++		return gotoken.REM
++	case token.AND_ASSIGN:
++		return gotoken.AND
++	case token.OR_ASSIGN:
++		return gotoken.OR
++	case token.XOR_ASSIGN:
++		return gotoken.XOR
++	case token.SHL_ASSIGN:
++		return gotoken.SHL
++	case token.SHR_ASSIGN:
++		return gotoken.SHR
++	case token.AND_NOT_ASSIGN:
++		return gotoken.AND_NOT
++	}
++	return gotoken.ILLEGAL
++}
++
++// compileVFieldIncDec compiles x.f++ and x.f-- if x.f is a virtual field of the
++// getter/setter form.
++func compileVFieldIncDec(ctx *blockCtx, expr *ast.IncDecStmt) bool {
++	sel, vf := setterTarget(ctx, expr.X)
++	if vf == nil {
++		return false
++	}
++	op := gotoken.ADD
++	if expr.Tok == token.DEC {
++		op = gotoken.SUB
++	}
++	compileVFieldUpdate(ctx, sel, vf, op, nil, expr)
++	return true
++}
++
++// compileVFieldAssign compiles an assignment that has getter/setter form
++// virtual fields among its targets.
++func compileVFieldAssign(ctx *blockCtx, expr *ast.AssignStmt) bool {
++	sels := make([]*ast.SelectorExpr, len(expr.Lhs))
++	vfs := make([]*vField, len(expr.Lhs))
++	found := false
++	for i, lhs := range expr.Lhs {
++		if sels[i], vfs[i] = setterTarget(ctx, lhs); vfs[i] != nil {
++			found = true
++		}
++	}
++	if !found {
++		return false
++	}
++	cb := ctx.cb
++	if expr.Tok != token.ASSIGN { // x.f op= v
++		if len(expr.Lhs) != 1 || len(expr.Rhs) != 1 {
++			panic("TODO: invalid syntax of assign by operator")
++		}
++		compileVFieldUpdate(ctx, sels[0], vfs[0], assignOpToBinary(expr.Tok), expr.Rhs[0], expr)
++		return true
++	}
++	if len(expr.Lhs) == 1 && len(expr.Rhs) == 1 { // x.f = v
++		vf, sel := vfs[0], sels[0]
++		vf.callSetter(ctx, sel, func() { compileExpr(ctx, 1, sel.X) }, func() {
++			compileRHSOf(ctx, expr.Rhs[0], vf.typ)
++		}, expr)
++		return true
++	}
++
++	// a, x.f = v1, v2: all values are evaluated first, then the targets are
++	// assigned from left to right.
++	n := len(expr.Lhs)
++	names := make([]string, n)
++	for i := range names {
++		names[i] = "_xgo_vf_" + strconv.Itoa(i)
++	}
++	cb.Block(expr)
++	if len(expr.Rhs) == 1 {
++		cb.DefineVarStart(token.NoPos, names...)
++		compileExpr(ctx, n, expr.Rhs[0])
++		cb.EndInit(1)
++	} else {
++		if len(expr.Rhs) != n {
++			panic(ctx.newCodeErrorf(expr.Pos(), expr.End(),
++				"assignment mismatch: %d variables but %d values", n, len(expr.Rhs)))
++		}
++		stk := cb.InternalStack()
++		for i, rhs := range expr.Rhs {
++			var typ types.Type
++			if vfs[i] != nil {
++				typ = vfs[i].typ
++			} else if id, ok := expr.Lhs[i].(*ast.Ident); !ok || id.Name != "_" {
++				compileExprLHS(ctx, expr.Lhs[i])
++				typ, _ = gogen.DerefType(stk.Get(-1).Type)
++				stk.Pop()
++			}
++			if typ == nil {
++				cb.DefineVarStart(token.NoPos, names[i])
++				compileExpr(ctx, 1, rhs)
++			} else {
++				cb.NewVarStart(typ, names[i])
++				compileRHSOf(ctx, rhs, typ)
++			}
++			cb.EndInit(1)
++		}
++	}
++	for i, lhs := range expr.Lhs {
++		name := names[i]
++		if vf := vfs[i]; vf != nil {
++			sel := sels[i]
++			vf.callSetter(ctx, sel, func() { compileExpr(ctx, 1, sel.X) }, func() { cb.VarVal(name) }, lhs)
++		} else {
++			compileExprLHS(ctx, lhs)
++			cb.VarVal(name).AssignWith(1, 1, lhs)
++		}
++	}
++	cb.End(expr)
++	return true
++}
++
++// -----------------------------------------------------------------------------

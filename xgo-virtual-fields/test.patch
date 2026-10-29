@@ -1,0 +1,865 @@
+diff --git a/cl/vfield_a46d06_test.go b/cl/vfield_a46d06_test.go
+new file mode 100644
+index 00000000..70588aeb
+--- /dev/null
++++ b/cl/vfield_a46d06_test.go
+@@ -0,0 +1,810 @@
++//go:build !genjs
++
++package cl_test
++
++import (
++	"bytes"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/goplus/xgo/cl"
++	"github.com/goplus/xgo/cl/cltest"
++	"github.com/goplus/xgo/parser"
++	"github.com/goplus/xgo/parser/fsx/memfs"
++)
++
++// vfRun compiles src, runs the generated program and compares its output.
++func vfRun(t *testing.T, src, expected string) {
++	t.Helper()
++	code, err := vfGen(src)
++	if err != nil {
++		t.Fatalf("compile failed: %v", err)
++	}
++	result, err := vfGoRun(code)
++	if err != nil {
++		t.Fatalf("running the generated code failed: %v\n%s", err, code)
++	}
++	if result != expected {
++		t.Fatalf("=> Result:\n%s\n=> Expected:\n%s\n=> Generated:\n%s", result, expected, code)
++	}
++}
++
++func vfGoRun(code []byte) (string, error) {
++	dir, err := os.MkdirTemp(tmpDir, "vf")
++	if err != nil {
++		return "", err
++	}
++	defer os.RemoveAll(dir)
++	infile := filepath.Join(dir, "main.go")
++	if err = os.WriteFile(infile, code, 0666); err != nil {
++		return "", err
++	}
++	var stdout, stderr bytes.Buffer
++	cmd := exec.Command("go", "run", infile)
++	cmd.Dir = tmpDir
++	cmd.Stdout = &stdout
++	cmd.Stderr = &stderr
++	if err = cmd.Run(); err != nil {
++		return "", fmt.Errorf("%v\n%s", err, stderr.String())
++	}
++	return stdout.String(), nil
++}
++
++func vfGen(src string) (code []byte, err error) {
++	defer func() {
++		if e := recover(); e != nil {
++			err = fmt.Errorf("panic: %v", e)
++		}
++	}()
++	fs := memfs.SingleFile("/foo", "bar.xgo", src)
++	pkgs, err := parser.ParseFSDir(cltest.Conf.Fset, fs, "/foo", parser.Config{Mode: parser.ParseComments})
++	if err != nil {
++		return nil, fmt.Errorf("parse: %w", err)
++	}
++	pkg, err := cl.NewPackage("", pkgs["main"], cltest.Conf)
++	if err != nil {
++		return nil, err
++	}
++	var b bytes.Buffer
++	if err = pkg.WriteTo(&b); err != nil {
++		return nil, err
++	}
++	return b.Bytes(), nil
++}
++
++func vfCompile(src string) error {
++	_, err := vfGen(src)
++	return err
++}
++
++// vfError checks that compiling src fails with an error reported on the line
++// marked with `// ERROR`.
++func vfError(t *testing.T, src string) {
++	t.Helper()
++	line := 0
++	for i, l := range strings.Split(src, "\n") {
++		if strings.Contains(l, "// ERROR") {
++			line = i + 1
++			break
++		}
++	}
++	if line == 0 {
++		t.Fatal("no // ERROR marker in test source")
++	}
++	err := vfCompile(src)
++	if err == nil {
++		t.Fatalf("compiling succeeded, want an error on line %d:\n%s", line, src)
++	}
++	msg := err.Error()
++	if strings.HasPrefix(msg, "panic: ") || strings.HasPrefix(msg, "parse: ") {
++		t.Fatalf("want a compile error on line %d, got: %v", line, err)
++	}
++	if want := fmt.Sprintf("bar.xgo:%d:", line); !strings.Contains(msg, want) {
++		t.Fatalf("want an error reported on line %d (%s), got: %v", line, want, err)
++	}
++}
++
++func vfOK(t *testing.T, src string) {
++	t.Helper()
++	if err := vfCompile(src); err != nil {
++		t.Fatalf("unexpected error: %v\n%s", err, src)
++	}
++}
++
++const vfUnion = `
++import "unsafe"
++
++type Value struct {
++	bits uint32
++}
++
++func (p *Value) XGof_ref_i() *int32   { return (*int32)(unsafe.Pointer(&p.bits)) }
++func (p *Value) XGof_ref_u() *uint32  { return &p.bits }
++func (p *Value) XGof_ref_Lo() *uint16 { return (*uint16)(unsafe.Pointer(&p.bits)) }
++`
++
++const vfHeader = `
++type Header struct {
++	w uint8
++}
++
++func (p *Header) XGof_get_version() uint8  { return p.w & 0xf }
++func (p *Header) XGof_set_version(v uint8) { p.w = p.w&0xf0 | v&0xf }
++func (p *Header) XGof_get_flags() uint8    { return p.w >> 4 }
++func (p *Header) XGof_set_flags(v uint8)   { p.w = p.w&0x0f | v<<4 }
++`
++
++func TestRefFormReadWrite_a46d06(t *testing.T) {
++	vfRun(t, vfUnion+`
++var v Value
++v.i = -1
++println v.u, v.i
++v.u = 5
++println v.i, v.bits
++v.Lo = 7
++println v.u
++`, `4294967295 -1
++5 5
++7
++`)
++}
++
++func TestRefFormUpdate_a46d06(t *testing.T) {
++	vfRun(t, vfUnion+`
++var v Value
++v.i = 10
++v.i += 5
++v.i *= 2
++v.u -= 1
++v.i <<= 1
++v.u &^= 2
++println v.i
++v.i++
++v.i++
++v.u--
++println v.i
++`, `56
++57
++`)
++}
++
++func TestRefFormAddress_a46d06(t *testing.T) {
++	vfRun(t, vfUnion+`
++var v Value
++p := &v.u
++*p = 42
++println v.i, p == v.XGof_ref_u(), p == &v.bits
++q := &v.i
++*q = -2
++println v.u
++`, `42 true true
++4294967294
++`)
++}
++
++func TestRefFormThroughPointerAndIndex_a46d06(t *testing.T) {
++	vfRun(t, vfUnion+`
++pv := &Value{}
++pv.i = 3
++vs := make([]Value, 2)
++vs[1].u = 9
++vs[1].i++
++arr := [2]Value{}
++arr[0].u = 1
++arr[0].u += 10
++println pv.u, vs[1].u, arr[0].i
++`, `3 10 11
++`)
++}
++
++func TestGetterSetterReadWrite_a46d06(t *testing.T) {
++	vfRun(t, vfHeader+`
++h := &Header{}
++h.version = 2
++h.flags = 0xa
++println h.version, h.flags, h.w
++var g Header
++g.flags = 3
++g.version = 0x1f
++println g.version, g.flags, g.w
++`, `2 10 162
++15 3 63
++`)
++}
++
++func TestGetterSetterUpdate_a46d06(t *testing.T) {
++	vfRun(t, vfHeader+`
++h := &Header{}
++h.flags |= 0x1
++h.flags <<= 2
++h.version += 7
++h.version -= 2
++println h.version, h.flags
++h.version++
++h.flags--
++println h.version, h.flags
++h.flags &^= 1
++h.version ^= 0xf
++println h.version, h.flags
++`, `5 4
++6 3
++9 2
++`)
++}
++
++func TestGetterSetterCallSequence_a46d06(t *testing.T) {
++	vfRun(t, `
++type Reg struct {
++	val int
++}
++
++func (p *Reg) XGof_get_v() int  { println "get", p.val; return p.val }
++func (p *Reg) XGof_set_v(v int) { println "set", v; p.val = v }
++
++r := &Reg{val: 1}
++r.v = 5
++r.v += 2
++r.v++
++println r.v
++`, `set 5
++get 5
++set 7
++get 7
++set 8
++get 8
++8
++`)
++}
++
++func TestOperandEvaluatedOnce_a46d06(t *testing.T) {
++	vfRun(t, vfUnion+vfHeader+`
++var calls int
++var hs [3]Header
++var vs [3]Value
++
++func idx(i int) int {
++	calls++
++	return i
++}
++
++func hdr(h *Header) *Header {
++	calls++
++	return h
++}
++
++hs[idx(1)].flags += 2
++hs[idx(1)].flags++
++hs[idx(1)].version--
++hdr(&hs[2]).version |= 4
++hdr(&hs[2]).version++
++vs[idx(0)].i += 3
++vs[idx(0)].u++
++println hs[1].flags, hs[1].version, hs[2].version, vs[0].i, calls
++`, `3 15 5 4 7
++`)
++}
++
++func TestTupleAssign_a46d06(t *testing.T) {
++	vfRun(t, vfHeader+`
++h := &Header{}
++h.version, h.flags = 1, 3
++println h.version, h.flags
++h.version, h.flags = h.flags, h.version
++println h.version, h.flags
++var n int
++n, h.flags = int(h.flags)+10, h.version
++println n, h.version, h.flags
++`, `1 3
++3 1
++11 3 3
++`)
++}
++
++func TestTupleAssignFromCall_a46d06(t *testing.T) {
++	vfRun(t, vfUnion+vfHeader+`
++func pair() (uint8, int32) {
++	return 6, -4
++}
++
++h := &Header{}
++var v Value
++h.flags, v.i = pair()
++println h.flags, v.i
++m := map[string]uint8{"a": 9}
++var ok bool
++h.version, ok = m["a"]
++println h.version, ok
++`, `6 -4
++9 true
++`)
++}
++
++func TestTupleAssignOrder_a46d06(t *testing.T) {
++	vfRun(t, `
++type Log struct {
++	name string
++	val  int
++}
++
++func (p *Log) XGof_get_v() int { return p.val }
++func (p *Log) XGof_set_v(v int) {
++	println "set", p.name, v
++	p.val = v
++}
++
++func value(n int) int {
++	println "value", n
++	return n
++}
++
++a := &Log{name: "a", val: 1}
++b := &Log{name: "b", val: 2}
++a.v, b.v = value(a.v+10), value(b.v+20)
++println a.v, b.v
++b.v, a.v = a.v, b.v
++println a.v, b.v
++`, `value 11
++value 22
++set a 11
++set b 22
++11 22
++set b 11
++set a 22
++22 11
++`)
++}
++
++func TestNameRules_a46d06(t *testing.T) {
++	vfRun(t, `
++type N struct {
++	a, b, c, d int
++}
++
++func (p *N) XGof_get_mode() int    { return p.a }
++func (p *N) XGof_set_mode(v int)   { p.a = v }
++func (p *N) XGof_get_Mode() int    { return p.b }
++func (p *N) XGof_set_Mode(v int)   { p.b = v }
++func (p *N) XGof_get_ref_x() int   { return p.c }
++func (p *N) XGof_set_ref_x(v int)  { p.c = v }
++func (p *N) XGof_ref_get_y() *int  { return &p.d }
++
++var n N
++n.mode = 1
++n.Mode = 2
++n.ref_x = 3
++n.get_y = 4
++n.get_y += 10
++println n.a, n.b, n.c, n.d
++println n.mode, n.Mode, n.ref_x, n.get_y
++println n.XGof_get_mode(), n.XGof_get_ref_x(), *n.XGof_ref_get_y()
++n.XGof_set_Mode(20)
++println n.Mode
++`, `1 2 3 14
++1 2 3 14
++1 3 14
++20
++`)
++}
++
++func TestReadOnlyAndWriteOnly_a46d06(t *testing.T) {
++	vfRun(t, `
++type Counter struct {
++	n int
++}
++
++func (p *Counter) XGof_get_double() int { return p.n * 2 }
++func (p *Counter) XGof_set_half(v int)  { p.n = v / 2 }
++
++var c Counter
++c.half = 10
++println c.n, c.double
++c.half = c.double * 3
++println c.n, c.double
++`, `5 10
++15 30
++`)
++}
++
++func TestFieldOfCompositeType_a46d06(t *testing.T) {
++	vfRun(t, `
++type Point struct {
++	X, Y int
++}
++
++func (p Point) Sum() int { return p.X + p.Y }
++
++type Shape struct {
++	pts  []int
++	orig Point
++}
++
++func (p *Shape) XGof_get_list() []int   { return p.pts }
++func (p *Shape) XGof_set_list(v []int)  { p.pts = v }
++func (p *Shape) XGof_ref_origin() *Point { return &p.orig }
++func (p *Shape) XGof_get_at() Point     { return p.orig }
++func (p *Shape) XGof_get_fn() func(int) int {
++	return func(x int) int { return x * len(p.pts) }
++}
++
++s := &Shape{}
++s.list = []int{1, 2, 3}
++s.list[1] = 20
++s.origin.X = 4
++s.origin.Y += 5
++println s.list, s.pts, s.origin.X, s.at.Y, s.at.Sum(), s.fn(7)
++`, `[1 20 3] [1 20 3] 4 5 9 21
++`)
++}
++
++func TestValueReceiver_a46d06(t *testing.T) {
++	vfRun(t, `
++type Temp struct {
++	celsius int
++}
++
++func (t Temp) XGof_get_fahrenheit() int { return t.celsius*9/5 + 32 }
++
++func mk(c int) Temp {
++	return Temp{celsius: c}
++}
++
++println mk(100).fahrenheit, Temp{celsius: 0}.fahrenheit
++pt := &Temp{celsius: -40}
++println pt.fahrenheit
++`, `212 32
++-40
++`)
++}
++
++func TestEmbeddedPromotion_a46d06(t *testing.T) {
++	vfRun(t, vfUnion+vfHeader+`
++type Packet struct {
++	Header
++	*Value
++	size int
++}
++
++type Frame struct {
++	Packet
++}
++
++p := &Packet{Value: &Value{}}
++p.version = 3
++p.flags++
++p.i = -1
++p.u -= 1
++println p.version, p.flags, p.u
++var f Frame
++f.Value = new(Value)
++f.flags = 2
++f.version, f.Lo = 7, 300
++println f.version, f.flags, f.Lo, f.Packet.Header.w
++`, `3 1 4294967294
++7 2 300 39
++`)
++}
++
++func TestDepthRules_a46d06(t *testing.T) {
++	vfRun(t, `
++type Real struct {
++	level int
++}
++
++type Virt struct {
++	n int
++}
++
++func (p *Virt) XGof_get_level() int  { return 100 + p.n }
++func (p *Virt) XGof_set_level(v int) { p.n = v }
++
++type Deep struct {
++	Real
++}
++
++// the virtual field (depth 1) hides the real field (depth 2)
++type A struct {
++	Deep
++	Virt
++}
++
++// the real field (depth 0) hides the virtual field (depth 1)
++type B struct {
++	Virt
++	level int
++}
++
++// a real method at depth 0 hides the virtual field (depth 1)
++type C struct {
++	Virt
++}
++
++func (C) level() int { return -1 }
++
++var a A
++a.level = 5
++println a.level, a.Virt.n, a.Deep.Real.level
++var b B
++b.level = 6
++println b.level, b.Virt.n
++var c C
++println c.level()
++`, `105 5 0
++6 0
++-1
++`)
++}
++
++func TestAmbiguousSelector_a46d06(t *testing.T) {
++	vfError(t, `
++type T struct {
++	mode int
++}
++
++func (p *T) XGof_get_mode() int { return 0 }
++
++var t T
++println t.mode // ERROR
++`)
++	vfError(t, `
++type T struct{}
++
++func (T) mode() int { return 1 }
++func (p *T) XGof_set_mode(v int) {}
++
++var t T
++t.mode = 2 // ERROR
++`)
++	vfError(t, `
++type V1 struct{}
++
++func (p *V1) XGof_get_mode() int { return 1 }
++
++type R struct {
++	mode int
++}
++
++type T struct {
++	V1
++	R
++}
++
++var t T
++println t.mode // ERROR
++`)
++	vfError(t, `
++type V1 struct{}
++
++func (p *V1) XGof_get_mode() int { return 1 }
++
++type V2 struct{}
++
++func (p *V2) XGof_get_mode() int { return 2 }
++
++type T struct {
++	V1
++	V2
++}
++
++var t T
++println t.mode // ERROR
++`)
++}
++
++func TestFormsDecidedAtShallowestDepth_a46d06(t *testing.T) {
++	vfRun(t, `
++type Inner struct {
++	x int
++}
++
++func (p *Inner) XGof_get_v() int  { return p.x }
++func (p *Inner) XGof_set_v(v int) { p.x = v }
++
++type Outer struct {
++	Inner
++	y int
++}
++
++func (p *Outer) XGof_ref_v() *int { return &p.y }
++
++var o Outer
++o.v = 3
++o.v++
++println o.v, o.y, o.x, &o.v == &o.y
++`, `4 4 0 true
++`)
++}
++
++func TestTypeMismatchError_a46d06(t *testing.T) {
++	vfError(t, `
++type T struct{}
++
++func (T) XGof_get_a() int     { return 1 }
++func (T) XGof_set_a(v int64) {}
++
++var t T
++println t.a // ERROR
++`)
++	vfError(t, `
++type T struct{}
++
++func (T) XGof_get_a() int     { return 1 }
++func (T) XGof_set_a(v string) {}
++
++var t T
++t.a = "x" // ERROR
++`)
++	vfOK(t, `
++type T struct {
++	x int64
++}
++
++func (p *T) XGof_get_a() int64  { return p.x }
++func (p *T) XGof_set_a(v int64) { p.x = v }
++
++var t T
++t.a = 1 << 40
++println t.a
++`)
++}
++
++func TestBothFormsError_a46d06(t *testing.T) {
++	vfError(t, `
++type T struct {
++	x int
++}
++
++func (p *T) XGof_ref_a() *int { return &p.x }
++func (p *T) XGof_get_a() int  { return p.x }
++
++var t T
++println t.a // ERROR
++`)
++	vfError(t, `
++type T struct {
++	x int
++}
++
++func (p *T) XGof_ref_a() *int  { return &p.x }
++func (p *T) XGof_set_a(v int)  { p.x = v }
++
++var t T
++t.a = 1 // ERROR
++`)
++	vfOK(t, `
++type T struct {
++	x int
++}
++
++func (p *T) XGof_ref_a() *int { return &p.x }
++func (p *T) XGof_get_b() int  { return p.x }
++
++var t T
++t.a = 1
++println t.a, t.b
++`)
++}
++
++func TestReadOnlyErrors_a46d06(t *testing.T) {
++	const decl = `
++type T struct {
++	x int
++}
++
++func (p *T) XGof_get_a() int { return p.x }
++
++var t T
++`
++	vfError(t, decl+`t.a = 1 // ERROR
++`)
++	vfError(t, decl+`t.a += 1 // ERROR
++`)
++	vfError(t, decl+`t.a++ // ERROR
++`)
++	vfError(t, decl+`var n int
++n, t.a = 1, 2 // ERROR
++`)
++	vfOK(t, decl+`n := t.a + 1
++println n
++`)
++}
++
++func TestWriteOnlyErrors_a46d06(t *testing.T) {
++	const decl = `
++type T struct {
++	x int
++}
++
++func (p *T) XGof_set_a(v int) { p.x = v }
++
++var t T
++`
++	vfError(t, decl+`println t.a // ERROR
++`)
++	vfError(t, decl+`t.a += 1 // ERROR
++`)
++	vfError(t, decl+`t.a-- // ERROR
++`)
++	vfError(t, decl+`n := t.a // ERROR
++println n
++`)
++	vfOK(t, decl+`t.a = 3
++println t.x
++`)
++}
++
++func TestAddressOfGetterSetterError_a46d06(t *testing.T) {
++	vfError(t, vfHeader+`
++var h Header
++p := &h.version // ERROR
++println p
++`)
++	vfError(t, `
++type T struct{}
++
++func (T) XGof_get_a() int { return 1 }
++
++var t T
++p := &t.a // ERROR
++println p
++`)
++	vfOK(t, vfUnion+`
++var v Value
++p := &v.u
++println p
++`)
++}
++
++func TestNonAddressableError_a46d06(t *testing.T) {
++	vfError(t, vfHeader+`
++func mk() Header {
++	return Header{}
++}
++
++println mk().version // ERROR
++`)
++	vfError(t, vfUnion+`
++func mk() Value {
++	return Value{}
++}
++
++println mk().u // ERROR
++`)
++	vfOK(t, vfHeader+`
++func mk() *Header {
++	return &Header{}
++}
++
++mk().version = 3
++println mk().version
++`)
++}
++
++func TestStructLiteralKeyError_a46d06(t *testing.T) {
++	vfError(t, vfHeader+`
++h := Header{version: 1} // ERROR
++println h
++`)
++	vfError(t, vfUnion+`
++v := &Value{i: 1} // ERROR
++println v
++`)
++	vfOK(t, vfHeader+`
++h := Header{w: 0x21}
++println h.version, h.flags
++`)
++}
++
++func TestDirectMethodCallsUnchanged_a46d06(t *testing.T) {
++	vfRun(t, vfUnion+vfHeader+`
++h := &Header{}
++h.XGof_set_version(4)
++var v Value
++*v.XGof_ref_u() = 8
++println h.XGof_get_version(), h.version, *v.XGof_ref_i(), v.i
++`, `4 4 8 8
++`)
++}
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 00000000..6d94f412
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,43 @@
++#!/usr/bin/env bash
++# Usage: ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  the existing tests.
++#   new   the virtual field tests.
++set -uo pipefail
++
++cd /app
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  OUTPUT_PATH="$2"
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++TEST_LOG="$(mktemp)"
++
++case "$MODE" in
++  base)
++    # TestTestxgo/domaintext-md imports a module that go.mod doesn't require,
++    # so it needs the network; it is left out.
++    go test -count=1 -v -skip '_a46d06$|^TestTestxgo$' ./... 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    go test -count=1 -v -run '^TestTestxgo$' -skip '^TestTestxgo$/^domaintext-md$' ./cl/ 2>&1 | tee -a "$TEST_LOG"
++    [ "${PIPESTATUS[0]}" -eq 0 ] || STATUS=1
++    ;;
++  new)
++    go test -count=1 -v -run '_a46d06$' ./cl/ 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ]; then
++  go-junit-report -set-exit-code < "$TEST_LOG" > "$OUTPUT_PATH" || true
++fi
++
++exit "$STATUS"
