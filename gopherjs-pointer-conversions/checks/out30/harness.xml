@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+<testsuite name="test.sh" tests="1" failures="1" errors="0"><testcase name="TestHarness_new" classname="test.sh"><failure message="a command exited with status 127 before reporting a failed test">/tmp/tmp.avkepIOP2i/gopherjs: line 2: exec: go: not found</failure></testcase></testsuite>
+</testsuites>

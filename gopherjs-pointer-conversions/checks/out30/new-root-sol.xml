@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="29">
+	<testsuite name="github.com/gopherjs/gopherjs/tests/ptrconv_658733" tests="29" failures="0" errors="0" id="0" hostname="d3b45e608960" time="2.508" timestamp="2026-10-29T01:09:18Z">
+		<testcase name="TestPtrConvNamedBasicExplicit" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvNamedBasicNil" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvDifferentElemTypes" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvPointerToPointer" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvArray" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvImplicitCallsAndReturns" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvImplicitFromNamed" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.020"></testcase>
+		<testcase name="TestPtrConvImplicitCompositeLiterals" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvImplicitStatements" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvInterfaces" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvMapKeys" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvUnsafePointer" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvUnsafeOtherType" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvUnsafeElements" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvUnsafeNew" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvReflectConvert" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvUnsafeSameAddress" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvReflectNewAt" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvReflectAssign" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvUnsafeArrayElements" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvUnsafeStructFields" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvAddressOfDeref" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvReflectMapIter" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvExplicitSources" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvImplicitAssignments" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvNilForms" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvPromotedField" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.010"></testcase>
+		<testcase name="TestPtrConvReflectMakeFunc" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+		<testcase name="TestPtrConvUnsafePointerNilStruct" classname="github.com/gopherjs/gopherjs/tests/ptrconv_658733" time="0.000"></testcase>
+	</testsuite>
+</testsuites>

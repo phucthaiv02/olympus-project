@@ -1,0 +1,11 @@
+FAIL H1 foreign *S -> (*S2)(p) panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL H2 foreign *S -> (*S2)(p) write panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL H3 foreign *S -> PS implicit panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL H4 foreign *S -> PS(p) panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL H5 foreign *S reflect Convert *S2 panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL H6 foreign from array *S -> *S2 panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL H7 foreign *[2]int32 -> (*Arr)(p)
+FAIL H8 foreign *[2]int32 -> PArr implicit
+FAIL H9 foreign *S generic panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL H10 foreign *S Set into PS var via reflect panic: JavaScript error: Cannot read properties of undefined (reading '0')
+FAIL H11 *int -> *MyInt foreign roundtrip panic: JavaScript error: Cannot read properties of undefined (reading '0')

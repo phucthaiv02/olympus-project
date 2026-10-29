@@ -1,0 +1,7 @@
+addr==&s.N: false
+unsafeaddr stable: false
+unsafeaddr == unsafe(&s.N): false
+&s.N == &s.N: true
+s.N: 7 <ref *1> typ { '$high': 0, '$low': 7, '$val': [Circular *1] }
+s.N after: 9 true
+fbn==&s.N: false

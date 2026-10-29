@@ -1,0 +1,8 @@
+harness EXIT=127
+new-nr-sol2 EXIT=0
+new-nr-sol EXIT=0
+new-nr-nosol EXIT=1
+new-root-nosol EXIT=1
+new-root-sol EXIT=0
+base-nr-nosol EXIT=0
+base-nr-sol EXIT=0

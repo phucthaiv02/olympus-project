@@ -1,0 +1,2 @@
+new-nr-nosol EXIT=1
+new-nr-sol EXIT=0

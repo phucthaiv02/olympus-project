@@ -1,0 +1,12 @@
+FAIL Z1 named slice conv keeps data ptr (cap 0)
+FAIL Z2 implicit named slice keeps data ptr (cap 0)
+FAIL Z3 unsafe reinterpret keeps data ptr (cap 0)
+FAIL Z4 unsafe.Slice len 0 then reinterpret
+FAIL Z5 reflect Convert slice keeps ptr (cap 0)
+ok Q1 Swapper on struct view slice
+FAIL Q2 sort.Slice on struct view slice
+ok Q3 Swapper on nested array view slice
+ok Q4 tuple swap on struct view slice
+ok R1 method on named array view
+ok R2 SliceData of struct view slice + unsafe.Slice
+ok R3 reflect Index Addr of struct view elem + unsafe.Slice

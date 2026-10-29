@@ -1,0 +1,224 @@
+=== RUN   TestPtrConvNamedBasicExplicit
+    pointer_conversion_658733_test.go:71: (*string)(ptcStrPtr(p)) != p
+    pointer_conversion_658733_test.go:74: ptcStrPtr(p) != ptcStrPtr(p)
+    pointer_conversion_658733_test.go:77: ptcStrPtr(p) != q
+--- FAIL: TestPtrConvNamedBasicExplicit (0.07s)
+=== RUN   TestPtrConvNamedBasicNil
+    pointer_conversion_658733_test.go:92: ptcStrPtr(nil *string) != nil
+    pointer_conversion_658733_test.go:96: (*string)(nil ptcStrPtr) != nil
+    pointer_conversion_658733_test.go:100: nil *string assigned to ptcStrPtr variable is not nil
+    pointer_conversion_658733_test.go:104: i.(ptcStrPtr) = 0x1, true; want nil, true
+    pointer_conversion_658733_test.go:108: ptcPtrPtr(nil **int) != nil
+--- FAIL: TestPtrConvNamedBasicNil (0.03s)
+=== RUN   TestPtrConvDifferentElemTypes
+    pointer_conversion_658733_test.go:124: (*int)((*ptcInt)(p)) != p
+    pointer_conversion_658733_test.go:127: (*ptcInt)(p) != (*ptcInt)(p)
+    pointer_conversion_658733_test.go:131: (*ptcInt)(nil *int) != nil
+    pointer_conversion_658733_test.go:145: (*int64)((*ptcInt64)(&i64)) != &i64
+    pointer_conversion_658733_test.go:162: (*int)(f) != &pr.b
+--- FAIL: TestPtrConvDifferentElemTypes (0.02s)
+=== RUN   TestPtrConvPointerToPointer
+    pointer_conversion_658733_test.go:187: (**int)(ptcPtrPtr(&p)) != &p
+    pointer_conversion_658733_test.go:190: ptcPtrPtr(&p) != ptcPtrPtr(&p)
+--- FAIL: TestPtrConvPointerToPointer (0.03s)
+=== RUN   TestPtrConvArray
+    pointer_conversion_658733_test.go:226: (*ptcArr)(nil *[3]int) != nil
+    pointer_conversion_658733_test.go:229: ptcArrPtr(nil *[3]int) != nil
+    pointer_conversion_658733_test.go:236: ptcNamedArr from nil *ptcArr != nil
+    pointer_conversion_658733_test.go:239: fmt.Sprint(ptcArrPtr(nil)) = "&[]", want <nil>
+--- FAIL: TestPtrConvArray (0.09s)
+=== RUN   TestPtrConvImplicitCallsAndReturns
+    pointer_conversion_658733_test.go:255: argument: got type *string, want ptrconv_658733.ptcStrPtr
+    pointer_conversion_658733_test.go:258: argument: identity lost
+    pointer_conversion_658733_test.go:261: return: got type *string, want ptrconv_658733.ptcStrPtr
+    pointer_conversion_658733_test.go:264: variadic argument: got type *string, want ptrconv_658733.ptcStrPtr
+    pointer_conversion_658733_test.go:268: nil *string passed or returned as ptcStrPtr is not nil
+    pointer_conversion_658733_test.go:272: nil *[3]int returned as ptcArrPtr is not nil
+    pointer_conversion_658733_test.go:276: multiple results: got type *string, want ptrconv_658733.ptcStrPtr
+    pointer_conversion_658733_test.go:279: multiple results: nil *[3]int returned as ptcArrPtr is not nil
+    pointer_conversion_658733_test.go:283: multiple results passed as arguments: got 0x1, &[]
+--- FAIL: TestPtrConvImplicitCallsAndReturns (0.03s)
+=== RUN   TestPtrConvImplicitFromNamed
+    pointer_conversion_658733_test.go:297: argument: got type ptrconv_658733.ptcStrPtr, want *string
+    pointer_conversion_658733_test.go:300: argument: identity lost
+    pointer_conversion_658733_test.go:303: return: got type ptrconv_658733.ptcStrPtr, want *string
+    pointer_conversion_658733_test.go:307: var declaration: got type *string, identity kept false
+    pointer_conversion_658733_test.go:311: slice literal element: got type ptrconv_658733.ptcStrPtr, want *string
+    pointer_conversion_658733_test.go:315: nil ptcArrPtr returned as *[3]int is not nil
+    pointer_conversion_658733_test.go:320: assignment: nil ptcArrPtr assigned to *[3]int is not nil
+--- FAIL: TestPtrConvImplicitFromNamed (0.01s)
+=== RUN   TestPtrConvImplicitCompositeLiterals
+    pointer_conversion_658733_test.go:334: keyed struct field: got type *string
+    pointer_conversion_658733_test.go:337: keyed struct field: nil array pointer is not nil
+    pointer_conversion_658733_test.go:344: positional struct field: got type *string
+    pointer_conversion_658733_test.go:347: positional struct field: nil array pointer is not nil
+    pointer_conversion_658733_test.go:351: pointer to struct literal: got type *string
+    pointer_conversion_658733_test.go:355: array literal element: got type *int
+    pointer_conversion_658733_test.go:359: slice literal element: got type *string
+    pointer_conversion_658733_test.go:364: map literal key: got type *string
+    pointer_conversion_658733_test.go:367: map literal value: nil array pointer is not nil
+    pointer_conversion_658733_test.go:371: composite literal elements lost identity
+--- FAIL: TestPtrConvImplicitCompositeLiterals (0.02s)
+=== RUN   TestPtrConvImplicitStatements
+    pointer_conversion_658733_test.go:383: append: got type *string
+    pointer_conversion_658733_test.go:388: map assignment: nil array pointer is not nil
+    pointer_conversion_658733_test.go:393: map assignment: got type *string
+    pointer_conversion_658733_test.go:398: channel send: got type *string
+    pointer_conversion_658733_test.go:406: select send: got type *string
+    pointer_conversion_658733_test.go:410: var declaration: nil array pointer is not nil
+    pointer_conversion_658733_test.go:415: assignment: nil array pointer is not nil
+    pointer_conversion_658733_test.go:419: multiple var declaration: got 0x1, <nil>
+    pointer_conversion_658733_test.go:424: defer arguments: got type *string, identity kept false, nil kept false
+    pointer_conversion_658733_test.go:431: go statement argument: got type *string
+--- FAIL: TestPtrConvImplicitStatements (0.02s)
+=== RUN   TestPtrConvInterfaces
+    pointer_conversion_658733_test.go:448: unboxed pointer lost identity
+    pointer_conversion_658733_test.go:459: interfaces holding the same converted pointer are not equal
+    pointer_conversion_658733_test.go:464: k.(ptcArrPtr) = &[], true; want nil, true
+--- FAIL: TestPtrConvInterfaces (0.01s)
+=== RUN   TestPtrConvMapKeys
+    pointer_conversion_658733_test.go:476: map keyed by converted pointer: 3 keys, m[p] = 0; want 1 key, 3
+    pointer_conversion_658733_test.go:480: pointer converted back is not found as map key
+    pointer_conversion_658733_test.go:486: map keyed by *ptcInt: 2 keys, want 1
+--- FAIL: TestPtrConvMapKeys (0.01s)
+=== RUN   TestPtrConvUnsafePointer
+    pointer_conversion_658733_test.go:493: (*int)(nil unsafe.Pointer) != nil
+    pointer_conversion_658733_test.go:496: (*[3]int)(nil unsafe.Pointer) != nil
+    pointer_conversion_658733_test.go:499: ptcStrPtr(nil unsafe.Pointer) != nil
+    pointer_conversion_658733_test.go:503: unsafe.Pointer(nil *string) != nil
+    pointer_conversion_658733_test.go:507: unsafe.Pointer(nil *ptcStruct) != nil
+    pointer_conversion_658733_test.go:511: unsafe.Pointer(nil *[3]int) != nil
+    pointer_conversion_658733_test.go:514: nil pointer round trip through unsafe.Pointer is not nil
+    pointer_conversion_658733_test.go:517: nil unsafe.Pointer converted to a pointer to pointer is not nil
+    pointer_conversion_658733_test.go:520: unsafe.Pointer of a nil pointer to pointer or array is not nil
+--- FAIL: TestPtrConvUnsafePointer (0.02s)
+=== RUN   TestPtrConvUnsafeOtherType
+    pointer_conversion_658733_test.go:557: %T of (*ptcInt)(unsafe.Pointer(p)) = *int
+    pointer_conversion_658733_test.go:560: (*ptcInt)(unsafe.Pointer(p)) is not a *ptcInt
+    pointer_conversion_658733_test.go:563: (*ptcInt)(unsafe.Pointer(p)) != (*ptcInt)(p)
+    pointer_conversion_658733_test.go:582: value read through (*ptcInt64)(unsafe.Pointer(&x)) = 1099511627776 (int64)
+    pointer_conversion_658733_test.go:592: value read through (*ptcComplex)(unsafe.Pointer(&c)) = (1+2i) (complex128)
+    pointer_conversion_658733_test.go:597: %T of the pointer read through **ptcInt = *int
+--- FAIL: TestPtrConvUnsafeOtherType (0.02s)
+=== RUN   TestPtrConvUnsafeElements
+    pointer_conversion_658733_test.go:608: (*int)(unsafe.Pointer(&s[1])) != &s[1]
+    pointer_conversion_658733_test.go:612: unsafe.Pointer(&s[2]) stored in a variable does not convert back to &s[2]
+    pointer_conversion_658733_test.go:56: panic: JavaScript error: $sliceToNativeArray(...).$set is not a function
+--- FAIL: TestPtrConvUnsafeElements (0.01s)
+=== RUN   TestPtrConvUnsafeNew
+    pointer_conversion_658733_test.go:56: panic: JavaScript error: Cannot read properties of undefined (reading 'length')
+--- FAIL: TestPtrConvUnsafeNew (0.01s)
+=== RUN   TestPtrConvReflectConvert
+    pointer_conversion_658733_test.go:674: reflect conversion != ptcIntPtr(p)
+    pointer_conversion_658733_test.go:677: two reflect conversions of the same pointer are not equal
+    pointer_conversion_658733_test.go:680: reflect round trip lost identity
+    pointer_conversion_658733_test.go:691: reflect conversion to *ptcInt != (*ptcInt)(p)
+    pointer_conversion_658733_test.go:695: reflect conversion to *ptcInt64 != (*ptcInt64)(&x)
+    pointer_conversion_658733_test.go:698: reflect conversion to ptcPtrPtr does not convert back to &p
+    pointer_conversion_658733_test.go:705: write through reflect conversion to *ptcStruct2: st.x = 1, want 7
+    pointer_conversion_658733_test.go:708: reflect conversion to *ptcStruct2 != (*ptcStruct2)(st)
+    pointer_conversion_658733_test.go:711: reflect round trip of a struct pointer lost identity
+--- FAIL: TestPtrConvReflectConvert (0.03s)
+=== RUN   TestPtrConvUnsafeSameAddress
+    pointer_conversion_658733_test.go:720: pointers of different types to the same variable give different unsafe.Pointer values
+    pointer_conversion_658733_test.go:730: map keyed by unsafe.Pointer values of the same variable: map[0x1:1 0x1:1 0x1:1], want a single entry
+    pointer_conversion_658733_test.go:733: unsafe.Pointer values of the same variable are different as interfaces
+    pointer_conversion_658733_test.go:742: unsafe.Pointer(s) != unsafe.Pointer((*ptcStruct2)(s))
+    pointer_conversion_658733_test.go:745: unsafe.Pointer(&s.x) != unsafe.Pointer((*ptcInt)(&s.x))
+    pointer_conversion_658733_test.go:749: unsafe.Pointer(&e[1]) != unsafe.Pointer((*ptcInt)(&e[1]))
+    pointer_conversion_658733_test.go:756: unsafe.Pointer(&b[1]) is not equal to itself
+    pointer_conversion_658733_test.go:760: unsafe.Pointer(np) != unsafe.Pointer((*ptcInt)(np)) for np := new(int)
+    pointer_conversion_658733_test.go:764: reflect.Value.Pointer differs between p and (*ptcInt)(p)
+    pointer_conversion_658733_test.go:767: reflect.ValueOf(ptcIntPtr(p)).UnsafePointer() != unsafe.Pointer(p)
+--- FAIL: TestPtrConvUnsafeSameAddress (0.04s)
+=== RUN   TestPtrConvReflectNewAt
+    pointer_conversion_658733_test.go:777: reflect.NewAt(ptcInt, &n) holds a *int
+--- FAIL: TestPtrConvReflectNewAt (0.01s)
+=== RUN   TestPtrConvReflectAssign
+    pointer_conversion_658733_test.go:817: ptcIntPtr set from *int by reflection: *int, equal: false
+    pointer_conversion_658733_test.go:821: *int passed as ptcIntPtr by reflect.Value.Call: got *int
+    pointer_conversion_658733_test.go:826: ptcIntPtr map value set from *int by reflection: *int
+    pointer_conversion_658733_test.go:833: ptcStructPtr set from *ptcStruct by reflection: *ptrconv_658733.ptcStruct, equal: false
+    pointer_conversion_658733_test.go:837: reflect.Value.Convert of *ptcStruct to ptcStructPtr != ptcStructPtr(s)
+--- FAIL: TestPtrConvReflectAssign (0.02s)
+=== RUN   TestPtrConvUnsafeArrayElements
+    pointer_conversion_658733_test.go:845: %T of *(*ptcInt64)(unsafe.Pointer(&x)) = int64
+    pointer_conversion_658733_test.go:851: element read through *[2]ptcInt64 = 2 (int64)
+    pointer_conversion_658733_test.go:855: after a write through *[2]ptcInt64: a[0] = 5 (ptrconv_658733.ptcInt64), want 5 (int64)
+    pointer_conversion_658733_test.go:861: unsafe.Pointer(&q[1]) != unsafe.Pointer(&a[1])
+    pointer_conversion_658733_test.go:864: copy of *[2]ptcInt64 has elements of type int64
+    pointer_conversion_658733_test.go:871: element read through *[1]*ptcInt: *int, equal: false
+    pointer_conversion_658733_test.go:876: element read through *[1]ptcComplex = (0+1i) (complex128)
+--- FAIL: TestPtrConvUnsafeArrayElements (0.02s)
+=== RUN   TestPtrConvUnsafeStructFields
+    pointer_conversion_658733_test.go:886: q.n = 3 (int64)
+    pointer_conversion_658733_test.go:889: q.p: *int, equal: false
+    pointer_conversion_658733_test.go:892: q.in.v = 6 (int64)
+    pointer_conversion_658733_test.go:895: q.a[1] = 5 (int64)
+    pointer_conversion_658733_test.go:899: after q.n = 7: s.n = 7 (ptrconv_658733.ptcInt64), want 7 (int64)
+    pointer_conversion_658733_test.go:903: after q.in.v = 8: s.in.v = 8 (ptrconv_658733.ptcInt64), want 8 (int64)
+    pointer_conversion_658733_test.go:910: after *q = ptcNamedFields{n: 9}: s.n = 9 (ptrconv_658733.ptcInt64), s.p = <nil>
+--- FAIL: TestPtrConvUnsafeStructFields (0.02s)
+=== RUN   TestPtrConvAddressOfDeref
+    pointer_conversion_658733_test.go:927: &*ptcIntPtr(&n) = ptrconv_658733.ptcIntPtr, want *int equal to &n
+    pointer_conversion_658733_test.go:930: &*p in a generic function = ptrconv_658733.ptcIntPtr, equal to &n: false
+    pointer_conversion_658733_test.go:935: &*ptcStructPtr(s) = ptrconv_658733.ptcStructPtr, want *ptcStruct equal to s
+    pointer_conversion_658733_test.go:56: panic: JavaScript error: ps.typeName is not a function
+--- FAIL: TestPtrConvAddressOfDeref (0.01s)
+=== RUN   TestPtrConvReflectMapIter
+    pointer_conversion_658733_test.go:955: ptcIntPtr set from a *int map value by SetIterValue: *int, equal: false
+    pointer_conversion_658733_test.go:962: ptcIntPtr set from a *int map key by SetIterKey: *int, equal: false
+    pointer_conversion_658733_test.go:969: ptcIntPtr set from a nil *int map value by SetIterValue is not nil
+--- FAIL: TestPtrConvReflectMapIter (0.01s)
+=== RUN   TestPtrConvExplicitSources
+    pointer_conversion_658733_test.go:985: ptcIntPtr(&s.x) lost identity
+    pointer_conversion_658733_test.go:989: (*ptcInt)(&a[1]): ptrconv_658733.ptcInt, identity kept: false
+    pointer_conversion_658733_test.go:993: ptcIntPtr(&sl[1]) lost identity
+    pointer_conversion_658733_test.go:997: ptcIntPtr(new(int)): ptrconv_658733.ptcIntPtr
+    pointer_conversion_658733_test.go:1004: ptcIntPtr(&n) inside a function literal != ptcIntPtr(&n) outside of it
+    pointer_conversion_658733_test.go:1009: reflect.Value.Pointer of a converted pointer differs from that of &m
+    pointer_conversion_658733_test.go:1012: reflect.Value.Pointer of ptcStructPtr(&s) differs from that of &s
+--- FAIL: TestPtrConvExplicitSources (0.02s)
+=== RUN   TestPtrConvImplicitAssignments
+    pointer_conversion_658733_test.go:1022: range assignment: got type ptrconv_658733.ptcIntPtr, equal: false
+    pointer_conversion_658733_test.go:1027: field assignment: got type ptrconv_658733.ptcIntPtr
+    pointer_conversion_658733_test.go:1033: assignment through a pointer: got type ptrconv_658733.ptcIntPtr
+    pointer_conversion_658733_test.go:1038: switch on ptcIntPtr(&n) doesn't match case &n
+--- FAIL: TestPtrConvImplicitAssignments (0.01s)
+=== RUN   TestPtrConvNilForms
+    pointer_conversion_658733_test.go:1060: ptcStructPtr set to nil *ptcStruct by reflection is not nil
+    pointer_conversion_658733_test.go:1063: reflect.NewAt of a struct or array type at nil is not nil
+    pointer_conversion_658733_test.go:1068: nil *int passed as ptcIntPtr by reflect.Value.Call is not nil
+--- FAIL: TestPtrConvNilForms (0.01s)
+=== RUN   TestPtrConvPromotedField
+    pointer_conversion_658733_test.go:1084: conversions of &o.x and &o.ptcEmbedded.x are not equal
+    pointer_conversion_658733_test.go:1087: unsafe.Pointer(&o.x) != unsafe.Pointer(&o.ptcEmbedded.x)
+    pointer_conversion_658733_test.go:1095: reflect address of the promoted field o.x != unsafe.Pointer(&o.ptcEmbedded.x)
+--- FAIL: TestPtrConvPromotedField (0.01s)
+=== RUN   TestPtrConvReflectMakeFunc
+    pointer_conversion_658733_test.go:1106: *int returned as ptcIntPtr by a reflect.MakeFunc function: *int, equal: false
+    pointer_conversion_658733_test.go:1112: nil *int returned as ptcIntPtr by a reflect.MakeFunc function is not nil
+--- FAIL: TestPtrConvReflectMakeFunc (0.01s)
+=== RUN   TestPtrConvUnsafePointerNilStruct
+--- FAIL: TestPtrConvUnsafePointerNilStruct (0.00s)
+/tmp/tmp.kTpfpruX5m/ptrconv_658733_test.681033090.js:1855
+        throw err;
+        ^
+
+TypeError: Cannot create property '$proxies' on number '0'
+    at $pointerOfStructConversion (/tmp/tmp.kTpfpruX5m/prelude.js:514:13)
+    at github.com/gopherjs/gopherjs/tests/ptrconv_658733.TestPtrConvUnsafePointerNilStruct (/tmp/tmp.kTpfpruX5m/pointer_conversion_658733_test.go:1120:3)
+    at testing.tRunner (/testing/testing.go:1595:3)
+    at $goroutine (/tmp/tmp.kTpfpruX5m/goroutines.js:138:21)
+    at $runScheduled (/tmp/tmp.kTpfpruX5m/goroutines.js:184:13)
+    at $schedule (/tmp/tmp.kTpfpruX5m/goroutines.js:208:9)
+    at queueEntry (/tmp/tmp.kTpfpruX5m/goroutines.js:281:9)
+    at $send (/tmp/tmp.kTpfpruX5m/goroutines.js:240:9)
+    at fsCall·func1 (/tmp/tmp.kTpfpruX5m/ptrconv_658733_test.681033090.js:19623:11)
+    at syscall/js.FuncOf.func1 (/syscall/js/gopherjs__js.go:78:5)
+    at <anonymous> (/tmp/tmp.kTpfpruX5m/prelude.js:78:72)
+    at FSReqCallback.wrapper [as oncomplete] (node:fs:810:5)
+
+Node.js v24.15.0
+FAIL	github.com/gopherjs/gopherjs/tests/ptrconv_658733	2.544s
+exit status 1

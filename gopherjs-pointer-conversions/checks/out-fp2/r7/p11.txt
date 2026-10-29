@@ -1,0 +1,8 @@
+slice ok true
+p ok true
+pnil: 0x1
+struct: {null 1}
+structp ok true
+ptr eq: false
+uptr: true
+deepequal: true

@@ -1,0 +1,16 @@
+FAIL K1 [2]*js.Object as [2]P read
+FAIL K2 [2]P write keeps raw
+FAIL K3 [2]P as [2]*js.Object
+FAIL K4 struct view field panic: JavaScript error: Cannot read properties of undefined (reading 'length')
+FAIL K5 js.Undefined as P
+ok K6 primitive as P
+ok K7 fmt of *js.Object unchanged
+FAIL K8 reflect Elem Field of P panic: reflect: call of reflect.Value.Elem on zero Value
+FAIL K9 reflect Elem Field of *js.Object panic: reflect.Value.Interface: cannot return value obtained from unexported field or method
+FAIL K10 NewAt js.Object panic: interface conversion: interface is undefined, not *js.Object
+FAIL K11 reflect Convert P -> *js.Object panic: reflect.Value.Convert: value of type undefined cannot be converted to type *js.Object
+FAIL K12 reflect Set *js.Object from P
+ok K13 DeepEqual
+FAIL K14 nil P via unsafe zero
+ok K15 slice of *js.Object as []P via unsafe.Slice
+print true 1

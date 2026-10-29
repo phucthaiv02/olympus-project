@@ -1,0 +1,5 @@
+r1: true true
+r2: false
+r3: true true
+r4: true true
+r5: true

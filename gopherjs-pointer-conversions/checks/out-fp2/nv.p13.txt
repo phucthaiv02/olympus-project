@@ -1,0 +1,16 @@
+ok W1 direct
+ok W2 reflect UnsafePointer
+ok W3 reflect Pointer
+ok W4 reflect UnsafeAddr
+ok W5 generic *P
+ok W6 generic core type
+ok W7 reflect Elem.Addr.UnsafePointer
+ok W8 reflect Convert unsafe->named unsafe
+ok W9 named unsafe type
+ok W10 struct field array
+ok W11 via SetPointer
+ok W12 nested array view
+ok R1 slice UnsafePointer == &s[0]
+ok R2 slice UnsafePointer == SliceData
+ok R3 named slice view UnsafePointer
+ok R4 array view Index Addr UnsafeAddr

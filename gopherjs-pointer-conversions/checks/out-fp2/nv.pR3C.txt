@@ -1,0 +1,10 @@
+C1 %T %v panic: JavaScript error: Cannot read properties of undefined (reading 'subarray')
+C2 p[:] 0 []
+C3 &p[1] true false 0
+C4 reflect 2 0 0
+C5 int elems %v panic: runtime error: index out of range
+C6 int elems copy panic: JavaScript error: dst.set is not a function
+C7 int -> [2]int %v panic: JavaScript error: Cannot read properties of undefined (reading 'subarray')
+C8 struct->[1]int32 slice panic: JavaScript error: Cannot read properties of undefined (reading 'subarray')
+C9 &s.X ->[1]int panic: JavaScript error: Cannot read properties of undefined (reading 'subarray')
+C10 s -> [1]int panic: JavaScript error: Cannot read properties of undefined (reading 'subarray')

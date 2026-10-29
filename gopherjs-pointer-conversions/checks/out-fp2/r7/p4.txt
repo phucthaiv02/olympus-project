@@ -1,0 +1,21 @@
+emb: false false true true
+emb PANIC: JavaScript error: Cannot read properties of undefined (reading '0')
+zb: false
+zb PANIC: JavaScript error: Cannot read properties of undefined (reading '0')
+zs: false
+pa PANIC: JavaScript error: Cannot read properties of undefined (reading '0')
+as: 5 true true true
+as2: true false true
+as3: 9 main.B main.B
+as4: true
+gen: 4 true true main.MyInt64
+gen arr: 7 true main.MyInt64
+atomic: true true true
+atomic arr: true true true
+atomic struct: true true
+atomic sp: false false
+setptr: false true
+newat: true true true
+newat int: false true
+setpointer PANIC: reflect.Value.Convert: value of type *[2]int cannot be converted to type *[2]main.MyInt
+map: 4

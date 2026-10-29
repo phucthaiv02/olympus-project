@@ -1,0 +1,13 @@
+ok F1 Field Addr == &s.O
+ok F2 Field UnsafeAddr
+ok F3 &s.O first, then reflect
+ok F4 Field read/Interface
+ok F5 Field Set
+ok F6 Addr().Elem() read/write
+ok F7 write through Addr pointer
+ok F8 first field js.Object
+ok A1 array Index Addr
+ok A2 array Index Set + Addr().Elem()
+ok S1 slice Index Addr
+ok S2 slice Index Set
+FAIL N1 nil js.Object field

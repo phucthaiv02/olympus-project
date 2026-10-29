@@ -1,0 +1,17 @@
+hello world
+ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+891568578
+[8 7 6 5 4 3 2 1] 134678021
+{"a":1,"b":[1,2]}
+4609434218613702656 717897987691852588770249
+ open /tmp/x/f.txt: no such file or directory
+false
+[1 2 3]
+2
+true 5
+true
+true hi
+121 true
+true true
+&{1 2} &{a:1 b:2}
+[{3 4} {1 2}]

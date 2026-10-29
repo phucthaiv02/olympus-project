@@ -1,0 +1,34 @@
+ok F1 &view.n == &s.n (unsafe)
+ok F2 &view.k == &s.k typed
+ok F3 &view.n repeated
+ok F4 write via &view.n
+ok F5 %T
+ok F6 orig first
+ok F7 typed back
+ok F8 reflect Pointer
+ok F9 ptr field addr
+ok N1 q[0] == nil
+ok N2 q[1][1]
+ok N3 all-nil q1[0] == nil
+ok N4 %T
+ok N5 write nil keeps source nil
+ok N6 write non-nil
+ok N7 write nil over non-nil
+ok N8 field nil
+ok N9 field non-nil
+ok N10 field write nil
+ok N11 nested field array write
+ok N12 nested field array write nil
+ok N13 &q[0] identity
+ok N14 &q[1] identity
+ok N15 &q[1] identity non-nil
+ok S1 elem type
+ok S2 write elem
+ok S3 elem addr
+ok S4 append shares
+ok S5 append grow
+ok S6 whole write
+ok S7 nil slice
+ok S8 copy
+ok S9 field slice
+ok S10 field slice write

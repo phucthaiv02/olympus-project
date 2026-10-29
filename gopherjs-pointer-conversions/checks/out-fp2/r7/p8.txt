@@ -1,0 +1,5 @@
+g1: main.MyInt64 false
+g2: true false
+g3: true false true
+g4: true false
+g5: false false

@@ -1,0 +1,5 @@
+p: {}
+q: {}
+nil: 0
+nilobj->unsafe: 0
+PANIC { Error: [Function: $throwNilPointerError] }

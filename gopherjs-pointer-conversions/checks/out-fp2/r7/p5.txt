@@ -1,0 +1,22 @@
+conv: true true
+idx addr: true false
+unsafeptr: true false
+slice ptr: false true
+empty slice ptr: true
+elem addr: true true
+mip: true
+sp: true true
+ap: true true
+set: true
+set2: true
+setmap: true
+send: true
+makefunc: true
+setnil: true
+call: true
+copy: true
+idxset: true
+append: true
+as: true true
+sort: [{3 0} {1 1} {2 2}]
+sort2: [{1 1} {2 2} {3 0}]

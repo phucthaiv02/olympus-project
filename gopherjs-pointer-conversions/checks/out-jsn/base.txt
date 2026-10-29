@@ -1,0 +1,19 @@
+ok J1 P(o) == P(unsafe(o))
+ok J2 P(o) == P(o)
+ok J3 %T P(o)
+ok J4 %T P(unsafe(o))
+FAIL J5 back (*js.Object)(P(o)) == o
+FAIL J6 back via unsafe
+FAIL J7 unsafe(P(o)) == unsafe(o)
+ok J8 iface assert P
+ok J9 iface assert not *js.Object
+ok J10 P -> Q
+ok J11 implicit var P = o
+FAIL J12 implicit back var *js.Object = P
+FAIL J13 nil P panic: JavaScript error: Cannot read properties of null (reading 'constructor')
+FAIL J14 reflect Convert
+FAIL J15 reflect Set
+FAIL J16 reflect NewAt-free Pointer eq
+ok J17 map key P
+FAIL J18 deref field through P
+FAIL J19 o unchanged keys

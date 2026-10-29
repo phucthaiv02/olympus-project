@@ -1,0 +1,16 @@
+ok K1 [2]*js.Object as [2]P read
+ok K2 [2]P write keeps raw
+FAIL K3 [2]P as [2]*js.Object
+ok K4 struct view field
+ok K5 js.Undefined as P
+ok K6 primitive as P
+ok K7 fmt of *js.Object unchanged
+FAIL K8 reflect Elem Field of P panic: reflect.Value.Interface: cannot return value obtained from unexported field or method
+FAIL K9 reflect Elem Field of *js.Object panic: reflect.Value.Interface: cannot return value obtained from unexported field or method
+ok K10 NewAt js.Object
+ok K11 reflect Convert P -> *js.Object
+ok K12 reflect Set *js.Object from P
+ok K13 DeepEqual
+ok K14 nil P via unsafe zero
+ok K15 slice of *js.Object as []P via unsafe.Slice
+print true 1

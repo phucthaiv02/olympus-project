@@ -1,0 +1,12 @@
+t1: 30 main.MyInt32 true true
+t2: true true
+t3: false true true
+t4: 20 false true
+t5: true true true
+d1: false false
+d2: [[10 20] [3 40]] true true
+d3: true false
+s1: [1 7] 2.5 main.MyInt32 main.MyF false false
+struct typed PANIC: JavaScript error: Cannot read properties of undefined (reading '0')
+b1: hello false
+b2: Jello main.MyByte true

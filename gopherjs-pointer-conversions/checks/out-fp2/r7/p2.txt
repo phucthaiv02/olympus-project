@@ -1,0 +1,44 @@
+nil jsobj unsafe==nil: true
+roundtrip: true true
+arr roundtrip: true
+arr has $ptr: false false
+refl ptr nil: <ref *1> {
+  '$val': [Circular *1],
+  object: <ref *2> {
+    '$get': [Function (anonymous)],
+    '$set': [Function (anonymous)],
+    '$target': undefined,
+    '$val': [Circular *2]
+  }
+}
+refl ptr eq: false
+jsobj nil: false
+&s vs &s.O: false
+struct with jsobj first PANIC: <ref *1> {
+  '$val': [Circular *1],
+  Object: TypeError: Cannot read properties of undefined (reading '0')
+      at $pointerOfStructConversion (/app/xp2/prelude.js:600:16)
+      at $convertPointer (/app/xp2/prelude.js:677:16)
+      at main.main.func7 (/app/xp2/main.go:56:4)
+      at main.try (/app/xp2/main.go:16:3)
+      at main.main (/app/xp2/main.go:53:3)
+      at $init (/app/xp2/main.go:24:7)
+      at $goroutine (/app/xp2/goroutines.js:138:21)
+      at $runScheduled (/app/xp2/goroutines.js:184:13)
+      at $schedule (/app/xp2/goroutines.js:208:9)
+      at main.main.func10 (/app/xp2/goroutines.js:170:5)
+      at Object.main.main.func10 (/app/xp2/main.go:24:7)
+      at Object.<anonymous> (/app/xp2/main.go:24:7)
+      at Module._compile (node:internal/modules/cjs/loader:1830:14)
+      at Object..js (node:internal/modules/cjs/loader:1961:10)
+      at Module.load (node:internal/modules/cjs/loader:1553:32)
+      at Module._load (node:internal/modules/cjs/loader:1355:12)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+      at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+      at node:internal/main/run_main_module:33:47
+}
+map: 1
+ValueOf nil jsobj Convert unsafe PANIC: typ {
+  '$val': 'reflect.Value.Convert: value of type *js.Object cannot be converted to type unsafe.Pointer'
+}
+arr view: true true false

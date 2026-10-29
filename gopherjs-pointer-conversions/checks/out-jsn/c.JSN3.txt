@@ -1,0 +1,40 @@
+read0 true read1nil true
+write true true
+<ref *3> [
+  <ref *1> { object: {}, '$val': [Circular *1] },
+  <ref *2> { object: {}, '$val': [Circular *2] },
+  '$proxies': {
+    '607': [Circular *3],
+    '$original': [Circular *3],
+    '$type': [Function: typ2] {
+      wrapped: true,
+      ptr: [Function],
+      init: [Function (anonymous)],
+      zero: [Function (anonymous)],
+      id: 609,
+      size: 8,
+      kind: 17,
+      string: '[2]main.P',
+      named: false,
+      pkg: '',
+      exported: false,
+      methods: [],
+      methodSetCache: null,
+      comparable: true,
+      elem: [Function],
+      len: 2,
+      keyFor: [Function (anonymous)],
+      copy: [Function (anonymous)]
+    }
+  },
+  '$ptr': {
+    '0': <ref *4> {
+      '$get': [Function: $indexPtrGet],
+      '$set': [Function: $indexPtrSet],
+      '$target': [Circular *3],
+      '$index': 0,
+      '$val': [Circular *4],
+      '$proxies': [Object]
+    }
+  }
+]

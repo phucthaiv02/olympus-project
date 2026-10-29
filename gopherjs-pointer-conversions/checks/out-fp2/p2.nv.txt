@@ -1,0 +1,30 @@
+1 explicit eq true true
+2 implicit eq true true true
+3 chan true
+4 map true
+5 slice true true
+6 complit true
+7 iface true
+8 unsafe true true
+9 write 7 main.MyInt
+10 PM true true
+11 arr main.MyInt64 true true
+12 elem true false
+13 write [1 9] int64
+14 struct main.MyInt64 true true
+15 struct eq true true true
+16 swrite 42 int64
+17 pp true *main.MyInt true
+18 pp2 true true
+19 rconv true
+20 newat true
+21 set true
+22 ptr true true
+23 uaddr true
+24 addr true
+25 addr2 true
+26 nilconv true
+27 newat nil true true
+28 zero unsafe true true true true
+29 rconvS true
+30 rconvA true

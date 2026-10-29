@@ -1,0 +1,20 @@
+1 20 {1 20} 3
+/app/xp9/main.go.3838294816:2112
+        throw err;
+        ^
+
+TypeError: Cannot read properties of undefined (reading 'X')
+    at Object.main.main (/app/xp9/main.go:23:3)
+    at Object.$init (/app/xp9/main.go:16:7)
+    at fun (/app/xp9/goroutines.js:140:40)
+    at $goroutine (/app/xp9/goroutines.js:138:21)
+    at $runScheduled (/app/xp9/goroutines.js:184:13)
+    at $schedule (/app/xp9/goroutines.js:208:9)
+    at queueEntry (/app/xp9/goroutines.js:281:9)
+    at $send (/app/xp9/goroutines.js:240:9)
+    at fsCall·func1 (/app/xp9/main.go.3838294816:14274:11)
+    at syscall/js.FuncOf.func1 (/syscall/js/gopherjs__js.go:78:5)
+    at <anonymous> (/app/xp9/prelude.js:78:72)
+    at FSReqCallback.wrapper [as oncomplete] (node:fs:810:5)
+
+Node.js v24.15.0

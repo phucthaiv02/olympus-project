@@ -1,0 +1,60 @@
+=== RUN   TestPtrConvNamedBasicExplicit
+--- PASS: TestPtrConvNamedBasicExplicit (0.01s)
+=== RUN   TestPtrConvNamedBasicNil
+--- PASS: TestPtrConvNamedBasicNil (0.00s)
+=== RUN   TestPtrConvDifferentElemTypes
+--- PASS: TestPtrConvDifferentElemTypes (0.01s)
+=== RUN   TestPtrConvPointerToPointer
+--- PASS: TestPtrConvPointerToPointer (0.00s)
+=== RUN   TestPtrConvArray
+--- PASS: TestPtrConvArray (0.01s)
+=== RUN   TestPtrConvImplicitCallsAndReturns
+--- PASS: TestPtrConvImplicitCallsAndReturns (0.00s)
+=== RUN   TestPtrConvImplicitFromNamed
+--- PASS: TestPtrConvImplicitFromNamed (0.00s)
+=== RUN   TestPtrConvImplicitCompositeLiterals
+--- PASS: TestPtrConvImplicitCompositeLiterals (0.01s)
+=== RUN   TestPtrConvImplicitStatements
+--- PASS: TestPtrConvImplicitStatements (0.02s)
+=== RUN   TestPtrConvInterfaces
+--- PASS: TestPtrConvInterfaces (0.00s)
+=== RUN   TestPtrConvMapKeys
+--- PASS: TestPtrConvMapKeys (0.00s)
+=== RUN   TestPtrConvUnsafePointer
+--- PASS: TestPtrConvUnsafePointer (0.00s)
+=== RUN   TestPtrConvUnsafeOtherType
+--- PASS: TestPtrConvUnsafeOtherType (0.01s)
+=== RUN   TestPtrConvUnsafeElements
+--- PASS: TestPtrConvUnsafeElements (0.00s)
+=== RUN   TestPtrConvUnsafeNew
+--- PASS: TestPtrConvUnsafeNew (0.01s)
+=== RUN   TestPtrConvReflectConvert
+--- PASS: TestPtrConvReflectConvert (0.01s)
+=== RUN   TestPtrConvUnsafeSameAddress
+--- PASS: TestPtrConvUnsafeSameAddress (0.00s)
+=== RUN   TestPtrConvReflectNewAt
+--- PASS: TestPtrConvReflectNewAt (0.00s)
+=== RUN   TestPtrConvReflectAssign
+--- PASS: TestPtrConvReflectAssign (0.01s)
+=== RUN   TestPtrConvUnsafeArrayElements
+--- PASS: TestPtrConvUnsafeArrayElements (0.01s)
+=== RUN   TestPtrConvUnsafeStructFields
+--- PASS: TestPtrConvUnsafeStructFields (0.00s)
+=== RUN   TestPtrConvAddressOfDeref
+--- PASS: TestPtrConvAddressOfDeref (0.00s)
+=== RUN   TestPtrConvReflectMapIter
+--- PASS: TestPtrConvReflectMapIter (0.01s)
+=== RUN   TestPtrConvExplicitSources
+--- PASS: TestPtrConvExplicitSources (0.00s)
+=== RUN   TestPtrConvImplicitAssignments
+--- PASS: TestPtrConvImplicitAssignments (0.00s)
+=== RUN   TestPtrConvNilForms
+--- PASS: TestPtrConvNilForms (0.00s)
+=== RUN   TestPtrConvPromotedField
+--- PASS: TestPtrConvPromotedField (0.01s)
+=== RUN   TestPtrConvReflectMakeFunc
+--- PASS: TestPtrConvReflectMakeFunc (0.00s)
+=== RUN   TestPtrConvUnsafePointerNilStruct
+--- PASS: TestPtrConvUnsafePointerNilStruct (0.00s)
+PASS
+ok  	github.com/gopherjs/gopherjs/tests/ptrconv_658733	3.495s

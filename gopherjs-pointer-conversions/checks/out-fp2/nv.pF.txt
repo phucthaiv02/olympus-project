@@ -1,0 +1,21 @@
+ok Q1 2D elem *[2]int round trip
+ok Q2 2D elem *[2]int -> *[2]MyInt
+ok Q3 2D elem *[2]int64 -> *[2]MyInt64
+ok Q4 slice of arrays elem round trip
+ok Q5 2D elem NewAt
+ok Q6 2D elem named AI
+ok Q7 struct elem with array field via unsafe
+ok Q8 array of arrays explicit P(p)
+ok Q9 %p records named type, round trip
+ok Q10 print nested *A then round trip
+ok Q11 reinterpretSlice records then *A round trip
+ok Q12 Elem after record
+ok Q13 DeepEqual then round trip
+FAIL Q14a subarray &p[1] == &a[2]
+FAIL Q14b subarray wider conv after &p[1]
+FAIL Q14c &a[2] first, then p
+ok Q15 unsafe.Slice after subarray elem ptr (string arr)
+ok Q16 unsafe.Slice after subarray elem ptr (int)
+FAIL Q17 slice of subarray-derived then append
+ok Q18 reflect Index(i).Addr on typed after subarray
+ok Q19 *[2]int64 view named S field arr
