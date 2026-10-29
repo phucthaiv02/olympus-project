@@ -1,0 +1,2 @@
+FAILED test/test_inference/test_signature.py::test_param_resolving_to_static[kwargs = dict(b=3)-wrapped(b, /, **kwargs)]
+FAILED test/test_integration.py::test_completion[arrays:294]
