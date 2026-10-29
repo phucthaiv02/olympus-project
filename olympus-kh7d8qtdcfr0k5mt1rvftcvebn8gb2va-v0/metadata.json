@@ -1,0 +1,17 @@
+{
+  "problemId": "kh7d8qtdcfr0k5mt1rvftcvebn8gb2va",
+  "title": "Overload resolution ignores type[...] and *args/**kwargs annotations",
+  "status": "draft",
+  "version": 0,
+  "versionId": "kd73n08qh9kjrnt507bysqkpmn8gb1t7",
+  "isLocked": false,
+  "language": "python",
+  "difficulty": null,
+  "category": "bugfix",
+  "repoUrl": "https://github.com/davidhalter/jedi",
+  "commitHash": "2af1a0f3943f801f5de755f8ffd251f0385a3607",
+  "githubIssueUrl": "https://github.com/davidhalter/jedi/issues/2028",
+  "estimatedLOC": null,
+  "testOutputMode": null,
+  "downloadedAt": "2026-10-20T04:15:02.843Z"
+}
