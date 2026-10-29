@@ -1,0 +1,118 @@
+@@CASE 0
+true | {lastlinedefined=3 linedefined=1 short_src=case source==case what=Lua}
+@@CASE 1
+true | {lastlinedefined=0 linedefined=0 short_src=case source==case what=main}
+@@CASE 2
+true | {lastlinedefined=-1 linedefined=-1 short_src=[Go] source==[Go] what=Go}
+@@CASE 3
+true | 3
+@@CASE 4
+true | 5
+@@CASE 5
+true | {currentline=-1} | {currentline=-1}
+@@CASE 6
+true | {isvararg=false nparams=3 nups=2} | {isvararg=true nparams=0 nups=1} | {isvararg=true nparams=0 nups=0} | {isvararg=true nparams=0 nups=1}
+@@CASE 7
+true | {istailcall=false} | {istailcall=true} | {istailcall=false}
+@@CASE 8
+true | true | true | true | true
+@@CASE 9
+true | {activelines={2,3,7,8}} | {}
+@@CASE 10
+true | {activelines={1,3,4}}
+@@CASE 11
+true | {currentline=2 func=function istailcall=false isvararg=true lastlinedefined=3 linedefined=1 name=f namewhat=local nparams=1 nups=1 short_src=case source==case what=Lua}
+@@CASE 12
+true | {} | {currentline=1 istailcall=false} | {}
+@@CASE 13
+true | nil | nil | nil
+@@CASE 14
+true | {currentline=1}
+@@CASE 15
+true | {currentline=-1 lastlinedefined=-1 linedefined=-1 short_src=[Go] source==[Go] what=Go}
+@@CASE 16
+true | {currentline=4 lastlinedefined=6 linedefined=3 short_src=case source==case what=Lua} | {currentline=-1 lastlinedefined=-1 linedefined=-1 short_src=[Go] source==[Go] what=Go}
+@@CASE 17
+true | {currentline=7 lastlinedefined=0 linedefined=0 short_src=case source==case what=main}
+@@CASE 18
+true | {name=gfn namewhat=global}
+@@CASE 19
+true | {name=lfn namewhat=local}
+@@CASE 20
+true | {name=m namewhat=method}
+@@CASE 21
+true | {name=f namewhat=field} | {name=g namewhat=field}
+@@CASE 22
+true | {name=up namewhat=upvalue}
+@@CASE 23
+true | __index/metamethod,__newindex/metamethod,__add/metamethod,__concat/metamethod,__lt/metamethod,__le/metamethod,__eq/metamethod,__len/metamethod,__unm/metamethod,a/local
+@@CASE 24
+true | {name=for iterator namewhat=for iterator}
+@@CASE 25
+true | {namewhat=} | {namewhat=}
+@@CASE 26
+true | {namewhat=}
+@@CASE 27
+true | {name=getinfo namewhat=field} | {name=pcall namewhat=global} | {name=sort namewhat=field}
+@@CASE 28
+true | {namewhat=} | {namewhat=}
+@@CASE 29
+true | my chunk | dir/file.lua | nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn | ...d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/file.lua
+@@CASE 30
+true | [string "return debug.getinfo(1, 'S').short_src"] | [string "local a = 1..."] | [string "return debug.getinfo(1, 'S').short_src --xxxx..."] | 44 | [string "return debug.getinfo(1, 'S').short_src --zzz"] | 45 | [string "return debug.getinfo(1, 'S').short_src --zzzz..."]
+@@CASE 31
+true | [string "local x = nil..."]:2: boom | ...pppppppppppppppppppppppppppppppppppppppppppppppppppp.lua:1: boom | qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq:1: boom
+@@CASE 32
+true | false:#2:true:false | false:#2:true:false | false:#1:false:true | false:#1:false:true | false:#1:false:true
+@@CASE 33
+true | false:#1:true | false:#2:false | false:#2:false | false:#1:true | false:#3:false
+@@CASE 34
+true | a=10,b=s,out=table,i=4
+@@CASE 35
+true | x | y | z | 15
+@@CASE 36
+true | after | nil | early | later | 1
+@@CASE 37
+true | names=fn,r1=nil,r2=nil,(for index)=5,(for limit)=5,(for step)=1,i=5 | names=fn,r1=names=fn,r1=nil,r2=nil,(for index)=5,(for limit)=5,(for step)=1,i=5,r2=nil,(for generator)=fn,(for state)=table,(for control)=a,k=a,v=1
+@@CASE 38
+true | nil | nil | nil
+@@CASE 39
+true | (*vararg) | nil | nil
+@@CASE 40
+true | (*vararg) | va
+@@CASE 41
+true | a | b | nil | nil | nil
+@@CASE 42
+true | outer | (*temporary) | nil | (*temporary) | (*temporary) | outer | o
+@@CASE 43
+true | a | 42
+@@CASE 44
+true | x | new
+@@CASE 45
+true | nil | 1 | nil | 1
+@@CASE 46
+true | a | 42
+@@CASE 47
+true | 99 | 99 | s | s
+@@CASE 48
+true | nil
+@@CASE 49
+true | 13,3,4,5,4,5,4,7,8,10,14
+@@CASE 50
+true | 4,4,4,4,5,5,5,6 | 6
+@@CASE 51
+true | 6,3,7
+@@CASE 52
+true | call:nil:3,line:3:3,line:4:4,line:5:5,return:nil:5
+@@CASE 53
+true | 32 | 15
+@@CASE 54
+true | count3,count4,count5
+@@CASE 55
+true | return:sethook:Go:false,call:b:Lua:false,tail call:nil:Lua:true,return:nil:Lua:true,call:tostring:Go:false,return:tostring:Go:false,call:sethook:Go:false
+@@CASE 56
+true | 4=1,5=2,6=3
+@@CASE 57
+true | 100
+@@CASE 58
+true | true | crl | 5 | nil |  | 0 | l | 0

@@ -1,0 +1,794 @@
+diff --git a/debug_library_a2959f_test.go b/debug_library_a2959f_test.go
+new file mode 100644
+index 0000000..2ef18a0
+--- /dev/null
++++ b/debug_library_a2959f_test.go
+@@ -0,0 +1,741 @@
++package lua
++
++import "testing"
++
++// debugPrelude_a2959f defines run(f), which calls f in protected mode and
++// renders its results. Tables are rendered with sorted keys, func fields as
++// their type and activelines as a sorted list of lines.
++const debugPrelude_a2959f = `local function show(v)
++  if type(v) ~= "table" then return tostring(v) end
++  local keys = {}
++  for k in pairs(v) do keys[#keys + 1] = k end
++  table.sort(keys)
++  local out = {}
++  for _, k in ipairs(keys) do
++    local x = v[k]
++    if k == "func" then
++      x = type(x)
++    elseif k == "activelines" then
++      local lines = {}
++      for line in pairs(x) do lines[#lines + 1] = line end
++      table.sort(lines)
++      x = "{" .. table.concat(lines, ",") .. "}"
++    elseif type(x) == "table" then
++      x = "table"
++    end
++    out[#out + 1] = k .. "=" .. tostring(x)
++  end
++  return "{" .. table.concat(out, " ") .. "}"
++end
++
++function run(f)
++  local function pack(...) return select("#", ...), {...} end
++  local n, results = pack(pcall(f))
++  local out = {}
++  for i = 1, n do out[i] = show(results[i]) end
++  return table.concat(out, " | ")
++end
++`
++
++type debugCase_a2959f struct {
++	name string
++	code string
++	want string
++}
++
++func runDebugCases_a2959f(t *testing.T, cases []debugCase_a2959f) {
++	t.Helper()
++	for _, c := range cases {
++		c := c
++		t.Run(c.name, func(t *testing.T) {
++			l := NewState()
++			OpenLibraries(l)
++			if err := DoString(l, debugPrelude_a2959f); err != nil {
++				t.Fatalf("prelude: %v", err)
++			}
++			l.Global("run")
++			if err := LoadBuffer(l, c.code, "=case", "t"); err != nil {
++				t.Fatalf("load: %v", err)
++			}
++			if err := l.ProtectedCall(1, 1, 0); err != nil {
++				t.Fatalf("run: %v", err)
++			}
++			got, _ := l.ToString(-1)
++			if got != c.want {
++				t.Errorf("got  %s\nwant %s\ncode:\n%s", got, c.want, c.code)
++			}
++		})
++	}
++}
++
++func TestDebugGetInfo_a2959f(t *testing.T) {
++	runDebugCases_a2959f(t, []debugCase_a2959f{
++		{
++			name: "source of a Lua function",
++			code: `local function f()
++  return 1
++end
++return debug.getinfo(f, "S")
++`,
++			want: "true | {lastlinedefined=3 linedefined=1 short_src=case source==case what=Lua}",
++		},
++		{
++			name: "source of the main chunk",
++			code: `return debug.getinfo(1, "S")
++`,
++			want: "true | {lastlinedefined=0 linedefined=0 short_src=case source==case what=main}",
++		},
++		{
++			name: "source of a Go function",
++			code: `return debug.getinfo(print, "S")
++`,
++			want: "true | {lastlinedefined=-1 linedefined=-1 short_src=[Go] source==[Go] what=Go}",
++		},
++		{
++			name: "current line",
++			code: `local a = 1
++
++local t = debug.getinfo(1, "l")
++return t.currentline
++`,
++			want: "true | 3",
++		},
++		{
++			name: "current line of the caller",
++			code: `local function f()
++  return debug.getinfo(2, "l").currentline
++end
++local x = 0
++local y = f()
++return y
++`,
++			want: "true | 5",
++		},
++		{
++			name: "current line of a function value",
++			code: `return debug.getinfo(function() end, "l"), debug.getinfo(print, "l")
++`,
++			want: "true | {currentline=-1} | {currentline=-1}",
++		},
++		{
++			name: "upvalues and parameters",
++			code: `local a, b = 1, 2
++local function f(x, y, z) return a + b end
++local function g(...) return f end
++return debug.getinfo(f, "u"), debug.getinfo(g, "u"), debug.getinfo(print, "u"), debug.getinfo(load("return 1"), "u")
++`,
++			want: "true | {isvararg=false nparams=3 nups=2} | {isvararg=true nparams=0 nups=1} | {isvararg=true nparams=0 nups=0} | {isvararg=true nparams=0 nups=1}",
++		},
++		{
++			name: "tail call flag",
++			code: `local function a() return debug.getinfo(1, "t") end
++local function b() return a() end
++local x = a()
++local y = b()
++return x, y, debug.getinfo(a, "t")
++`,
++			want: "true | {istailcall=false} | {istailcall=true} | {istailcall=false}",
++		},
++		{
++			name: "func field",
++			code: `local function f() return debug.getinfo(1, "f").func end
++return f() == f, debug.getinfo(0, "f").func == debug.getinfo, debug.getinfo(print, "f").func == print, debug.getinfo(f, "f").func == f
++`,
++			want: "true | true | true | true | true",
++		},
++		{
++			name: "active lines",
++			code: `local f = function(a)
++  if a then
++    return 1
++  end
++
++  -- comment
++  return 2
++end
++return debug.getinfo(f, "L"), debug.getinfo(print, "L")
++`,
++			want: "true | {activelines={2,3,7,8}} | {}",
++		},
++		{
++			name: "active lines of a chunk",
++			code: `return debug.getinfo(load("local a = 1\n\nlocal b = 2\nreturn a"), "L")
++`,
++			want: "true | {activelines={1,3,4}}",
++		},
++		{
++			name: "default options",
++			code: `local function f(x, ...)
++  return debug.getinfo(1)
++end
++local t = f()
++return t
++`,
++			want: "true | {currentline=2 func=function istailcall=false isvararg=true lastlinedefined=3 linedefined=1 name=f namewhat=local nparams=1 nups=1 short_src=case source==case what=Lua}",
++		},
++		{
++			name: "selected options only",
++			code: `return debug.getinfo(1, ""), debug.getinfo(1, "lt"), debug.getinfo(print, "")
++`,
++			want: "true | {} | {currentline=1 istailcall=false} | {}",
++		},
++		{
++			name: "level out of range",
++			code: `return debug.getinfo(100), debug.getinfo(-1), debug.getinfo(100, "S")
++`,
++			want: "true | nil | nil | nil",
++		},
++		{
++			name: "numeric string level",
++			code: `local t = debug.getinfo("1", "l")
++return t
++`,
++			want: "true | {currentline=1}",
++		},
++		{
++			name: "level of a Go function",
++			code: `local r
++pcall(function() r = debug.getinfo(2, "Sl") end)
++return r
++`,
++			want: "true | {currentline=-1 lastlinedefined=-1 linedefined=-1 short_src=[Go] source==[Go] what=Go}",
++		},
++		{
++			name: "levels through Go and tail calls",
++			code: `local function a() return debug.getinfo(2, "Sl"), debug.getinfo(3, "Sl") end
++local function b() return a() end
++local function c()
++  local x, y = b()
++  return x, y
++end
++return c()
++`,
++			want: "true | {currentline=4 lastlinedefined=6 linedefined=3 short_src=case source==case what=Lua} | {currentline=-1 lastlinedefined=-1 linedefined=-1 short_src=[Go] source==[Go] what=Go}",
++		},
++		{
++			name: "info of a hook frame",
++			code: `local seen
++local function f()
++  local x = 1
++  return x
++end
++debug.sethook(function(event, line) if not seen then seen = debug.getinfo(2, "Sl") end end, "l")
++f()
++debug.sethook()
++return seen
++`,
++			want: "true | {currentline=7 lastlinedefined=0 linedefined=0 short_src=case source==case what=main}",
++		},
++	})
++}
++
++func TestDebugGetInfoNames_a2959f(t *testing.T) {
++	runDebugCases_a2959f(t, []debugCase_a2959f{
++		{
++			name: "global",
++			code: `function gfn() local t = debug.getinfo(1, "n") return t end
++local r = gfn()
++return r
++`,
++			want: "true | {name=gfn namewhat=global}",
++		},
++		{
++			name: "local",
++			code: `local function lfn() return debug.getinfo(1, "n") end
++local r = lfn()
++return r
++`,
++			want: "true | {name=lfn namewhat=local}",
++		},
++		{
++			name: "method",
++			code: `local o = {}
++function o:m() return debug.getinfo(1, "n") end
++local r = o:m()
++return r
++`,
++			want: "true | {name=m namewhat=method}",
++		},
++		{
++			name: "field",
++			code: `local o = {f = function() return debug.getinfo(1, "n") end}
++T = {}
++function T.g() return debug.getinfo(1, "n") end
++local r = o.f()
++local s = T.g()
++return r, s
++`,
++			want: "true | {name=f namewhat=field} | {name=g namewhat=field}",
++		},
++		{
++			name: "upvalue",
++			code: `local up = function() return debug.getinfo(1, "n") end
++local function g() local r = up() return r end
++return g()
++`,
++			want: "true | {name=up namewhat=upvalue}",
++		},
++		{
++			name: "metamethods",
++			code: `local out = {}
++local function name() local t = debug.getinfo(2, "n") return tostring(t.name) .. "/" .. t.namewhat end
++local mt = {}
++mt.__index = function() out[#out + 1] = name() end
++mt.__newindex = function() out[#out + 1] = name() end
++mt.__add = function() out[#out + 1] = name() return 0 end
++mt.__concat = function() out[#out + 1] = name() return "" end
++mt.__lt = function() out[#out + 1] = name() return true end
++mt.__le = function() out[#out + 1] = name() return true end
++mt.__eq = function() out[#out + 1] = name() return true end
++mt.__len = function() out[#out + 1] = name() return 0 end
++mt.__unm = function() out[#out + 1] = name() return 0 end
++mt.__call = function() out[#out + 1] = name() end
++local a, b = setmetatable({}, mt), setmetatable({}, mt)
++local _ = a.x
++a.y = 1
++_ = a + 1
++_ = a .. "s"
++_ = a < b
++_ = a <= b
++_ = a == b
++_ = #a
++_ = -a
++a()
++return table.concat(out, ",")
++`,
++			want: "true | __index/metamethod,__newindex/metamethod,__add/metamethod,__concat/metamethod,__lt/metamethod,__le/metamethod,__eq/metamethod,__len/metamethod,__unm/metamethod,a/local",
++		},
++		{
++			name: "for iterator",
++			code: `local r
++for _ in function(s, c) if c then return nil end r = debug.getinfo(1, "n") return 1 end do end
++return r
++`,
++			want: "true | {name=for iterator namewhat=for iterator}",
++		},
++		{
++			name: "called from Go",
++			code: `local r = select(2, pcall(function() return debug.getinfo(1, "n") end))
++local s
++table.sort({3, 1, 2}, function(x, y) s = debug.getinfo(1, "n") return x < y end)
++return r, s
++`,
++			want: "true | {namewhat=} | {namewhat=}",
++		},
++		{
++			name: "tail call",
++			code: `local function t() return debug.getinfo(1, "n") end
++local function u() return t() end
++local r = u()
++return r
++`,
++			want: "true | {namewhat=}",
++		},
++		{
++			name: "Go functions",
++			code: `local r
++pcall(function() r = debug.getinfo(2, "n") end)
++local s
++table.sort({2, 1}, function(x, y) s = debug.getinfo(2, "n") return x < y end)
++return debug.getinfo(0, "n"), r, s
++`,
++			want: "true | {name=getinfo namewhat=field} | {name=pcall namewhat=global} | {name=sort namewhat=field}",
++		},
++		{
++			name: "function value",
++			code: `return debug.getinfo(print, "n"), debug.getinfo(function() end, "n")
++`,
++			want: "true | {namewhat=} | {namewhat=}",
++		},
++	})
++}
++
++func TestDebugShortSource_a2959f(t *testing.T) {
++	runDebugCases_a2959f(t, []debugCase_a2959f{
++		{
++			name: "literal and file names",
++			code: `local function src(code, name) return load(code, name)() end
++local q = "return debug.getinfo(1, 'S').short_src"
++return src(q, "=my chunk"), src(q, "@dir/file.lua"), src(q, "=" .. string.rep("n", 80)), src(q, "@" .. string.rep("d/", 40) .. "file.lua")
++`,
++			want: "true | my chunk | dir/file.lua | nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn | ...d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/d/file.lua",
++		},
++		{
++			name: "string sources",
++			code: `local q = "return debug.getinfo(1, 'S').short_src"
++local exact = q .. " --" .. string.rep("z", 44 - #q - 3)
++local over = q .. " --" .. string.rep("z", 45 - #q - 3)
++return load(q)(), load("local a = 1\n" .. q)(), load(q .. " --" .. string.rep("x", 80))(), #exact, load(exact)(), #over, load(over)()
++`,
++			want: "true | [string \"return debug.getinfo(1, 'S').short_src\"] | [string \"local a = 1...\"] | [string \"return debug.getinfo(1, 'S').short_src --xxxx...\"] | 44 | [string \"return debug.getinfo(1, 'S').short_src --zzz\"] | 45 | [string \"return debug.getinfo(1, 'S').short_src --zzzz...\"]",
++		},
++		{
++			name: "error positions",
++			code: `local ok1, m1 = pcall(load("local x = nil\nerror('boom')\n-- " .. string.rep("y", 60)))
++local ok2, m2 = pcall(load("error('boom')", "@" .. string.rep("p", 70) .. ".lua"))
++local ok3, m3 = pcall(load("error('boom')", "=" .. string.rep("q", 70)))
++return m1, m2, m3
++`,
++			want: "true | [string \"local x = nil...\"]:2: boom | ...pppppppppppppppppppppppppppppppppppppppppppppppppppp.lua:1: boom | qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq:1: boom",
++		},
++	})
++}
++
++func TestDebugArgumentErrors_a2959f(t *testing.T) {
++	runDebugCases_a2959f(t, []debugCase_a2959f{
++		{
++			name: "getinfo",
++			code: `local function check(...)
++  local ok, m = pcall(debug.getinfo, ...)
++  return tostring(ok) .. ":" .. tostring(string.find(m, "bad argument #", 1, true) ~= nil and m:sub(m:find("#", 1, true), m:find("#", 1, true) + 1)) .. ":" .. tostring(string.find(m, "invalid option", 1, true) ~= nil) .. ":" .. tostring(string.find(m, "function or level expected", 1, true) ~= nil)
++end
++return check(1, "X"), check(print, "S>"), check("abc"), check({}), check()
++`,
++			want: "true | false:#2:true:false | false:#2:true:false | false:#1:false:true | false:#1:false:true | false:#1:false:true",
++		},
++		{
++			name: "getlocal and setlocal",
++			code: `local function check(f, ...)
++  local ok, m = pcall(f, ...)
++  return tostring(ok) .. ":" .. m:sub(m:find("#", 1, true), m:find("#", 1, true) + 1) .. ":" .. tostring(string.find(m, "level out of range", 1, true) ~= nil)
++end
++return check(debug.getlocal, 100, 1), check(debug.getlocal), check(debug.getlocal, 1, {}), check(debug.setlocal, 100, 1, 1), check(debug.setlocal, 1, 1)
++`,
++			want: "true | false:#1:true | false:#2:false | false:#2:false | false:#1:true | false:#3:false",
++		},
++	})
++}
++
++func TestDebugGetLocal_a2959f(t *testing.T) {
++	runDebugCases_a2959f(t, []debugCase_a2959f{
++		{
++			name: "locals in order",
++			code: `local a, b = 10, "s"
++local out = {}
++local i = 1
++while true do
++  local name, v = debug.getlocal(1, i)
++  if not name then break end
++  out[#out + 1] = name .. "=" .. (type(v) == "table" and "table" or tostring(v))
++  i = i + 1
++end
++return table.concat(out, ",")
++`,
++			want: "true | a=10,b=s,out=table,i=4",
++		},
++		{
++			name: "parameters",
++			code: `local function f(x, y)
++  local z = x + y
++  return debug.getlocal(1, 1), debug.getlocal(1, 2), debug.getlocal(1, 3)
++end
++return f(7, 8)
++`,
++			want: "true | x | y | z | 15",
++		},
++		{
++			name: "scopes",
++			code: `do local inner = 1 end
++local after = 2
++local function f()
++  local early = debug.getlocal(1, 1)
++  local later = 1
++  return early, debug.getlocal(1, 1), debug.getlocal(1, 2)
++end
++return debug.getlocal(1, 1), f()
++`,
++			want: "true | after | nil | early | later | 1",
++		},
++		{
++			name: "loop control variables",
++			code: `local function names(level)
++  local out = {}
++  local j = 1
++  while true do
++    local name, v = debug.getlocal(level + 1, j)
++    if not name then break end
++    out[#out + 1] = name .. "=" .. (type(v) == "function" and "fn" or type(v) == "table" and "table" or tostring(v))
++    j = j + 1
++  end
++  return table.concat(out, ",")
++end
++local r1, r2
++for i = 5, 5 do r1 = names(1) end
++for k, v in pairs({a = 1}) do r2 = names(1) end
++return r1, r2
++`,
++			want: "true | names=fn,r1=nil,r2=nil,(for index)=5,(for limit)=5,(for step)=1,i=5 | names=fn,r1=names=fn,r1=nil,r2=nil,(for index)=5,(for limit)=5,(for step)=1,i=5,r2=nil,(for generator)=fn,(for state)=table,(for control)=a,k=a,v=1",
++		},
++		{
++			name: "temporaries and out of range",
++			code: `local a = 1
++return debug.getlocal(1, 2), debug.getlocal(1, 50), debug.getlocal(1, 0)
++`,
++			want: "true | nil | nil | nil",
++		},
++		{
++			name: "varargs",
++			code: `local function f(a, ...)
++  return debug.getlocal(1, -1), debug.getlocal(1, -2), debug.getlocal(1, -3)
++end
++local function g(...) return debug.getlocal(1, -1) end
++local function h(a) return debug.getlocal(1, -1) end
++return f(1, "v1", "v2"), g(), h(1)
++`,
++			want: "true | (*vararg) | nil | nil",
++		},
++		{
++			name: "varargs of the main chunk",
++			code: `return load("return debug.getlocal(1, -1)")("va")
++`,
++			want: "true | (*vararg) | va",
++		},
++		{
++			name: "function parameters",
++			code: `local function f(a, b, ...) local c = 1 end
++return debug.getlocal(f, 1), debug.getlocal(f, 2), debug.getlocal(f, 3), debug.getlocal(f, -1), debug.getlocal(print, 1)
++`,
++			want: "true | a | b | nil | nil | nil",
++		},
++		{
++			name: "caller levels",
++			code: `local outer = "o"
++local function f() return debug.getlocal(2, 1) end
++local r = {}
++pcall(function() r = {debug.getlocal(2, 1)} end)
++return f(), r[1], type(r[2]), debug.getlocal(0, 1), debug.getlocal(0, 2), debug.getlocal("1", "1")
++`,
++			want: "true | outer | (*temporary) | nil | (*temporary) | (*temporary) | outer | o",
++		},
++	})
++}
++
++func TestDebugSetLocal_a2959f(t *testing.T) {
++	runDebugCases_a2959f(t, []debugCase_a2959f{
++		{
++			name: "current function",
++			code: `local a = 1
++local name = debug.setlocal(1, 1, 42)
++return name, a
++`,
++			want: "true | a | 42",
++		},
++		{
++			name: "caller",
++			code: `local x = "old"
++local function f() return debug.setlocal(2, 1, "new") end
++local n = f()
++return n, x
++`,
++			want: "true | x | new",
++		},
++		{
++			name: "out of range",
++			code: `local a = 1
++return debug.setlocal(1, 10, 5), a, debug.setlocal(1, 0, 5), a
++`,
++			want: "true | nil | 1 | nil | 1",
++		},
++		{
++			name: "varargs and parameters",
++			code: `local function f(...)
++  debug.setlocal(1, -2, "changed")
++  return ...
++end
++local function g(p)
++  debug.setlocal(1, 1, p * 2)
++  return p
++end
++return f("a", "b", "c"), g(21)
++`,
++			want: "true | a | 42",
++		},
++		{
++			name: "captured locals",
++			code: `local x = 1
++local function get() return x end
++debug.setlocal(1, 1, 99)
++local y = 1
++debug.setlocal(1, 3, "s")
++local function get2() return y end
++return x, get(), y, get2()
++`,
++			want: "true | 99 | 99 | s | s",
++		},
++		{
++			name: "temporaries",
++			code: `local a = 1
++return debug.setlocal(1, 2, 5)
++`,
++			want: "true | nil",
++		},
++	})
++}
++
++func TestDebugHooks_a2959f(t *testing.T) {
++	runDebugCases_a2959f(t, []debugCase_a2959f{
++		{
++			name: "line events",
++			code: `local lines = {}
++local function f(n)
++  local a = 1
++  for i = 1, n do
++    a = a + i
++  end
++  if a > 3 then
++    a = 0
++  end
++  return a
++end
++debug.sethook(function(event, line) lines[#lines + 1] = line end, "l")
++f(2)
++debug.sethook()
++return table.concat(lines, ",")
++`,
++			want: "true | 13,3,4,5,4,5,4,7,8,10,14",
++		},
++		{
++			name: "line events of one-line loops",
++			code: `local lines = {}
++local x = 0
++debug.sethook(function(event, line) lines[#lines + 1] = line end, "l")
++for i = 1, 3 do x = x + i end
++local function g() return 1 end local y = g() + g()
++debug.sethook()
++return table.concat(lines, ","), x
++`,
++			want: "true | 4,4,4,4,5,5,5,6 | 6",
++		},
++		{
++			name: "line events in functions called from Go",
++			code: `local lines = {}
++local function cmp(a, b)
++  return a < b
++end
++debug.sethook(function(event, line) lines[#lines + 1] = line end, "l")
++pcall(cmp, 1, 2)
++debug.sethook()
++return table.concat(lines, ",")
++`,
++			want: "true | 6,3,7",
++		},
++		{
++			name: "current line in hooks",
++			code: `local out = {}
++local function f()
++  local x = 1
++  x = x + 1
++  return x
++end
++debug.sethook(function(event, line)
++  local t = debug.getinfo(2, "lf")
++  if t.func == f then out[#out + 1] = event .. ":" .. tostring(line) .. ":" .. t.currentline end
++end, "crl")
++f()
++debug.sethook()
++return table.concat(out, ",")
++`,
++			want: "true | call:nil:3,line:3:3,line:4:4,line:5:5,return:nil:5",
++		},
++		{
++			name: "count events",
++			code: `local function f() local x = 0 for i = 1, 10 do x = x + i end return x end
++local n1, n3 = 0, 0
++debug.sethook(function(event) n1 = n1 + 1 end, "", 1)
++f()
++debug.sethook()
++debug.sethook(function(event) n3 = n3 + 1 end, "", 3)
++f()
++debug.sethook()
++return n1, n3
++`,
++			want: "true | 32 | 15",
++		},
++		{
++			name: "current line in count hooks",
++			code: `local lines = {}
++local function f()
++  local x = 1
++  x = x + 1
++  return x
++end
++debug.sethook(function(event)
++  local t = debug.getinfo(2, "lf")
++  if t.func == f then lines[#lines + 1] = event .. t.currentline end
++end, "", 1)
++f()
++debug.sethook()
++return table.concat(lines, ",")
++`,
++			want: "true | count3,count4,count5",
++		},
++		{
++			name: "call and return events",
++			code: `local evs = {}
++local function a() return 1 end
++local function b() return a() end
++debug.sethook(function(event)
++  local t = debug.getinfo(2, "nSt")
++  evs[#evs + 1] = event .. ":" .. tostring(t.name) .. ":" .. t.what .. ":" .. tostring(t.istailcall)
++end, "cr")
++b()
++local s = tostring(1)
++debug.sethook()
++return table.concat(evs, ",")
++`,
++			want: "true | return:sethook:Go:false,call:b:Lua:false,tail call:nil:Lua:true,return:nil:Lua:true,call:tostring:Go:false,return:tostring:Go:false,call:sethook:Go:false",
++		},
++		{
++			name: "locals in line hooks",
++			code: `local seen = {}
++local function f()
++  local watch = 1
++  watch = 2
++  watch = 3
++  return watch
++end
++debug.sethook(function(event, line)
++  local t = debug.getinfo(2, "f")
++  local name, v = debug.getlocal(2, 1)
++  if t.func == f and name == "watch" then
++    seen[#seen + 1] = line .. "=" .. tostring(v)
++  end
++end, "l")
++f()
++debug.sethook()
++return table.concat(seen, ",")
++`,
++			want: "true | 4=1,5=2,6=3",
++		},
++		{
++			name: "setlocal from a line hook",
++			code: `local function f()
++  local v = 1
++  v = v + 1
++  return v
++end
++debug.sethook(function(event, line)
++  if line == 4 and debug.getinfo(2, "f").func == f then debug.setlocal(2, 1, 100) end
++end, "l")
++local r = f()
++debug.sethook()
++return r
++`,
++			want: "true | 100",
++		},
++		{
++			name: "gethook",
++			code: `local h = function() end
++debug.sethook(h, "crl", 5)
++local f, mask, count = debug.gethook()
++debug.sethook()
++local g, mask2, count2 = debug.gethook()
++debug.sethook(h, "l")
++local _, mask3, count3 = debug.gethook()
++debug.sethook()
++return f == h, mask, count, g, mask2, count2, mask3, count3
++`,
++			want: "true | true | crl | 5 | nil |  | 0 | l | 0",
++		},
++	})
++}
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 0000000..06f4d40
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,41 @@
++#!/usr/bin/env bash
++# Usage: ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  the existing tests.
++#   new   the debug library tests.
++set -uo pipefail
++
++cd /app
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  OUTPUT_PATH="$2"
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++TEST_LOG="$(mktemp)"
++
++# go vet's tests analyzer rejects doc_test.go (an Example with arguments and
++# results), so it is turned off.
++case "$MODE" in
++  base)
++    go test -count=1 -vet=off -v -skip '_a2959f$' ./... 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    ;;
++  new)
++    go test -count=1 -vet=off -v -run '_a2959f$' . 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ]; then
++  go-junit-report -set-exit-code < "$TEST_LOG" > "$OUTPUT_PATH" || true
++fi
++
++exit "$STATUS"

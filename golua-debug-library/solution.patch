@@ -1,0 +1,457 @@
+diff --git a/debug.go b/debug.go
+index c814658..9d65491 100644
+--- a/debug.go
++++ b/debug.go
+@@ -13,8 +13,17 @@ func (l *State) resetHookCount() { l.hookCount = l.baseHookCount }
+ func (l *State) prototype(ci *callInfo) *prototype {
+ 	return l.stack[ci.function].(*luaClosure).prototype
+ }
++
++// currentPC returns the index of the instruction ci is executing.
++func (l *State) currentPC(ci *callInfo) pc {
++	if ci.isCallStatus(callStatusTraced) { // savedPC was not incremented yet
++		return ci.savedPC
++	}
++	return ci.savedPC - 1
++}
++
+ func (l *State) currentLine(ci *callInfo) int {
+-	return int(l.prototype(ci).lineInfo[ci.savedPC - 1])
++	return int(l.prototype(ci).lineInfo[l.currentPC(ci)])
+ }
+ 
+ func chunkID(source string) string {
+@@ -28,13 +37,23 @@ func chunkID(source string) string {
+ 		if len(source) <= idSize {
+ 			return source[1:]
+ 		}
+-		return "..." + source[1:idSize-3]
++		return "..." + source[len(source)-(idSize-4):] // add '...' before rest of name
++	}
++	// string; format as [string "source"]
++	const prefix, ellipsis, suffix = "[string \"", "...", "\"]"
++	// save space for prefix+suffix+'\0'
++	limit := idSize - len(prefix+ellipsis+suffix) - 1
++	newline := strings.IndexByte(source, '\n')
++	if newline < 0 && len(source) < limit { // small one-line source?
++		return prefix + source + suffix
+ 	}
+-	source = strings.Split(source, "\n")[0]
+-	if l := len("[string \"...\"]"); len(source) > idSize-l {
+-		return "[string \"" + source + "...\"]"
++	if newline >= 0 {
++		source = source[:newline] // stop at first newline
+ 	}
+-	return "[string \"" + source + "\"]"
++	if len(source) > limit {
++		source = source[:limit]
++	}
++	return prefix + source + ellipsis + suffix
+ }
+ 
+ func (l *State) runtimeError(message string) {
+@@ -180,7 +199,7 @@ func DebugHook(l *State) Hook { return l.hooker }
+ func DebugHookMask(l *State) byte { return l.hookMask }
+ 
+ // DebugHookCount returns the current hook count.
+-func DebugHookCount(l *State) int { return l.hookCount }
++func DebugHookCount(l *State) int { return l.baseHookCount }
+ 
+ // Stack gets information about the interpreter runtime stack.
+ //
+@@ -231,7 +250,7 @@ func (l *State) functionName(ci *callInfo) (name, kind string) {
+ 	}
+ 	var tm tm
+ 	p := l.prototype(ci)
+-	pc := ci.savedPC
++	pc := l.currentPC(ci) // calling instruction index
+ 	switch i := p.code[pc]; i.opCode() {
+ 	case opCall, opTailCall:
+ 		return p.objectName(i.a(), pc)
+@@ -313,7 +332,7 @@ func (l *State) collectValidLines(f closure) {
+ func Info(l *State, what string, where Frame) (d Debug, ok bool) {
+ 	var f closure
+ 	var fun value
+-	if what[0] == '>' {
++	if strings.HasPrefix(what, ">") {
+ 		where = nil
+ 		fun = l.stack[l.top-1]
+ 		switch fun := fun.(type) {
+@@ -382,7 +401,7 @@ func Info(l *State, what string, where Frame) (d Debug, ok bool) {
+ 		}
+ 	}
+ 	if hasF {
+-		l.apiPush(f)
++		l.apiPush(fun)
+ 	}
+ 	if hasL {
+ 		l.collectValidLines(f)
+@@ -390,6 +409,89 @@ func Info(l *State, what string, where Frame) (d Debug, ok bool) {
+ 	return d, ok
+ }
+ 
++func (l *State) findVarArg(ci *callInfo, n int) (string, int) {
++	parameterCount := l.prototype(ci).parameterCount
++	if n >= ci.base()-ci.function-parameterCount {
++		return "", 0 // no such vararg
++	}
++	return "(*vararg)", ci.function + parameterCount + n
++}
++
++func (l *State) findLocal(ci *callInfo, n int) (string, int) {
++	var name string
++	var base int
++	if ci.isLua() {
++		if n < 0 { // access to vararg values?
++			return l.findVarArg(ci, -n)
++		}
++		base = ci.base()
++		name, _ = l.prototype(ci).localName(n, l.currentPC(ci))
++	} else {
++		base = ci.function + 1
++	}
++	if name == "" { // no 'standard' name?
++		limit := l.top
++		if ci != l.callInfo {
++			limit = ci.next.function
++		}
++		if limit-base >= n && n > 0 { // is 'n' inside 'ci' stack?
++			name = "(*temporary)" // generic name for any valid slot
++		} else {
++			return "", 0 // no name
++		}
++	}
++	return name, base + (n - 1)
++}
++
++// Local gets information about a local variable of a given activation record
++// or function.
++//
++// In the first case, the parameter where must be a valid activation record that
++// was filled by a previous call to Stack or given as an argument to a hook. The
++// index n selects which local variable to inspect. Local pushes the variable's
++// value onto the stack and returns its name.
++//
++// In the second case, where must be nil and the function to be inspected must
++// be at the top of the stack. In this case, only parameters of Lua functions
++// are visible (as there is no information about what variables are active) and
++// no values are pushed onto the stack.
++//
++// Local returns false (and pushes nothing) when the index is greater than the
++// number of active local variables.
++//
++// http://www.lua.org/manual/5.2/manual.html#lua_getlocal
++func Local(l *State, where Frame, n int) (name string, ok bool) {
++	if where == nil { // information about non-active function?
++		if f, isLua := l.stack[l.top-1].(*luaClosure); isLua { // consider live variables at function start (parameters)
++			return f.prototype.localName(n, 0)
++		}
++		return
++	}
++	name, pos := l.findLocal(where, n)
++	if name != "" {
++		l.apiPush(l.stack[pos])
++	}
++	return name, name != ""
++}
++
++// SetLocal sets the value of a local variable of a given activation record.
++// Parameters where and n are as in Local. SetLocal assigns the value at the top
++// of the stack to the variable and returns its name. It also pops the value
++// from the stack.
++//
++// It returns false (and pops nothing) when the index is greater than the
++// number of active local variables.
++//
++// http://www.lua.org/manual/5.2/manual.html#lua_setlocal
++func SetLocal(l *State, where Frame, n int) (name string, ok bool) {
++	name, pos := l.findLocal(where, n)
++	if name != "" {
++		l.stack[pos] = l.stack[l.top-1]
++	}
++	l.top-- // pop value
++	return name, name != ""
++}
++
+ func upValueHelper(f func(*State, int, int) (string, bool), returnValueCount int) Function {
+ 	return func(l *State) int {
+ 		CheckType(l, 1, TypeFunction)
+@@ -419,6 +521,16 @@ func threadArg(l *State) (int, *State) {
+ 	return 0, l
+ }
+ 
++func treatStackOption(l, l1 *State, field string) {
++	if l == l1 {
++		l.PushValue(-2)
++		l.Remove(-3)
++	} else {
++		XMove(l1, l, 1)
++	}
++	l.SetField(-2, field)
++}
++
+ func hookTable(l *State) bool { return SubTable(l, RegistryIndex, "_HKEY") }
+ 
+ func internalHook(l *State, d Debug) {
+@@ -489,8 +601,102 @@ var debugLibrary = []RegistryFunction{
+ 		l.PushInteger(DebugHookCount(l1))
+ 		return 3
+ 	}},
+-	// {"getinfo", db_getinfo},
+-	// {"getlocal", db_getlocal},
++	{"getinfo", func(l *State) int {
++		arg, l1 := threadArg(l)
++		options := OptString(l, arg+2, "flnStu")
++		CheckStackWithMessage(l, 3, "stack overflow")
++		var frame Frame
++		if l.IsNumber(arg + 1) {
++			level, _ := l.ToInteger(arg + 1)
++			var ok bool
++			if frame, ok = Stack(l1, level); !ok {
++				l.PushNil() // level out of range
++				return 1
++			}
++		} else if l.IsFunction(arg + 1) {
++			options = ">" + options
++			l.PushValue(arg + 1)
++			XMove(l, l1, 1)
++		} else {
++			ArgumentError(l, arg+1, "function or level expected")
++		}
++		d, ok := Info(l1, options, frame)
++		if !ok {
++			ArgumentError(l, arg+2, "invalid option")
++		}
++		l.CreateTable(0, 2)
++		if strings.ContainsRune(options, 'S') {
++			l.PushString(d.Source)
++			l.SetField(-2, "source")
++			l.PushString(d.ShortSource)
++			l.SetField(-2, "short_src")
++			l.PushInteger(d.LineDefined)
++			l.SetField(-2, "linedefined")
++			l.PushInteger(d.LastLineDefined)
++			l.SetField(-2, "lastlinedefined")
++			l.PushString(d.What)
++			l.SetField(-2, "what")
++		}
++		if strings.ContainsRune(options, 'l') {
++			l.PushInteger(d.CurrentLine)
++			l.SetField(-2, "currentline")
++		}
++		if strings.ContainsRune(options, 'u') {
++			l.PushInteger(d.UpValueCount)
++			l.SetField(-2, "nups")
++			l.PushInteger(d.ParameterCount)
++			l.SetField(-2, "nparams")
++			l.PushBoolean(d.IsVarArg)
++			l.SetField(-2, "isvararg")
++		}
++		if strings.ContainsRune(options, 'n') {
++			if d.Name != "" {
++				l.PushString(d.Name)
++				l.SetField(-2, "name")
++			}
++			l.PushString(d.NameKind)
++			l.SetField(-2, "namewhat")
++		}
++		if strings.ContainsRune(options, 't') {
++			l.PushBoolean(d.IsTailCall)
++			l.SetField(-2, "istailcall")
++		}
++		if strings.ContainsRune(options, 'L') {
++			treatStackOption(l, l1, "activelines")
++		}
++		if strings.ContainsRune(options, 'f') {
++			treatStackOption(l, l1, "func")
++		}
++		return 1
++	}},
++	{"getlocal", func(l *State) int {
++		arg, l1 := threadArg(l)
++		n := CheckInteger(l, arg+2)
++		if l.IsFunction(arg + 1) {
++			l.PushValue(arg + 1)
++			name, ok := Local(l, nil, n)
++			l.Pop(1)
++			if ok {
++				l.PushString(name)
++			} else {
++				l.PushNil()
++			}
++			return 1
++		}
++		frame, ok := Stack(l1, CheckInteger(l, arg+1))
++		if !ok {
++			ArgumentError(l, arg+1, "level out of range")
++		}
++		CheckStackWithMessage(l, 1, "stack overflow")
++		if name, ok := Local(l1, frame, n); ok {
++			XMove(l1, l, 1)
++			l.PushString(name)
++			l.PushValue(-2)
++			return 2
++		}
++		l.PushNil()
++		return 1
++	}},
+ 	{"getregistry", func(l *State) int { l.PushValue(RegistryIndex); return 1 }},
+ 	{"getmetatable", func(l *State) int {
+ 		CheckAny(l, 1)
+@@ -547,7 +753,22 @@ var debugLibrary = []RegistryFunction{
+ 		l1.internalHook = true
+ 		return 0
+ 	}},
+-	// {"setlocal", db_setlocal},
++	{"setlocal", func(l *State) int {
++		arg, l1 := threadArg(l)
++		frame, ok := Stack(l1, CheckInteger(l, arg+1))
++		if !ok {
++			ArgumentError(l, arg+1, "level out of range")
++		}
++		CheckAny(l, arg+3)
++		l.SetTop(arg + 3)
++		XMove(l, l1, 1)
++		if name, ok := SetLocal(l1, frame, CheckInteger(l, arg+2)); ok {
++			l.PushString(name)
++		} else {
++			l.PushNil()
++		}
++		return 1
++	}},
+ 	{"setmetatable", func(l *State) int {
+ 		t := l.TypeOf(2)
+ 		ArgumentCheck(l, t == TypeNil || t == TypeTable, 2, "nil or table expected")
+diff --git a/lua.go b/lua.go
+index 1d1740f..f3f9cc4 100644
+--- a/lua.go
++++ b/lua.go
+@@ -194,17 +194,11 @@ type Hook func(state *State, activationRecord Debug)
+ // A Function is a Go function intended to be called from Lua.
+ type Function func(state *State) int
+ 
+-// TODO XMove(from, to State, n int)
+-//
+ // Set functions (stack -> Lua)
+ // RawSetValue(index int, p interface{})
+-//
+-// Debug API
+-// Local(activationRecord *Debug, index int) string
+-// SetLocal(activationRecord *Debug, index int) string
+ 
+ type pc int
+-type callStatus byte
++type callStatus uint16
+ 
+ const (
+ 	callStatusLua                callStatus = 1 << iota // call is running a Lua function
+@@ -215,6 +209,7 @@ const (
+ 	callStatusError                                     // call has an error status (pcall)
+ 	callStatusTail                                      // call was tail called
+ 	callStatusHookYielded                               // last hook called yielded
++	callStatusTraced                                    // call is running a line or count hook before its next instruction
+ )
+ 
+ // A State is an opaque structure representing per thread Lua state.
+@@ -859,6 +854,23 @@ func (l *State) ToUserData(index int) interface{} {
+ 	return nil
+ }
+ 
++// XMove exchanges values between different threads of the same global state.
++//
++// This function pops n values from the stack from, and pushes them onto the
++// stack to.
++//
++// http://www.lua.org/manual/5.2/manual.html#lua_xmove
++func XMove(from, to *State, n int) {
++	if from == to {
++		return
++	}
++	apiCheckStackSpace(from, n)
++	from.top -= n
++	for i := 0; i < n; i++ {
++		to.apiPush(from.stack[from.top+i])
++	}
++}
++
+ // ToThread converts the value at index to a Lua thread (a State). This
+ // value must be a thread, otherwise the return value will be nil.
+ //
+diff --git a/stack.go b/stack.go
+index 2616638..2fef7ef 100644
+--- a/stack.go
++++ b/stack.go
+@@ -327,7 +327,7 @@ func (l *State) preCall(function int, resultCount int) bool {
+ 
+ func (l *State) callHook(ci *callInfo) {
+ 	ci.savedPC++ // hooks assume 'pc' is already incremented
+-	if pci := ci.previous; pci.isLua() && pci.code[pci.savedPC-1].opCode() == opTailCall {
++	if pci := ci.previous; pci.isLua() && pci.code[l.currentPC(pci)].opCode() == opTailCall {
+ 		ci.setCallStatus(callStatusTail)
+ 		l.hook(HookTailCall, -1)
+ 	} else {
+diff --git a/types.go b/types.go
+index 225c231..3a5ee2d 100644
+--- a/types.go
++++ b/types.go
+@@ -153,13 +153,13 @@ func (p *prototype) objectName(reg int, lastPC pc) (name, kind string) {
+ 				return p.objectName(b, pc)
+ 			}
+ 		case opGetTableUp:
+-			name, kind = p.constantName(i.c(), pc), "local"
++			name, kind = p.constantName(i.c(), pc), "field"
+ 			if p.upValueName(i.b()) == "_ENV" {
+ 				kind = "global"
+ 			}
+ 			return
+ 		case opGetTable:
+-			name, kind = p.constantName(i.c(), pc), "local"
++			name, kind = p.constantName(i.c(), pc), "field"
+ 			if v, ok := p.localName(i.b()+1, pc); ok && v == "_ENV" {
+ 				kind = "global"
+ 			}
+@@ -186,7 +186,7 @@ func (p *prototype) constantName(k int, pc pc) string {
+ 		if s, ok := p.constants[constantIndex(k)].(string); ok {
+ 			return s
+ 		}
+-	} else if name, kind := p.objectName(k, pc); kind == "c" {
++	} else if name, kind := p.objectName(k, pc); kind == "constant" {
+ 		return name
+ 	}
+ 	return "?"
+diff --git a/vm.go b/vm.go
+index dd65111..dd372e6 100644
+--- a/vm.go
++++ b/vm.go
+@@ -218,6 +218,8 @@ func (l *State) concat(total int) {
+ 
+ func (l *State) traceExecution() {
+ 	callInfo := l.callInfo
++	callInfo.setCallStatus(callStatusTraced)
++	defer callInfo.clearCallStatus(callStatusTraced)
+ 	mask := l.hookMask
+ 	countHook := mask&MaskCount != 0 && l.hookCount == 0
+ 	if countHook {
+@@ -232,19 +234,16 @@ func (l *State) traceExecution() {
+ 	}
+ 	if mask&MaskLine != 0 {
+ 		p := l.prototype(callInfo)
+-		npc := callInfo.savedPC - 1
+-		if npc < 0 {
+-			npc = 0
+-		}
++		npc := callInfo.savedPC // the instruction about to be executed
+ 		if int(npc) < len(p.lineInfo) {
+ 			newline := p.lineInfo[npc]
+-			if npc == 0 || l.oldPC == 0 || callInfo.savedPC <= l.oldPC ||
++			if npc == 0 || l.oldPC == 0 || npc < l.oldPC ||
+ 				int(l.oldPC-1) >= len(p.lineInfo) || newline != p.lineInfo[l.oldPC-1] {
+ 				l.hook(HookLine, int(newline))
+ 			}
+ 		}
+ 	}
+-	l.oldPC = callInfo.savedPC
++	l.oldPC = callInfo.savedPC + 1
+ 	if l.shouldYield {
+ 		if countHook {
+ 			l.hookCount = 1
