@@ -1,0 +1,502 @@
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 00000000..40df405a
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,68 @@
++#!/usr/bin/env bash
++# Usage: ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  the compiler's Go unit tests, plus the GopherJS test suite and a set
++#         of standard library packages compiled and run with GopherJS.
++#   new   the pointer conversion tests compiled and run with GopherJS.
++set -uo pipefail
++
++cd /app
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  OUTPUT_PATH="$2"
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++TEST_LOG="$(mktemp)"
++STATUS=0
++
++# The gopherjs build cache isn't keyed on the compiler itself, so start every
++# run from an empty cache to make sure all packages are compiled by the
++# current compiler.
++export XDG_CACHE_HOME="$(mktemp -d)"
++
++run() {
++  "$@" 2>&1 | tee -a "$TEST_LOG"
++  status=${PIPESTATUS[0]}
++  if [ "$status" -ne 0 ]; then
++    STATUS=$status
++  fi
++}
++
++# Run the compiler straight from the sources in /app rather than a previously
++# installed binary, also for the tests that invoke `gopherjs` themselves.
++BIN_DIR="$(mktemp -d)"
++cat > "$BIN_DIR/gopherjs" <<'SH'
++#!/usr/bin/env bash
++exec go run github.com/gopherjs/gopherjs "$@"
++SH
++chmod +x "$BIN_DIR/gopherjs"
++export PATH="$BIN_DIR:$PATH"
++
++case "$MODE" in
++  base)
++    # Test_JSSourceMap_* compare stack traces against paths of a GOPATH-style
++    # checkout and can't pass with the sources in /app. tests/gorepo runs the
++    # upstream Go test suite, which isn't part of this module's quick checks.
++    run go test -count=1 -v -skip '^Test_JSSourceMap_' $(go list ./... | grep -v /tests/gorepo)
++    run gopherjs test -v --short ./tests fmt log reflect sort strings bytes \
++      strconv errors unicode/utf8 container/list sync/atomic encoding/binary \
++      encoding/json
++    ;;
++  new)
++    run gopherjs test -v ./tests/ptrconv_658733
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ]; then
++  go-junit-report -set-exit-code < "$TEST_LOG" > "$OUTPUT_PATH" || true
++fi
++
++exit "$STATUS"
+diff --git a/tests/ptrconv_658733/pointer_conversion_658733_test.go b/tests/ptrconv_658733/pointer_conversion_658733_test.go
+new file mode 100644
+index 00000000..c8b011e9
+--- /dev/null
++++ b/tests/ptrconv_658733/pointer_conversion_658733_test.go
+@@ -0,0 +1,422 @@
++// Package ptrconv_658733 tests conversions between pointer types.
++package ptrconv_658733
++
++import (
++	"fmt"
++	"reflect"
++	"testing"
++	"unsafe"
++)
++
++type (
++	ptcStrPtr   *string
++	ptcIntPtr   *int
++	ptcInt      int
++	ptcInt64    int64
++	ptcArr      [3]int
++	ptcArrPtr   *[3]int
++	ptcNamedArr *ptcArr
++	ptcStruct   struct{ x int }
++	ptcStruct2  ptcStruct
++	ptcPtrPtr   **int
++)
++
++func ptcTypeName(v any) string { return fmt.Sprintf("%T", v) }
++
++func TestPtrConvNamedBasicExplicit(t *testing.T) {
++	s := "abc"
++	p := &s
++	q := ptcStrPtr(p)
++	if got := ptcTypeName(q); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("ptcStrPtr(p) has type %s, want ptrconv_658733.ptcStrPtr", got)
++	}
++	if got := reflect.TypeOf(q).String(); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("reflect.TypeOf(ptcStrPtr(p)) = %s, want ptrconv_658733.ptcStrPtr", got)
++	}
++	if (*string)(q) != p {
++		t.Errorf("(*string)(ptcStrPtr(p)) != p")
++	}
++	if ptcStrPtr(p) != ptcStrPtr(p) {
++		t.Errorf("ptcStrPtr(p) != ptcStrPtr(p)")
++	}
++	if ptcStrPtr(p) != q {
++		t.Errorf("ptcStrPtr(p) != q")
++	}
++	*q = "changed"
++	if s != "changed" {
++		t.Errorf("write through converted pointer: s = %q, want %q", s, "changed")
++	}
++	s = "again"
++	if *q != "again" {
++		t.Errorf("read through converted pointer: *q = %q, want %q", *q, "again")
++	}
++}
++
++func TestPtrConvNamedBasicNil(t *testing.T) {
++	var p *string
++	if ptcStrPtr(p) != nil {
++		t.Errorf("ptcStrPtr(nil *string) != nil")
++	}
++	var q ptcStrPtr
++	if (*string)(q) != nil {
++		t.Errorf("(*string)(nil ptcStrPtr) != nil")
++	}
++	var r ptcStrPtr = p
++	if r != nil {
++		t.Errorf("nil *string assigned to ptcStrPtr variable is not nil")
++	}
++	var i any = ptcStrPtr(p)
++	if v, ok := i.(ptcStrPtr); !ok || v != nil {
++		t.Errorf("i.(ptcStrPtr) = %v, %v; want nil, true", v, ok)
++	}
++	var pp **int
++	if ptcPtrPtr(pp) != nil {
++		t.Errorf("ptcPtrPtr(nil **int) != nil")
++	}
++}
++
++func TestPtrConvDifferentElemTypes(t *testing.T) {
++	n := 1
++	p := &n
++	q := (*ptcInt)(p)
++	*q = 5
++	if n != 5 {
++		t.Errorf("write through *ptcInt: n = %d, want 5", n)
++	}
++	if got := ptcTypeName(*q); got != "ptrconv_658733.ptcInt" {
++		t.Errorf("*q has type %s, want ptrconv_658733.ptcInt", got)
++	}
++	if (*int)(q) != p {
++		t.Errorf("(*int)((*ptcInt)(p)) != p")
++	}
++	if (*ptcInt)(p) != q {
++		t.Errorf("(*ptcInt)(p) != (*ptcInt)(p)")
++	}
++	var np *int
++	if (*ptcInt)(np) != nil {
++		t.Errorf("(*ptcInt)(nil *int) != nil")
++	}
++
++	var i64 int64 = 3
++	m := (*ptcInt64)(&i64)
++	var boxed any = *m
++	if v, ok := boxed.(ptcInt64); !ok || v != 3 {
++		t.Errorf("*(*ptcInt64)(&i64) boxed = %#v, want ptcInt64(3)", boxed)
++	}
++	*m = 1 << 40
++	if i64 != 1<<40 {
++		t.Errorf("write through *ptcInt64: i64 = %d, want %d", i64, int64(1<<40))
++	}
++	if (*int64)(m) != &i64 {
++		t.Errorf("(*int64)((*ptcInt64)(&i64)) != &i64")
++	}
++
++	xs := []int{1, 2, 3}
++	e := (*ptcInt)(&xs[1])
++	*e = 9
++	if xs[1] != 9 {
++		t.Errorf("write through converted pointer to slice element: xs = %v", xs)
++	}
++	type pair struct{ a, b int }
++	pr := pair{1, 2}
++	f := (*ptcInt)(&pr.b)
++	*f = 7
++	if pr.b != 7 {
++		t.Errorf("write through converted pointer to struct field: pr = %+v", pr)
++	}
++	if (*int)(f) != &pr.b {
++		t.Errorf("(*int)(f) != &pr.b")
++	}
++}
++
++func TestPtrConvArray(t *testing.T) {
++	arr := [3]int{1, 2, 3}
++	a := (*ptcArr)(&arr)
++	a[0] = 9
++	if arr[0] != 9 || len(a) != 3 {
++		t.Errorf("write through *ptcArr: arr = %v", arr)
++	}
++	if (*[3]int)(a) != &arr {
++		t.Errorf("(*[3]int)((*ptcArr)(&arr)) != &arr")
++	}
++	b := ptcArrPtr(&arr)
++	if got := ptcTypeName(b); got != "ptrconv_658733.ptcArrPtr" {
++		t.Errorf("ptcArrPtr(&arr) has type %s, want ptrconv_658733.ptcArrPtr", got)
++	}
++	if b[2] != 3 {
++		t.Errorf("b[2] = %d, want 3", b[2])
++	}
++
++	var na *[3]int
++	if (*ptcArr)(na) != nil {
++		t.Errorf("(*ptcArr)(nil *[3]int) != nil")
++	}
++	if ptcArrPtr(na) != nil {
++		t.Errorf("ptcArrPtr(nil *[3]int) != nil")
++	}
++	if (*[3]int)(ptcArrPtr(na)) != nil {
++		t.Errorf("(*[3]int)(ptcArrPtr(nil)) != nil")
++	}
++	var nn ptcNamedArr = (*ptcArr)(nil)
++	if nn != nil {
++		t.Errorf("ptcNamedArr from nil *ptcArr != nil")
++	}
++	if got := fmt.Sprint(ptcArrPtr(na)); got != "<nil>" {
++		t.Errorf("fmt.Sprint(ptcArrPtr(nil)) = %q, want <nil>", got)
++	}
++}
++
++func ptcIdentity(p ptcStrPtr) ptcStrPtr     { return p }
++func ptcReturn(p *string) ptcStrPtr         { return p }
++func ptcReturnArr(p *[3]int) ptcArrPtr      { return p }
++func ptcVariadic(ps ...ptcStrPtr) ptcStrPtr { return ps[len(ps)-1] }
++func ptcTwo(p *string, a *[3]int) (ptcStrPtr, ptcArrPtr) {
++	return p, a
++}
++
++func TestPtrConvImplicitCallsAndReturns(t *testing.T) {
++	s := "abc"
++	p := &s
++	if got := ptcTypeName(ptcIdentity(p)); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("argument: got type %s, want ptrconv_658733.ptcStrPtr", got)
++	}
++	if (*string)(ptcIdentity(p)) != p {
++		t.Errorf("argument: identity lost")
++	}
++	if got := ptcTypeName(ptcReturn(p)); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("return: got type %s, want ptrconv_658733.ptcStrPtr", got)
++	}
++	if got := ptcTypeName(ptcVariadic(p, p)); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("variadic argument: got type %s, want ptrconv_658733.ptcStrPtr", got)
++	}
++	var np *string
++	if ptcIdentity(np) != nil || ptcReturn(np) != nil || ptcVariadic(np) != nil {
++		t.Errorf("nil *string passed or returned as ptcStrPtr is not nil")
++	}
++	var na *[3]int
++	if ptcReturnArr(na) != nil {
++		t.Errorf("nil *[3]int returned as ptcArrPtr is not nil")
++	}
++	q, a := ptcTwo(p, na)
++	if got := ptcTypeName(q); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("multiple results: got type %s, want ptrconv_658733.ptcStrPtr", got)
++	}
++	if a != nil {
++		t.Errorf("multiple results: nil *[3]int returned as ptcArrPtr is not nil")
++	}
++	q2, a2 := ptcTwo(ptcTwo(p, na))
++	if q2 != q || a2 != nil {
++		t.Errorf("multiple results passed as arguments: got %v, %v", q2, a2)
++	}
++}
++
++func TestPtrConvImplicitCompositeLiterals(t *testing.T) {
++	s := "abc"
++	n := 5
++	var na *[3]int
++
++	keyed := struct {
++		s ptcStrPtr
++		a ptcArrPtr
++	}{s: &s, a: na}
++	if got := ptcTypeName(keyed.s); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("keyed struct field: got type %s", got)
++	}
++	if keyed.a != nil {
++		t.Errorf("keyed struct field: nil array pointer is not nil")
++	}
++	positional := struct {
++		s ptcStrPtr
++		a ptcArrPtr
++	}{&s, na}
++	if got := ptcTypeName(positional.s); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("positional struct field: got type %s", got)
++	}
++	if positional.a != nil {
++		t.Errorf("positional struct field: nil array pointer is not nil")
++	}
++	ps := &struct{ s ptcStrPtr }{&s}
++	if got := ptcTypeName(ps.s); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("pointer to struct literal: got type %s", got)
++	}
++	arr := [2]ptcIntPtr{&n, nil}
++	if got := ptcTypeName(arr[0]); got != "ptrconv_658733.ptcIntPtr" {
++		t.Errorf("array literal element: got type %s", got)
++	}
++	sl := []ptcStrPtr{&s}
++	if got := ptcTypeName(sl[0]); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("slice literal element: got type %s", got)
++	}
++	m := map[ptcStrPtr]ptcArrPtr{&s: na}
++	for k, v := range m {
++		if got := ptcTypeName(k); got != "ptrconv_658733.ptcStrPtr" {
++			t.Errorf("map literal key: got type %s", got)
++		}
++		if v != nil {
++			t.Errorf("map literal value: nil array pointer is not nil")
++		}
++	}
++	if (*string)(sl[0]) != &s || (*int)(arr[0]) != &n {
++		t.Errorf("composite literal elements lost identity")
++	}
++}
++
++func TestPtrConvImplicitStatements(t *testing.T) {
++	s := "abc"
++	p := &s
++	var na *[3]int
++
++	sl := []ptcStrPtr{}
++	sl = append(sl, p)
++	if got := ptcTypeName(sl[0]); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("append: got type %s", got)
++	}
++	m := map[string]ptcArrPtr{}
++	m["k"] = na
++	if m["k"] != nil {
++		t.Errorf("map assignment: nil array pointer is not nil")
++	}
++	ms := map[string]ptcStrPtr{}
++	ms["k"] = p
++	if got := ptcTypeName(ms["k"]); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("map assignment: got type %s", got)
++	}
++	ch := make(chan ptcStrPtr, 2)
++	ch <- p
++	if got := ptcTypeName(<-ch); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("channel send: got type %s", got)
++	}
++	select {
++	case ch <- p:
++	default:
++		t.Fatal("select send blocked")
++	}
++	if got := ptcTypeName(<-ch); got != "ptrconv_658733.ptcStrPtr" {
++		t.Errorf("select send: got type %s", got)
++	}
++	var a ptcArrPtr = na
++	if a != nil {
++		t.Errorf("var declaration: nil array pointer is not nil")
++	}
++	var b ptcArrPtr
++	b = na
++	if b != nil {
++		t.Errorf("assignment: nil array pointer is not nil")
++	}
++	var c, d ptcStrPtr = p, nil
++	if (*string)(c) != p || d != nil {
++		t.Errorf("multiple var declaration: got %v, %v", c, d)
++	}
++}
++
++func TestPtrConvInterfaces(t *testing.T) {
++	s := "abc"
++	var i any = ptcStrPtr(&s)
++	if _, ok := i.(*string); ok {
++		t.Errorf("ptcStrPtr value boxed in interface asserts as *string")
++	}
++	v, ok := i.(ptcStrPtr)
++	if !ok {
++		t.Fatalf("ptcStrPtr value boxed in interface doesn't assert as ptcStrPtr")
++	}
++	if (*string)(v) != &s {
++		t.Errorf("unboxed pointer lost identity")
++	}
++	switch i.(type) {
++	case *string:
++		t.Errorf("type switch selected *string")
++	case ptcStrPtr:
++	default:
++		t.Errorf("type switch selected default")
++	}
++	var j any = ptcStrPtr(&s)
++	if i != j {
++		t.Errorf("interfaces holding the same converted pointer are not equal")
++	}
++	var na *[3]int
++	var k any = ptcArrPtr(na)
++	if a, ok := k.(ptcArrPtr); !ok || a != nil {
++		t.Errorf("k.(ptcArrPtr) = %v, %v; want nil, true", a, ok)
++	}
++}
++
++func TestPtrConvMapKeys(t *testing.T) {
++	s := "abc"
++	p := &s
++	m := map[ptcStrPtr]int{}
++	m[ptcStrPtr(p)]++
++	m[ptcStrPtr(p)]++
++	m[ptcIdentity(p)]++
++	if len(m) != 1 || m[ptcStrPtr(p)] != 3 {
++		t.Errorf("map keyed by converted pointer: %d keys, m[p] = %d; want 1 key, 3", len(m), m[ptcStrPtr(p)])
++	}
++	back := map[*string]bool{p: true}
++	if !back[(*string)(ptcStrPtr(p))] {
++		t.Errorf("pointer converted back is not found as map key")
++	}
++	n := 1
++	mi := map[*ptcInt]int{(*ptcInt)(&n): 1}
++	mi[(*ptcInt)(&n)]++
++	if len(mi) != 1 {
++		t.Errorf("map keyed by *ptcInt: %d keys, want 1", len(mi))
++	}
++}
++
++func TestPtrConvUnsafePointer(t *testing.T) {
++	var up unsafe.Pointer
++	if (*int)(up) != nil {
++		t.Errorf("(*int)(nil unsafe.Pointer) != nil")
++	}
++	if (*[3]int)(up) != nil {
++		t.Errorf("(*[3]int)(nil unsafe.Pointer) != nil")
++	}
++	if ptcStrPtr(up) != nil {
++		t.Errorf("ptcStrPtr(nil unsafe.Pointer) != nil")
++	}
++	var np *string
++	if unsafe.Pointer(np) != nil {
++		t.Errorf("unsafe.Pointer(nil *string) != nil")
++	}
++	var ns *ptcStruct
++	if unsafe.Pointer(ns) != nil {
++		t.Errorf("unsafe.Pointer(nil *ptcStruct) != nil")
++	}
++	var na *[3]int
++	if unsafe.Pointer(na) != nil {
++		t.Errorf("unsafe.Pointer(nil *[3]int) != nil")
++	}
++	if (*ptcInt)(unsafe.Pointer((*int)(nil))) != nil {
++		t.Errorf("nil pointer round trip through unsafe.Pointer is not nil")
++	}
++
++	s := "abc"
++	p := &s
++	up = unsafe.Pointer(p)
++	if up == nil {
++		t.Fatalf("unsafe.Pointer(&s) == nil")
++	}
++	if (*string)(up) != p {
++		t.Errorf("(*string)(unsafe.Pointer(p)) != p")
++	}
++	st := &ptcStruct{1}
++	if (*ptcStruct)(unsafe.Pointer(st)) != st {
++		t.Errorf("(*ptcStruct)(unsafe.Pointer(st)) != st")
++	}
++	n := 1
++	*(*int)(unsafe.Pointer(&n)) = 2
++	if n != 2 {
++		t.Errorf("write through unsafe round trip: n = %d", n)
++	}
++}
++
++// A broken conversion of the zero unsafe.Pointer to a struct pointer can abort
++// the whole test binary, so keep this test last.
++func TestPtrConvUnsafePointerNilStruct(t *testing.T) {
++	var up unsafe.Pointer
++	if (*ptcStruct)(up) != nil {
++		t.Errorf("(*ptcStruct)(nil unsafe.Pointer) != nil")
++	}
++	if (*ptcStruct2)(unsafe.Pointer((*ptcStruct)(nil))) != nil {
++		t.Errorf("nil struct pointer round trip through unsafe.Pointer is not nil")
++	}
++}
