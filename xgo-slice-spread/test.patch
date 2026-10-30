@@ -1,0 +1,407 @@
+diff --git a/cl/slicespread_da8d69_test.go b/cl/slicespread_da8d69_test.go
+new file mode 100644
+index 00000000..9935ab31
+--- /dev/null
++++ b/cl/slicespread_da8d69_test.go
+@@ -0,0 +1,352 @@
++//go:build !genjs
++
++package cl_test
++
++import (
++	"bytes"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/goplus/xgo/cl"
++	"github.com/goplus/xgo/cl/cltest"
++	"github.com/goplus/xgo/format"
++	"github.com/goplus/xgo/parser"
++	"github.com/goplus/xgo/parser/fsx/memfs"
++)
++
++func ssGen(src string) (code []byte, err error) {
++	defer func() {
++		if e := recover(); e != nil {
++			err = fmt.Errorf("panic: %v", e)
++		}
++	}()
++	fs := memfs.SingleFile("/foo", "bar.xgo", src)
++	pkgs, err := parser.ParseFSDir(cltest.Conf.Fset, fs, "/foo", parser.Config{Mode: parser.ParseComments})
++	if err != nil {
++		return nil, fmt.Errorf("parse: %w", err)
++	}
++	pkg, err := cl.NewPackage("", pkgs["main"], cltest.Conf)
++	if err != nil {
++		return nil, err
++	}
++	var b bytes.Buffer
++	if err = pkg.WriteTo(&b); err != nil {
++		return nil, err
++	}
++	return b.Bytes(), nil
++}
++
++func ssGoRun(code []byte) (string, error) {
++	dir, err := os.MkdirTemp(tmpDir, "ss")
++	if err != nil {
++		return "", err
++	}
++	defer os.RemoveAll(dir)
++	infile := filepath.Join(dir, "main.go")
++	if err = os.WriteFile(infile, code, 0666); err != nil {
++		return "", err
++	}
++	var stdout, stderr bytes.Buffer
++	cmd := exec.Command("go", "run", infile)
++	cmd.Dir = tmpDir
++	cmd.Stdout = &stdout
++	cmd.Stderr = &stderr
++	if err = cmd.Run(); err != nil {
++		return "", fmt.Errorf("%v\n%s", err, stderr.String())
++	}
++	return stdout.String(), nil
++}
++
++// ssRun compiles src, runs the generated program and compares its output.
++func ssRun(t *testing.T, src, expected string) {
++	t.Helper()
++	code, err := ssGen(src)
++	if err != nil {
++		t.Fatalf("compile failed: %v", err)
++	}
++	result, err := ssGoRun(code)
++	if err != nil {
++		t.Fatalf("running the generated code failed: %v\n%s", err, code)
++	}
++	if result != expected {
++		t.Fatalf("=> Result:\n%s\n=> Expected:\n%s\n=> Generated:\n%s", result, expected, code)
++	}
++}
++
++// ssError checks that compiling src fails with a compile (not syntax) error
++// reported on the line marked with `// ERROR`.
++func ssError(t *testing.T, src string) {
++	t.Helper()
++	line := 0
++	for i, l := range strings.Split(src, "\n") {
++		if strings.Contains(l, "// ERROR") {
++			line = i + 1
++		}
++	}
++	if line == 0 {
++		t.Fatal("no // ERROR marker in test source")
++	}
++	_, err := ssGen(src)
++	if err == nil {
++		t.Fatalf("compiling succeeded, want an error on line %d:\n%s", line, src)
++	}
++	msg := err.Error()
++	if strings.HasPrefix(msg, "panic: ") || strings.HasPrefix(msg, "parse: ") {
++		t.Fatalf("want a compile error on line %d, got: %v", line, err)
++	}
++	if want := fmt.Sprintf("bar.xgo:%d:", line); !strings.Contains(msg, want) {
++		t.Fatalf("want an error reported on line %d (%s), got: %v", line, want, err)
++	}
++}
++
++func TestSpreadSameElementType_da8d69(t *testing.T) {
++	ssRun(t, `
++a := [1, 2, 3]
++b := [4, 5]
++c := [a..., b...]
++printf "%T %v\n", c, c
++d := [0, a..., 9]
++printf "%T %v\n", d, d
++e := [a...]
++printf "%T %v\n", e, e
++println len([b..., b..., b...])
++names := ["ann", "bob"]
++println [names..., "cy"], ["zed", names...]
++`, `[]int [1 2 3 4 5]
++[]int [0 1 2 3 9]
++[]int [1 2 3]
++6
++[ann bob cy] [zed ann bob]
++`)
++}
++
++func TestSpreadInferredElementType_da8d69(t *testing.T) {
++	ssRun(t, `
++type ID int
++
++a := [1, 2, 3]
++b := [4, 5]
++d := [a..., b]
++printf "%T %v\n", d, d
++printf "%T\n", [a..., 2.5]
++var i8 []int8 = [1, 2]
++x := [i8..., 3]
++printf "%T %v\n", x, x
++var f32 []float32 = [1]
++y := [f32..., 2, 3.5]
++printf "%T %v\n", y, y
++z := [a..., []int64{6}...]
++printf "%T %v\n", z, z
++ids := []ID{7}
++w := [ids..., 8]
++printf "%T %v\n", w, w
++v := [ids..., a...]
++printf "%T %v\n", v, v
++u := [a..., "s", true]
++printf "%T %v\n", u, u
++`, `[]interface {} [1 2 3 [4 5]]
++[]interface {}
++[]int8 [1 2 3]
++[]float32 [1 2 3.5]
++[]interface {} [1 2 3 6]
++[]main.ID [7 8]
++[]interface {} [7 1 2 3]
++[]interface {} [1 2 3 s true]
++`)
++}
++
++func TestSpreadExpectedType_da8d69(t *testing.T) {
++	ssRun(t, `
++type Ints []int
++type Num float64
++type Box struct {
++	Items []any
++}
++
++func count(xs []any) int {
++	return len(xs)
++}
++
++func nums() []Num {
++	a := []Num{1}
++	return [a..., 2, 3]
++}
++
++a := [1, 2]
++var x []any = [a..., "s", 2.5]
++printf "%T %v\n", x, x
++var y Ints = [a..., 7]
++printf "%T %v\n", y, y
++println count([a..., a...])
++printf "%T %v\n", nums(), nums()
++box := Box{Items: [a..., nil]}
++println box.Items, len(box.Items)
++m := map[string][]any{"k": [a..., true]}
++println m["k"]
++nested := [][]float64{[[]float64{}..., 1], [[]float64{2, 3}...]}
++printf "%T %v\n", nested, nested
++var s []any
++s = [a...]
++printf "%T %v\n", s, s
++`, `[]interface {} [1 2 s 2.5]
++main.Ints [1 2 7]
++4
++[]main.Num [1 2 3]
++[1 2 <nil>] 3
++[1 2 true]
++[][]float64 [[1] [2 3]]
++[]interface {} [1 2]
++`)
++}
++
++func TestSpreadArrays_da8d69(t *testing.T) {
++	ssRun(t, `
++arr := [3]float64{1, 2, 3}
++x := [arr..., 0.5]
++printf "%T %v\n", x, x
++pair := [2]string{"a", "b"}
++y := [pair..., "c", pair...]
++printf "%T %v\n", y, y
++var z []any = [arr...]
++println z
++arr[0] = 100
++println x[0], z[0]
++`, `[]float64 [1 2 3 0.5]
++[]string [a b c a b]
++[1 2 3]
++1 1
++`)
++}
++
++func TestSpreadEvaluatesOnce_da8d69(t *testing.T) {
++	ssRun(t, `
++var calls []string
++
++func list(name string, xs ...int) []int {
++	calls = append(calls, name)
++	return xs
++}
++
++func one(name string, x int) int {
++	calls = append(calls, name)
++	return x
++}
++
++r := [list("a", 1, 2)..., one("b", 3), list("c")..., list("d", 4)...]
++println r, calls
++calls = nil
++n := len([list("e", 5, 6)..., list("f", 7)...])
++println n, calls
++`, `[1 2 3 4] [a b c d]
++3 [e f]
++`)
++}
++
++func TestSpreadMakesNewSlice_da8d69(t *testing.T) {
++	ssRun(t, `
++a := [1, 2, 3]
++c := [a...]
++c[0] = 100
++println a, c
++d := [a[:1]...]
++d = append(d, 9)
++println a, d
++var empty []int
++e := [empty...]
++println len(e), e == nil
++f := [empty..., empty...]
++println len(f), f == nil
++`, `[1 2 3] [100 2 3]
++[1 2 3] [1 9]
++0 false
++0 false
++`)
++}
++
++func TestSpreadInExpressions_da8d69(t *testing.T) {
++	ssRun(t, `
++func sum(xs ...int) int {
++	s := 0
++	for _, x := range xs {
++		s += x
++	}
++	return s
++}
++
++a := [1, 2]
++b := [10, 20]
++println sum([a..., b..., 3]...)
++println [x * 2 for x in [a..., b...]]
++for i, v in [a..., 7] {
++	println i, v
++}
++println [[a..., 5]..., 6]
++println len([a..., b...]) + 1
++`, `36
++[2 4 20 40]
++0 1
++1 2
++2 7
++[1 2 5 6]
++5
++`)
++}
++
++func TestSpreadErrors_da8d69(t *testing.T) {
++	ssError(t, `
++x := 5
++println [x...] // ERROR
++`)
++	ssError(t, `
++s := "ab"
++println [1, s...] // ERROR
++`)
++	ssError(t, `
++m := map[string]int{"a": 1}
++println [m...] // ERROR
++`)
++	ssError(t, `
++a := [1, 2]
++var f []float64 = [a...] // ERROR
++println f
++`)
++	ssError(t, `
++a := [1, 2]
++var s []string = ["x", a...] // ERROR
++println s
++`)
++	ssError(t, `
++func names(xs []string) int {
++	return len(xs)
++}
++
++a := [1, 2]
++println names([a...]) // ERROR
++`)
++	ssError(t, `
++a := [1, 2]
++var s []int = [a..., "x"] // ERROR
++println s
++`)
++}
++
++func TestSpreadFormat_da8d69(t *testing.T) {
++	for _, src := range []string{
++		"c := [a..., b...]\n",
++		"d := [a..., b]\n",
++		"println [0, xs..., 9], [ys...]\n",
++		"var x []any = [f()..., g(1)...]\n",
++	} {
++		out, err := format.Source([]byte(src), nil)
++		if err != nil {
++			t.Fatalf("format %q: %v", src, err)
++		}
++		if string(out) != src {
++			t.Fatalf("format %q:\ngot  %q\nwant %q", src, out, src)
++		}
++	}
++}
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 00000000..d14400ab
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,43 @@
++#!/usr/bin/env bash
++# Usage: ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  the existing tests.
++#   new   the slice literal spread tests.
++set -uo pipefail
++
++cd /app
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  OUTPUT_PATH="$2"
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++TEST_LOG="$(mktemp)"
++
++case "$MODE" in
++  base)
++    # TestTestxgo/domaintext-md imports a module that go.mod doesn't require,
++    # so it needs the network; it is left out.
++    go test -count=1 -v -skip '_da8d69$|^TestTestxgo$' ./... 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    go test -count=1 -v -run '^TestTestxgo$' -skip '^TestTestxgo$/^domaintext-md$' ./cl/ 2>&1 | tee -a "$TEST_LOG"
++    [ "${PIPESTATUS[0]}" -eq 0 ] || STATUS=1
++    ;;
++  new)
++    go test -count=1 -v -run '_da8d69$' ./cl/ 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ]; then
++  go-junit-report -set-exit-code < "$TEST_LOG" > "$OUTPUT_PATH" || true
++fi
++
++exit "$STATUS"

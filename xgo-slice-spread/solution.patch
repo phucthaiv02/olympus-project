@@ -1,0 +1,175 @@
+diff --git a/cl/expr.go b/cl/expr.go
+index b623cf73..8c449f92 100644
+--- a/cl/expr.go
++++ b/cl/expr.go
+@@ -1955,6 +1955,10 @@ func compileSliceLit(ctx *blockCtx, v *ast.SliceLit, typ types.Type, noPanic ...
+ 			}
+ 		}()
+ 	}
++	if hasElemEllipsis(v.Elts) {
++		compileSliceLitWithSpread(ctx, v, typ)
++		return
++	}
+ 	n := len(v.Elts)
+ 	for _, elt := range v.Elts {
+ 		compileExpr(ctx, 1, elt)
+@@ -1967,6 +1971,146 @@ func compileSliceLit(ctx *blockCtx, v *ast.SliceLit, typ types.Type, noPanic ...
+ 	return
+ }
+ 
++func hasElemEllipsis(elts []ast.Expr) bool {
++	for _, elt := range elts {
++		if _, ok := elt.(*ast.ElemEllipsis); ok {
++			return true
++		}
++	}
++	return false
++}
++
++// spreadElemType returns the element type of the slice or array type typ.
++func spreadElemType(typ types.Type) (types.Type, bool) {
++	switch t := typ.Underlying().(type) {
++	case *types.Slice:
++		return t.Elem(), false
++	case *types.Array:
++		return t.Elem(), true
++	}
++	return nil, false
++}
++
++// compileSliceLitWithSpread compiles a slice literal with spread elements:
++//
++//	[a..., b, c...]
++//
++// is compiled to
++//
++//	func(_xgo_e0 A, _xgo_e1 T, _xgo_e2 C) (_xgo_ret []T) {
++//		_xgo_ret = make([]T, 0, len(_xgo_e0)+1+len(_xgo_e2))
++//		_xgo_ret = append(_xgo_ret, _xgo_e0...)
++//		_xgo_ret = append(_xgo_ret, _xgo_e1)
++//		for _, _xgo_v := range _xgo_e2 {
++//			_xgo_ret = append(_xgo_ret, _xgo_v)
++//		}
++//		return
++//	}(a, b, c)
++//
++// so that every element is evaluated once, from left to right.
++func compileSliceLitWithSpread(ctx *blockCtx, v *ast.SliceLit, typ types.Type) {
++	pkg, cb := ctx.pkg, ctx.cb
++	stk := cb.InternalStack()
++	n := len(v.Elts)
++	elts := make([]*gogen.Element, n)
++	spread := make([]bool, n)
++	for i, elt := range v.Elts {
++		if e, ok := elt.(*ast.ElemEllipsis); ok {
++			compileExpr(ctx, 1, e.Elt)
++			x := stk.Pop()
++			if t, _ := spreadElemType(x.Type); t == nil {
++				src := ctx.LoadExpr(e.Elt)
++				panic(ctx.newCodeErrorf(e.Elt.Pos(), e.Elt.End(), "cannot spread %s (type %v): not a slice or array", src, x.Type))
++			}
++			elts[i], spread[i] = x, true
++		} else {
++			compileExpr(ctx, 1, elt)
++			elts[i] = stk.Pop()
++		}
++	}
++
++	// The type of the result: the expected slice type if any, otherwise the
++	// type of an ordinary slice literal with one value of each spread
++	// element's element type in its place.
++	var tyRet types.Type
++	if isSpecificSliceType(ctx, typ) {
++		tyRet = typ
++	} else {
++		for i, e := range elts {
++			x := *e
++			if spread[i] {
++				x.Type, _ = spreadElemType(e.Type)
++				x.CVal = nil
++			}
++			stk.Push(&x)
++		}
++		cb.SliceLitEx(nil, n, false, v)
++		tyRet = stk.Pop().Type
++	}
++	tyElem := tyRet.Underlying().(*types.Slice).Elem()
++
++	pkgTypes := pkg.Types
++	params := make([]*types.Var, n)
++	for i, e := range elts {
++		t := tyElem
++		if spread[i] {
++			t = e.Type
++		}
++		params[i] = types.NewParam(token.NoPos, pkgTypes, "_xgo_e"+strconv.Itoa(i), t)
++	}
++	ret := types.NewParam(token.NoPos, pkgTypes, fnRetPrefix, tyRet)
++	cb.NewClosure(types.NewTuple(params...), types.NewTuple(ret), false).BodyStart(pkg)
++
++	// _xgo_ret = make(T, 0, cap)
++	builtin := pkg.Builtin()
++	cb.VarRef(ret).Val(builtin.Ref("make")).Typ(tyRet).Val(0)
++	nconst := 0
++	nlen := 0
++	for i, p := range params {
++		if spread[i] {
++			cb.Val(builtin.Ref("len")).Val(p).Call(1)
++			if nlen++; nlen > 1 {
++				cb.BinaryOp(gotoken.ADD)
++			}
++		} else {
++			nconst++
++		}
++	}
++	if nlen == 0 {
++		cb.Val(nconst)
++	} else if nconst > 0 {
++		cb.Val(nconst).BinaryOp(gotoken.ADD)
++	}
++	cb.Call(3).Assign(1)
++
++	for i, p := range params {
++		switch {
++		case !spread[i]: // _xgo_ret = append(_xgo_ret, _xgo_eN)
++			cb.VarRef(ret).Val(builtin.Ref("append")).Val(ret).Val(p).Call(2).Assign(1)
++		case isSliceOfElem(p.Type(), tyElem): // _xgo_ret = append(_xgo_ret, _xgo_eN...)
++			cb.VarRef(ret).Val(builtin.Ref("append")).Val(ret).Val(p).CallWith(2, 0, gogen.InstrFlagEllipsis).Assign(1)
++		default: // for _, _xgo_v := range _xgo_eN { _xgo_ret = append(_xgo_ret, _xgo_v) }
++			cb.ForRange("_", "_xgo_v").Val(p).RangeAssignThen(v.Elts[i].End())
++			val := cb.Scope().Lookup("_xgo_v")
++			cb.VarRef(ret).Val(builtin.Ref("append")).Val(ret).Val(val, v.Elts[i]).CallWith(2, 0, 0, v.Elts[i]).Assign(1)
++			cb.End()
++		}
++	}
++	cb.Return(0).End()
++
++	for _, e := range elts {
++		stk.Push(e)
++	}
++	cb.CallWith(n, 0, 0, v)
++}
++
++// isSliceOfElem reports whether typ is a slice type whose elements have the
++// type elem.
++func isSliceOfElem(typ, elem types.Type) bool {
++	t, ok := typ.Underlying().(*types.Slice)
++	return ok && types.Identical(t.Elem(), elem)
++}
++
+ func compileTupleLit(ctx *blockCtx, v *ast.TupleLit, typ types.Type, noPanic ...bool) (err error) {
+ 	if noPanic != nil {
+ 		defer func() {
+diff --git a/parser/parser.go b/parser/parser.go
+index 490d80a1..0ec831ea 100644
+--- a/parser/parser.go
++++ b/parser/parser.go
+@@ -901,7 +901,7 @@ func (p *parser) parseArrayTypeOrSliceMatrixLit(state int, slice ast.Expr) (expr
+ 		switch state {
+ 		case stateArrayTypeOrSliceMatrixLit:
+ 			switch p.tok {
+-			case token.COMMA, token.SEMICOLON: // [a, b, c, d ...] or [a; b; c]
++			case token.COMMA, token.SEMICOLON, token.ELLIPSIS: // [a, b, c, d ...], [a; b; c] or [a..., b]
+ 				lit := p.parseSliceOrMatrixLit(lbrack, len)
+ 				p.exprLev--
+ 				return lit, resultSliceOrMatrixLit
