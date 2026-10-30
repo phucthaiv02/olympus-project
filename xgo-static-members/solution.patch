@@ -1,0 +1,384 @@
+diff --git a/cl/compile.go b/cl/compile.go
+index 6331076e..51287298 100644
+--- a/cl/compile.go
++++ b/cl/compile.go
+@@ -478,6 +478,8 @@ type pkgCtx struct {
+ 	idents   []*ast.Ident    // toType ident recored
+ 	inInst   int             // toType in generic instance
+ 
++	tmembers map[string]*typeMembers // type name => its methods and static members
++
+ 	goxMainClass string
+ 	goxMain      int // normal gox files with main func
+ 	idxConstName int // index of const name for auto rename
+@@ -1214,6 +1216,7 @@ func preloadFile(p *gogen.Package, ctx *blockCtx, f *ast.File, goFile string, ge
+ 				if debugLoad {
+ 					log.Printf("==> Preload static method %s.%s\n", tname, fname)
+ 				}
++				ctx.members(tname).statics[fname] = true
+ 				fname = staticMethod(tname, fname)
+ 				fn := func() {
+ 					old, _ := p.SetCurFile(goFile, true)
+@@ -1221,8 +1224,11 @@ func preloadFile(p *gogen.Package, ctx *blockCtx, f *ast.File, goFile string, ge
+ 					loadFunc(ctx, nil, fname, d, genFnBody)
+ 				}
+ 				initLoader(ctx, name, fname, fn, genFnBody)
+-				ctx.lbinames = append(ctx.lbinames, fname)
++				// load the type first, so that the static method can be
++				// registered as a member of it.
++				ctx.lbinames = append(ctx.lbinames, &ast.Ident{Name: tname}, fname)
+ 			} else {
++				ctx.members(tname).methods[fname] = true
+ 				if debugLoad {
+ 					log.Printf("==> Preload method %s.%s\n", tname, fname)
+ 				}
+@@ -1242,6 +1248,10 @@ func preloadFile(p *gogen.Package, ctx *blockCtx, f *ast.File, goFile string, ge
+ 	preloadConst := func(specs []ast.Spec, getEnumTyp func() types.Type) {
+ 		pkg := ctx.pkg
+ 		cdecl := pkg.NewConstDefs(pkg.Types.Scope())
++		var statics []staticValue
++		for _, spec := range specs {
++			statics = append(statics, lowerStaticNames(ctx, spec.(*ast.ValueSpec))...)
++		}
+ 		for ispec, spec := range specs {
+ 			vSpec := spec.(*ast.ValueSpec)
+ 			if debugLoad {
+@@ -1254,6 +1264,7 @@ func preloadFile(p *gogen.Package, ctx *blockCtx, f *ast.File, goFile string, ge
+ 					if getEnumTyp != nil {
+ 						typ = getEnumTyp()
+ 					}
++					checkStaticValues(ctx, statics)
+ 					loadConstSpecs(ctx, c, specs, typ)
+ 					for _, s := range specs {
+ 						v := s.(*ast.ValueSpec)
+@@ -1272,6 +1283,26 @@ func preloadFile(p *gogen.Package, ctx *blockCtx, f *ast.File, goFile string, ge
+ 		}
+ 	}
+ 
++	preloadVar := func(vSpec *ast.ValueSpec, doc *ast.CommentGroup) {
++		if debugLoad {
++			log.Println("==> Preload var", vSpec.Names)
++		}
++		statics := lowerStaticNames(ctx, vSpec)
++		loadVar := func() {
++			if v := vSpec; v != nil { // only init once
++				vSpec = nil
++				old, _ := p.SetCurFile(goFile, true)
++				defer p.RestoreCurFile(old)
++				checkStaticValues(ctx, statics)
++				loadVars(ctx, v, doc, true)
++				removeNames(syms, v.Names)
++			}
++		}
++		for _, name := range vSpec.Names {
++			initLoader(ctx, name, name.Name, loadVar, true)
++		}
++	}
++
+ 	for _, decl := range f.Decls {
+ 		switch d := decl.(type) {
+ 		case *ast.GenDecl:
+@@ -1373,26 +1404,25 @@ func preloadFile(p *gogen.Package, ctx *blockCtx, f *ast.File, goFile string, ge
+ 						} else {
+ 							ctx.handleErrorf(d.Pos(), d.End(), "multiple top-level var declarations in classfile")
+ 						}
++						continue
+ 					}
++					// static variables (T.name or .name) are package-level
++					// variables, the other names are class fields.
++					fieldSpecs := d.Specs[:0:0]
++					for _, spec := range d.Specs {
++						fields, statics := splitStaticSpec(ctx, spec.(*ast.ValueSpec))
++						if fields != nil {
++							fieldSpecs = append(fieldSpecs, fields)
++						}
++						if statics != nil {
++							preloadVar(statics, d.Doc)
++						}
++					}
++					d.Specs = fieldSpecs
+ 					continue
+ 				}
+ 				for _, spec := range d.Specs {
+-					vSpec := spec.(*ast.ValueSpec)
+-					if debugLoad {
+-						log.Println("==> Preload var", vSpec.Names)
+-					}
+-					loadVar := func() {
+-						if v := vSpec; v != nil { // only init once
+-							vSpec = nil
+-							old, _ := p.SetCurFile(goFile, true)
+-							defer p.RestoreCurFile(old)
+-							loadVars(ctx, v, d.Doc, true)
+-							removeNames(syms, v.Names)
+-						}
+-					}
+-					for _, name := range vSpec.Names {
+-						initLoader(ctx, name, name.Name, loadVar, true)
+-					}
++					preloadVar(spec.(*ast.ValueSpec), d.Doc)
+ 				}
+ 			default:
+ 				log.Panicln("TODO - tok:", d.Tok, "spec:", reflect.TypeOf(d.Specs).Elem())
+diff --git a/cl/expr.go b/cl/expr.go
+index b623cf73..a67d66a6 100644
+--- a/cl/expr.go
++++ b/cl/expr.go
+@@ -113,6 +113,11 @@ func compileIdent(ctx *blockCtx, lhs int, ident *ast.Ident, flags int) (pkg goge
+ 	}
+ 
+ 	if ctx.isClass { // in an XGo class file
++		// static members of the class come first: once registered, they are
++		// also visible as members of the receiver.
++		if tryStaticMember(ctx, lhs, ident, flags) {
++			return
++		}
+ 		if recv = classRecv(cb); recv != nil {
+ 			if tryMember(cb, lhs, recv, ident, flags) {
+ 				return
+@@ -201,6 +206,21 @@ find:
+ 	return
+ }
+ 
++// tryStaticMember resolves name, in a classfile, as a static member of the
++// class.
++func tryStaticMember(ctx *blockCtx, lhs int, ident *ast.Ident, flags int) bool {
++	tname := classTypeName(ctx)
++	if tname == "" {
++		return false
++	}
++	o := staticObject(ctx, tname, ident.Name)
++	if o == nil {
++		return false
++	}
++	compileStaticObject(ctx, o, ident, flags&clIdentLHS != 0)
++	return true
++}
++
+ func tryMember(cb *gogen.CodeBuilder, lhs int, recv types.Object, ident *ast.Ident, flags int) bool {
+ 	cb.Val(recv)
+ 	chkFlag := flags
+@@ -541,6 +561,10 @@ func compileSliceExpr(ctx *blockCtx, v *ast.SliceExpr) { // x[i:j:k]
+ func compileSelectorExprLHS(ctx *blockCtx, v *ast.SelectorExpr) {
+ 	switch x := v.X.(type) {
+ 	case *ast.Ident:
++		if o := staticSelector(ctx, x, v.Sel); o != nil { // T.name
++			compileStaticObject(ctx, o, v, true)
++			return
++		}
+ 		if at, kind := compileIdent(ctx, 1, x, clIdentLHS|clIdentSelectorExpr); kind != objNormal {
+ 			ctx.cb.VarRef(at.Ref(v.Sel.Name))
+ 			return
+@@ -657,6 +681,10 @@ func convMapToNodeSet(cb *gogen.CodeBuilder) {
+ func compileSelectorExpr(ctx *blockCtx, lhs int, v *ast.SelectorExpr, flags int) {
+ 	switch x := v.X.(type) {
+ 	case *ast.Ident:
++		if o := staticSelector(ctx, x, v.Sel); o != nil { // T.name
++			compileStaticObject(ctx, o, v, false)
++			return
++		}
+ 		if at, kind := compileIdent(ctx, 1, x, flags|clIdentCanAutoCall|clIdentSelectorExpr); kind != objNormal {
+ 			if compilePkgRef(ctx, 1, at, v.Sel, flags, kind) {
+ 				return
+diff --git a/cl/static.go b/cl/static.go
+new file mode 100644
+index 00000000..5b5c32f8
+--- /dev/null
++++ b/cl/static.go
+@@ -0,0 +1,196 @@
++/*
++ * Copyright (c) 2026 The XGo Authors (xgo.dev). All rights reserved.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package cl
++
++import (
++	"go/types"
++	"strings"
++
++	"github.com/goplus/xgo/ast"
++	"github.com/goplus/xgo/token"
++)
++
++// A staticValue is a static constant or variable declared as `T.name` (or
++// `.name` in a classfile). It is implemented by the package-level object
++// staticMethod(tname, name), which gogen registers as a static member of T.
++type staticValue struct {
++	id    *ast.Ident // declared name, renamed to the implementing object
++	tname string
++	name  string
++}
++
++// typeMembers records, for each type declared in this package, the names of
++// its methods (instance and static) and of its static values.
++type typeMembers struct {
++	methods map[string]bool
++	statics map[string]bool // static methods and static values
++}
++
++func (p *pkgCtx) members(tname string) *typeMembers {
++	if p.tmembers == nil {
++		p.tmembers = make(map[string]*typeMembers)
++	}
++	m, ok := p.tmembers[tname]
++	if !ok {
++		m = &typeMembers{methods: make(map[string]bool), statics: make(map[string]bool)}
++		p.tmembers[tname] = m
++	}
++	return m
++}
++
++// isStaticMember reports whether name (or name with its first letter in upper
++// case) is a static member of the type tname declared in this package.
++func (p *pkgCtx) isStaticMember(tname, name string) bool {
++	m, ok := p.tmembers[tname]
++	if !ok {
++		return false
++	}
++	return m.statics[name] || m.statics[strings.ToUpper(name[:1])+name[1:]]
++}
++
++// staticObject returns the package-level object that implements the static
++// member tname.name declared in this package, or nil. It doesn't depend on
++// the static member being registered on the type yet, so it also works while
++// the package is still being loaded.
++func staticObject(ctx *blockCtx, tname, name string) types.Object {
++	if !ctx.isStaticMember(tname, name) {
++		return nil
++	}
++	scope := ctx.pkg.Types.Scope()
++	for _, n := range []string{name, strings.ToUpper(name[:1]) + name[1:]} {
++		lname := staticMethod(tname, n)
++		ctx.loadSymbol(lname)
++		if o := scope.Lookup(lname); o != nil {
++			return o
++		}
++	}
++	return nil
++}
++
++// staticSelector returns the object implementing the static member x.sel if x
++// names a type of this package that has such a static member.
++func staticSelector(ctx *blockCtx, x, sel *ast.Ident) types.Object {
++	if at, o := ctx.cb.Scope().LookupParent(x.Name, token.NoPos); o != nil {
++		if at != ctx.pkg.Types.Scope() { // local object
++			return nil
++		}
++		if _, ok := o.(*types.TypeName); !ok {
++			return nil
++		}
++	}
++	return staticObject(ctx, x.Name, sel.Name)
++}
++
++// compileStaticObject compiles a reference to a static member implemented by o.
++func compileStaticObject(ctx *blockCtx, o types.Object, src ast.Node, lhs bool) {
++	if !lhs {
++		ctx.cb.Val(o, src)
++		return
++	}
++	if _, ok := o.(*types.Var); !ok {
++		code := ctx.LoadExpr(src)
++		panic(ctx.newCodeErrorf(src.Pos(), src.End(), "cannot assign to %s (neither addressable nor a map index expression)", code))
++	}
++	ctx.cb.VarRef(o, src)
++}
++
++func classTypeName(ctx *blockCtx) string {
++	if recv := ctx.classRecv; recv != nil {
++		return recv.List[0].Type.(*ast.StarExpr).X.(*ast.Ident).Name
++	}
++	return ""
++}
++
++func isStaticName(id *ast.Ident) bool {
++	return strings.IndexByte(id.Name, '.') >= 0
++}
++
++// lowerStaticNames renames the static names (`T.name` or `.name`) declared by
++// spec to the names of the package-level objects that implement them.
++func lowerStaticNames(ctx *blockCtx, spec *ast.ValueSpec) (statics []staticValue) {
++	if !spec.HasStatic {
++		return nil
++	}
++	for _, id := range spec.Names {
++		if !isStaticName(id) {
++			continue
++		}
++		pos := strings.IndexByte(id.Name, '.')
++		tname, name := id.Name[:pos], id.Name[pos+1:]
++		if tname == "" { // classfile shorthand: .name
++			tname = classTypeName(ctx)
++		}
++		ctx.members(tname).statics[name] = true
++		id.Name = staticMethod(tname, name)
++		statics = append(statics, staticValue{id: id, tname: tname, name: name})
++		ctx.lbinames = append(ctx.lbinames, &ast.Ident{Name: tname}, id.Name)
++	}
++	return
++}
++
++// checkStaticValues checks, before the static values are declared, that each
++// of them belongs to a named type of this package and doesn't collide with a
++// method of it. A static value that fails the check is declared as `_`.
++func checkStaticValues(ctx *blockCtx, statics []staticValue) {
++	scope := ctx.pkg.Types.Scope()
++	for _, v := range statics {
++		id := v.id
++		pos, end := id.Pos(), id.Pos()+token.Pos(len(v.tname)+1+len(v.name))
++		ctx.loadSymbol(v.tname)
++		o := scope.Lookup(v.tname)
++		if o == nil {
++			ctx.handleErrorf(pos, end, "undefined: %s", v.tname)
++		} else if tn, ok := o.(*types.TypeName); !ok || tn.IsAlias() {
++			ctx.handleErrorf(pos, end, "%s is not a defined type", v.tname)
++		} else if _, ok := tn.Type().(*types.Named); !ok {
++			ctx.handleErrorf(pos, end, "%s is not a defined type", v.tname)
++		} else if ctx.members(v.tname).methods[v.name] {
++			ctx.handleErrorf(pos, end, "%s.%s redeclared: %s already has a method named %s", v.tname, v.name, v.tname, v.name)
++		} else {
++			continue
++		}
++		id.Name = "_"
++	}
++}
++
++// splitStaticSpec splits a classfile field spec into its instance fields and
++// its static variables. It returns nil for a part that has no names.
++func splitStaticSpec(ctx *blockCtx, spec *ast.ValueSpec) (fields, statics *ast.ValueSpec) {
++	if !spec.HasStatic {
++		return spec, nil
++	}
++	nv := len(spec.Values)
++	if nv != 0 && nv != len(spec.Names) {
++		ctx.handleErrorf(spec.Pos(), spec.End(), "cannot mix static variables and class fields in a multi-value declaration")
++	}
++	fields = &ast.ValueSpec{Doc: spec.Doc, Type: spec.Type, Tag: spec.Tag, Comment: spec.Comment}
++	statics = &ast.ValueSpec{Doc: spec.Doc, Type: spec.Type, Comment: spec.Comment, HasStatic: true}
++	for i, id := range spec.Names {
++		part := fields
++		if isStaticName(id) {
++			part = statics
++		}
++		part.Names = append(part.Names, id)
++		if nv == len(spec.Names) {
++			part.Values = append(part.Values, spec.Values[i])
++		}
++	}
++	if len(fields.Names) == 0 {
++		fields = nil
++	}
++	return
++}

@@ -1,0 +1,408 @@
+diff --git a/cl/staticmember_8b23ff_test.go b/cl/staticmember_8b23ff_test.go
+new file mode 100644
+index 00000000..3993b9e3
+--- /dev/null
++++ b/cl/staticmember_8b23ff_test.go
+@@ -0,0 +1,353 @@
++//go:build !genjs
++
++package cl_test
++
++import (
++	"bytes"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"sort"
++	"strings"
++	"testing"
++
++	"github.com/goplus/xgo/cl"
++	"github.com/goplus/xgo/cl/cltest"
++	"github.com/goplus/xgo/parser"
++	"github.com/goplus/xgo/parser/fsx/memfs"
++)
++
++// smGen compiles the files of package main in /foo.
++func smGen(files map[string]string) (code []byte, err error) {
++	defer func() {
++		if e := recover(); e != nil {
++			err = fmt.Errorf("panic: %v", e)
++		}
++	}()
++	names := make([]string, 0, len(files))
++	paths := make(map[string]string, len(files))
++	for name, src := range files {
++		names = append(names, name)
++		paths["/foo/"+name] = src
++	}
++	sort.Strings(names)
++	fs := memfs.New(map[string][]string{"/foo": names}, paths)
++	pkgs, err := parser.ParseFSDir(cltest.Conf.Fset, fs, "/foo", parser.Config{Mode: parser.ParseComments})
++	if err != nil {
++		return nil, fmt.Errorf("parse: %w", err)
++	}
++	pkg, err := cl.NewPackage("", pkgs["main"], cltest.Conf)
++	if err != nil {
++		return nil, err
++	}
++	var b bytes.Buffer
++	if err = pkg.WriteTo(&b); err != nil {
++		return nil, err
++	}
++	return b.Bytes(), nil
++}
++
++func smGoRun(code []byte) (string, error) {
++	dir, err := os.MkdirTemp(tmpDir, "sm")
++	if err != nil {
++		return "", err
++	}
++	defer os.RemoveAll(dir)
++	infile := filepath.Join(dir, "main.go")
++	if err = os.WriteFile(infile, code, 0666); err != nil {
++		return "", err
++	}
++	var stdout, stderr bytes.Buffer
++	cmd := exec.Command("go", "run", infile)
++	cmd.Dir = tmpDir
++	cmd.Stdout = &stdout
++	cmd.Stderr = &stderr
++	if err = cmd.Run(); err != nil {
++		return "", fmt.Errorf("%v\n%s", err, stderr.String())
++	}
++	return stdout.String(), nil
++}
++
++// smRunFiles compiles the files, runs the generated program and compares its
++// output.
++func smRunFiles(t *testing.T, files map[string]string, expected string) {
++	t.Helper()
++	code, err := smGen(files)
++	if err != nil {
++		t.Fatalf("compile failed: %v", err)
++	}
++	result, err := smGoRun(code)
++	if err != nil {
++		t.Fatalf("running the generated code failed: %v\n%s", err, code)
++	}
++	if result != expected {
++		t.Fatalf("=> Result:\n%s\n=> Expected:\n%s\n=> Generated:\n%s", result, expected, code)
++	}
++}
++
++func smRun(t *testing.T, src, expected string) {
++	t.Helper()
++	smRunFiles(t, map[string]string{"bar.xgo": src}, expected)
++}
++
++// smError checks that compiling the files fails with a compile (not syntax)
++// error reported in file on the line marked with `// ERROR`.
++func smError(t *testing.T, file string, files map[string]string) {
++	t.Helper()
++	line := 0
++	for i, l := range strings.Split(files[file], "\n") {
++		if strings.Contains(l, "// ERROR") {
++			line = i + 1
++		}
++	}
++	if line == 0 {
++		t.Fatal("no // ERROR marker in test source")
++	}
++	_, err := smGen(files)
++	if err == nil {
++		t.Fatalf("compiling succeeded, want an error at %s:%d:\n%s", file, line, files[file])
++	}
++	msg := err.Error()
++	if strings.HasPrefix(msg, "panic: ") || strings.HasPrefix(msg, "parse: ") {
++		t.Fatalf("want a compile error at %s:%d, got: %v", file, line, err)
++	}
++	if want := fmt.Sprintf("%s:%d:", file, line); !strings.Contains(msg, want) {
++		t.Fatalf("want an error reported at %s:%d, got: %v", file, line, err)
++	}
++}
++
++func TestStaticConstants_8b23ff(t *testing.T) {
++	smRun(t, `
++type Color int
++
++const Color.name = "color"
++const Color.Max Color = 3
++
++const (
++	Color.First = iota
++	Color.Second
++	Third
++	Color.Fourth
++)
++
++const Color.A, B = 10, 20
++
++var palette [Color.Max]string
++
++printf "%v %T %v\n", Color.name, Color.Max, Color.Max
++println Color.First, Color.Second, Third, Color.Fourth
++println Color.A, B, len(palette), Color.A*2+B
++`, `color main.Color 3
++0 1 2 3
++10 20 3 40
++`)
++}
++
++func TestStaticVariables_8b23ff(t *testing.T) {
++	smRun(t, `
++type Counter struct{}
++
++var Counter.count int = 3
++var Counter.names = ["a", "b"]
++var Counter.total = Counter.count * 10
++var Counter.later = Counter.base + 1
++var Counter.base = 41
++var Counter.byName map[string]int
++
++Counter.count++
++Counter.count += 10
++println Counter.count, Counter.total, Counter.later
++p := &Counter.count
++*p = 100
++println Counter.count
++Counter.names = append(Counter.names, "c")
++println Counter.names, len(Counter.names)
++Counter.byName = {"x": 1}
++Counter.byName["y"] = 2
++println len(Counter.byName), Counter.byName["y"]
++`, `14 30 42
++100
++[a b c] 3
++2 2
++`)
++}
++
++func TestStaticMethods_8b23ff(t *testing.T) {
++	smRun(t, `
++type Math int
++
++var Math.calls int
++var Math.first = Math.Fact(3)
++
++func Math.Two() int {
++	Math.calls++
++	return 2
++}
++
++func Math.Fact(n int) int {
++	Math.calls++
++	if n <= 1 {
++		return 1
++	}
++	return n * Math.Fact(n-1)
++}
++
++func Math.Sum(xs ...int) (s int) {
++	for _, x := range xs {
++		s += x * Math.Two()
++	}
++	return
++}
++
++println Math.first, Math.calls
++println Math.Two(), Math.Fact(4), Math.Sum(1, 2, 3)
++println Math.calls
++`, `6 3
++2 24 12
++11
++`)
++}
++
++func TestStaticMembersPerType_8b23ff(t *testing.T) {
++	smRun(t, `
++type A struct{}
++type B struct{}
++
++const n = "global"
++
++const A.n = "A"
++var B.n = "B"
++
++func A.Get() string {
++	return A.n + "/" + B.n
++}
++
++func B.Get() string {
++	return B.n + "/" + n
++}
++
++B.n = "b"
++println n, A.n, B.n, A.Get(), B.Get()
++`, `global A b A/b b/global
++`)
++}
++
++func TestStaticMembersInClassfile_8b23ff(t *testing.T) {
++	smRunFiles(t, map[string]string{
++		"Rect.gox": `
++const .Max = 10
++
++const Rect.Min = 1
++
++var (
++	.count int
++	.names []string = ["a"]
++	w, h   int
++)
++
++func .New(w, h int) *Rect {
++	count++
++	return &Rect{w: w, h: h}
++}
++
++func Rect.Unit() *Rect {
++	return New(Min, Min)
++}
++
++func Double() *Rect {
++	names = append(names, "d")
++	return New(w*Max, h*2)
++}
++
++func Area() int {
++	return w * h
++}
++`,
++		"main.xgo": `
++r := Rect.Unit()
++d := r.Double()
++println d.w, d.h, d.Area()
++println Rect.count, Rect.Max, Rect.Min, Rect.names
++Rect.count = 7
++println Rect.count
++a := Rect.New(2, 3).Area()
++println a, Rect.count
++`,
++	}, `10 2 20
++2 10 1 [a d]
++7
++6 8
++`)
++}
++
++func TestStaticMembersShadowing_8b23ff(t *testing.T) {
++	smRunFiles(t, map[string]string{
++		"Shape.gox": `
++var (
++	.kind = "static"
++	size  int
++)
++
++func Kind() string {
++	return kind
++}
++
++func Local() string {
++	kind := "local"
++	return kind
++}
++
++func .Describe() string {
++	return kind + ":" + label
++}
++`,
++		"main.xgo": `
++const kind = "global"
++const label = "L"
++
++s := &Shape{}
++println kind, Shape.kind, s.Kind(), s.Local(), Shape.Describe()
++`,
++	}, `global static static local static:L
++`)
++}
++
++func TestStaticMemberErrors_8b23ff(t *testing.T) {
++	smError(t, "bar.xgo", map[string]string{"bar.xgo": `
++type T struct{}
++
++const U.x = 1 // ERROR
++`})
++	smError(t, "bar.xgo", map[string]string{"bar.xgo": `
++var V int
++
++var V.x = 1 // ERROR
++`})
++	smError(t, "bar.xgo", map[string]string{"bar.xgo": `
++type T int
++
++func (T) Size() int { return 1 }
++
++var T.Size int // ERROR
++`})
++	smError(t, "bar.xgo", map[string]string{"bar.xgo": `
++type T int
++
++const T.k = 1
++
++T.k = 2 // ERROR
++`})
++	smError(t, "Rect.gox", map[string]string{
++		"Rect.gox": `
++const .Max = 10
++
++func Grow() {
++	Max = 11 // ERROR
++}
++`,
++		"main.xgo": `
++println Rect.Max
++`,
++	})
++}
+diff --git a/test.sh b/test.sh
+new file mode 100755
+index 00000000..6db5483c
+--- /dev/null
++++ b/test.sh
+@@ -0,0 +1,43 @@
++#!/usr/bin/env bash
++# Usage: ./test.sh [--output_path <junit.xml>] <base|new>
++#
++#   base  the existing tests.
++#   new   the static member tests.
++set -uo pipefail
++
++cd /app
++
++OUTPUT_PATH=""
++if [ "${1:-}" = "--output_path" ]; then
++  OUTPUT_PATH="$2"
++  shift 2
++fi
++
++MODE="${1:-new}"
++
++TEST_LOG="$(mktemp)"
++
++case "$MODE" in
++  base)
++    # TestTestxgo/domaintext-md imports a module that go.mod doesn't require,
++    # so it needs the network; it is left out.
++    go test -count=1 -v -skip '_8b23ff$|^TestTestxgo$' ./... 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    go test -count=1 -v -run '^TestTestxgo$' -skip '^TestTestxgo$/^domaintext-md$' ./cl/ 2>&1 | tee -a "$TEST_LOG"
++    [ "${PIPESTATUS[0]}" -eq 0 ] || STATUS=1
++    ;;
++  new)
++    go test -count=1 -v -run '_8b23ff$' ./cl/ 2>&1 | tee "$TEST_LOG"
++    STATUS=${PIPESTATUS[0]}
++    ;;
++  *)
++    echo "unknown mode: $MODE (expected base or new)" >&2
++    exit 2
++    ;;
++esac
++
++if [ -n "$OUTPUT_PATH" ]; then
++  go-junit-report -set-exit-code < "$TEST_LOG" > "$OUTPUT_PATH" || true
++fi
++
++exit "$STATUS"
