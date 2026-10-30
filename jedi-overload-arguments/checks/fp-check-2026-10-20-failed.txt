@@ -1,0 +1,197 @@
+===== 5-8e873747f90a.jsonl 2026-10-20T03:56:59.819Z
+15613 /tmp/claude-1000/-home-tes-Desktop-ADK-olympus-project/48361a5a-ef18-4a75-a5b5-8e873747f90a/scratchpad/fp.json
+{
+ "canContest": false,
+ "canEditKeepPaths": true,
+ "canOverrideFailed": false,
+ "canRun": true,
+ "completedAt": 1792467440305,
+ "hasEligiblePasses": true,
+ "hasMinimumRunCohort": true,
+ "minWorkingRuns": 12,
+ "passed": false,
+ "passesChangedSinceCheck": false,
+ "refunded": false,
+ "requestedAt": 1792465004984,
+ "resultSummary": [
+  {
+   "adjudication": {
+    "changedByPanel": true,
+    "confidence": "high",
+    "distrustedRuns": [
+     "judge-c"
+    ],
+    "durationSeconds": 279,
+    "feedback": "The hidden test test_dict_with_alternative_entries should include alternatives that share a key with values only a later overload accepts. For example, `m = {\"p\": C} if random.random() else {\"p\": A}; f(**dict(m))` should give RC, and the candidate gives RB. Plain `f(**m)` without the dict(...) wrapper should be covered too. In the candidate, arguments.py yields the entries of each alternative mapping one after another, so a repeated key overwrites the earlier one or is reported as a duplicate keyword; the reference merges alternatives per key (_merge_alternative_entries). Also: fresh worktrees need the typeshed and django-stubs submodules, or 48 of the 53 hidden tests fail for unrelated reasons.",
+    "independentReasoning": "The candidate adds a real annotation matcher (gradual/matching.py) and wires it into ExecutedParamName.matches_signature. That covers type[X], TypeVar bounds and constraints, Optional, containers, and per-argument checks for *args/**kwargs. It passes all 53 hidden tests once the typeshed submodule is linked in. My 31 probes (Optional[type], mixed */** unpacking, dict(...) call forms, partial, TypeVar bounds and constraints, dict K/V, methods) all gave the same results as the reference. I had no…",
+    "independentSignal": "true_positive",
+    "label": "adjudicator",
+    "ok": true,
+    "panelAssessment": {
+     "judge-a": {
+      "discriminates": true,
+      "fairProbe": true,
+      "notes": "Re-ran probe-tests.sh. Verifier state: 6 failed / 88 passed. Reference state: those 6 tests pass (it fails 6 different Optional/None probes that the candidate passes). Same result for every hash seed. The probe follows directly from a sentence in the prompt. The verdict holds; I would raise its con…",
+      "reran": true
+     },
+     "judge-c": {
+      "discriminates": false,
+      "fairProbe": false,
+      "notes": "The probe fails 5 of 45 on both the candidate and the reference. It sets up the alternatives with `if int():`; jedi likely evaluates that condition statically and follows one branch, so the probe does not test the rule it claims to. Its conclusion is right, but the evidence does not support it; the…",
+      "reran": true
+     }
+    },
+    "rating": "bad",
+    "rawSignal": "false_positive",
+    "reasoning": "The prompt says: 'If an argument, or a value derived from an unpacked argument, can have multiple types (e.g. Union), the annotation must accept all of those types', and dicts unpacked at the call count. The hidden test test_dict_with_alternative_entries ('Every possible mapping has to be accepted') only uses alternatives the candidate happens to handle: same key with values that type[A] accepts either way, or different keys. I ran it in the same pytest harness and with the same header and overloads as the hidden test (test_adj_alt.py). With overloads type[A]->RA, type[C]->RB, type->RC, the candidate returns ['RB'] instead of ['RC'] for each of: `m = {\"p\": C} if random.random() else {\"p\": A}; f(**dict(m))` (exactly the hidden test's form), the same with plain `f(**m)`, the A|C order, and `dict(p=C) if ... else dict(p=A)`. With a named parameter, `f(**m)` returns all three results ['RA','RB','RC'] because of a false duplicate-keyword error. The reference passes all 8 cases; the candidate passes only the 3 control cases. I re-ran judge-a's probe: 6 failures on the candidate, the same 6 tests pass on the reference, and the result did not change across PYTHONHASHSEED 0-5. Cause: when the ** value can be one of several mappings, each mapping's entries are yielded one after another, and a repeated key overwrites the earlier value (param.py non_matching_keys[key] = argument), so only one alternative is checked. This breaks a rule the prompt states directly, in the exact scenario th…",
+    "reran": true,
+    "signal": "false_positive",
+    "skipped": false,
+    "tags": [
+     "CONFIRMED_FP",
+     "RERAN_PROBE",
+     "PANEL_CHANGED_MY_MIND",
+     "NARROW_VERIFIER",
+     "JUDGE_C_PROBE_NONDISCRIMINATING"
+    ],
+    "trustedRuns": [
+     "judge-a"
+    ]
+   },
+   "durationSeconds": 2422,
+   "finalConfidence": "high",
+   "finalSignal": "false_positive",
+   "judgeDissent": false,
+   "judges": [
+    {
+     "confidence": "medium",
+     "discriminatingTestNames": [
+      "test_fp_probe_overloads3.py::test_probe3[kwargs dict-call alternatives C|A]",
+      "test_fp_probe_overloads3.py::test_probe3[kwargs dict-call alternatives A|C]",
+      "test_fp_probe_overloads3.py::test_probe3[kwargs dict-literal alternatives C|A]",
+      "test_fp_probe_overloads3.py::test_probe3[named param dict-call alternatives]",
+      "test_fp_probe_overloads3.py::test_probe3[named param dict-literal alternatives]",
+      "test_fp_probe_overloads2.py::test_probe2[dict alt via var]"
+     ],
+     "durationSeconds": 402,
+     "fairness": "fair",
+     "feedback": "The matcher is thorough: it beats the reference on Optional/None and forward-ref TypeVar bounds. The gap is in arguments.py. For `**el` the code iterates each inferred mapping and yields its entries in sequence, so alternatives that share a key become duplicate keywords. param.py then keeps only one of them (for **kwargs) or flags a duplicate (for named params). Merging the values of alternative mappings per key, as the reference's `_merge_alternative_entries` does, would fix it. The hidden tests miss this because they only cover alternatives wrapped in `dict(m)`.",
+     "foundDiscriminator": true,
+     "label": "judge-a",
+     "nFalsificationAttempts": 3,
+     "nRequirements": 11,
+     "nRequirementsFailed": 1,
+     "ok": true,
+     "quickSummary": "Strong candidate that still fails the prompt's 'all alternative types must be accepted' rule when a ** argument can be one of several mappings sharing a key (`d = dict(p=C) if c else dict(p=A); f(**d)` picks the type[C] overload). The reference handles it, so this is a narrow false positive.",
+     "rating": "bad",
+     "rawSignal": "false_positive",
+     "signal": "false_positive",
+     "skipped": false,
+     "tags": [
+      "OUTCOME_VERIFIER_PASSED",
+      "FALSIFICATION_ATTEMPTED",
+      "FALSIFICATION_DISCRIMINATOR_FOUND",
+      "ARTIFACT_PROBE_TESTS_PATCH_WRITTEN",
+      "ARTIFACT_PROBE_TESTS_ENTRYPOINT_WRITTEN",
+      "FAIRNESS_FAIR",
+      "VERDICT_FALSE_POSITIVE"
+     ]
+    },
+    {
+     "confidence": "high",
+     "discriminatingTestNames": [
+      "branch_union_mapping_unpack",
+      "branch_union_dict_call_unpack",
+      "branch_union_dict_pairs_unpack",
+      "partial_bound_union_mapping",
+      "partial_invocation_union_mapping"
+     ],
+     "durationSeconds": 2134,
+     "fairness": "fair",
+     "feedback": "The pass misses the prompt's all-types rule: conditional dict alternatives unpacked into **kwargs, including through functools.partial, yield one overload result instead of the required fallback union. The reference shares this gap, but the prompt explicitly requires both results.",
+     "foundDiscriminator": true,
+     "label": "judge-c",
+     "nFalsificationAttempts": 3,
+     "nRequirements": 9,
+     "nRequirementsFailed": 2,
+     "ok": true,
+     "quickSummary": "False positive: unpacked union values collapse through **kwargs and partial; reference shares the gap.",
+     "rating": "bad",
+     "rawSignal": "false_positive",
+     "signal": "false_positive",
+     "skipped": false,
+     "tags": [
+      "OUTCOME_VERIFIER_PASSED",
+      "FALSIFICATION_ATTEMPTED",
+      "FALSIFICATION_DISCRIMINATOR_FOUND",
+      "ARTIFACT_PROBE_TESTS_PATCH_WRITTEN",
+      "ARTIFACT_PROBE_TESTS_ENTRYPOINT_WRITTEN",
+      "FAIRNESS_FAIR",
+      "VERDICT_FALSE_POSITIVE",
+      "SPEC_GAP_REFERENCE_ALSO_FAILS"
+     ]
+    }
+   ],
+   "runId": "rd79p0603gjnft23rxjnbk08k18gjxqc",
+   "skipped": false,
+   "taskAgentCodename": "Vega"
+  },
+  {
+   "adjudication": {
+    "changedByPanel": true,
+    "confidence": "high",
+    "distrustedRuns": [
+     "judge-c"
+    ],
+    "durationSeconds": 613,
+    "feedback": "The candidate's overload engine is broad and mostly correct. However, `_tuple_matches` detects `tuple[X, ...]` by the inferred class name 'ellipsis', which misses `EllipsisType` (typeshed aliases `ellipsis = EllipsisType`), so homogeneous-tuple overloads resolve wrongly under most hash seeds. The existing TupleGenericManager.is_homogenous_tuple() is the robust check. The verifier passed by luck of test order and cache state: the same hidden test fails when run alone. Maintainers should run the new tests one at a time and under several PYTHONHASHSEED values so this kind of flake gets caught.",
+    "independentReasoning": "Before reading the panel, I found the candidate correct on about 18 prompt-derived probes (type[...], TypeVar bound/constraints/unbound, Optional, Union, list/dict elements, *args/**kwargs aggregation, every dict(...) call form, functools.partial), and the full base suite passed (4013 passed). I saw that the hidden tuple[type[C], ...] case fails deterministically when run alone but passes in the full suite. My standalone probes seemed to show the reference failing similar tuple cases, so I prov…",
+    "independentSignal": "true_positive",
+    "label": "adjudicator",
+    "ok": true,
+    "panelAssessment": {
+     "judge-a": {
+      "discriminates": true,
+      "fairProbe": true,
+      "notes": "Correct root cause: name-based ellipsis detection misses EllipsisType. Re-ran its probe under seeds 0-7: candidate 3-6 failures every time, reference 19/19 every time. The other-forms probes are non-discriminating, as the judge said.",
+      "reran": true
+     },
+     "judge-c": {
+      "discriminates": false,
+      "fairProbe": false,
+      "notes": "Its only discriminator, **dict(zip(['x'], [B()])), fails identically for the reference and the clean base, because jedi cannot infer zip elements. That is a limitation of inference, not an omission in the candidate, so it is over-flagging. The judge reached the right overall verdict for the wrong r…",
+      "reran": false
+     }
+    },
+    "rating": "bad",
+    "rawSignal": "false_positive",
+    "reasoning": "Prompt-required container matching fails for homogeneous tuples. The candidate's _tuple_matches spots `tuple[X, ...]` with `v.py__name__() == 'ellipsis'`, but jedi's typeshed infers `...` as either `ellipsis` or `EllipsisType` (`ellipsis = EllipsisType`), depending on hash seed and cache state. When it gets EllipsisType, the annotation is treated as a fixed 2-tuple and the wrong overload is picked. What I ran: (1) The hidden test test_elements_of_containers[tuple[type[A], ...]-tuple[type[C], ...]-f((C, C))] fails for the candidate under PYTHONHASHSEED 0-5 when run alone (it got ['RC'], expected ['RB']); the reference passes under all of those seeds. The graded 53/53 pass came from test ordering and cache state. (2) Judge-a's probe file run with pytest in the verifier and reference worktrees: candidate 3-6 of 19 failing under each of seeds 0-7, reference 19/19 under every seed. (3) My own probe scripts, with PYTHONPATH pinned to each worktree: candidate 2-4 tuple cases wrong per seed (including Tuple[Type[A], ...] with (C,) and tuple[int, ...] vs tuple[str, ...]); reference 0 wrong across seeds 0-5. Earlier, my standalone scripts had picked up /app's installed jedi instead of the worktree; that error is what made the reference look flaky in my independent pass. The prompt says every element of a container argument must be accepted
+===== 5-8e873747f90a.jsonl 2026-10-20T03:57:40.604Z
+Lỗi "No false positives" là do **cả 2 run Vega pass** (Vega #2 và Vega #8, đợt re-eval 1) đều bị FP review panel đánh `false_positive` với độ tin cậy cao. Hai run hỏng vì hai lý do khác nhau. Trong cả hai lần, adjudicator chỉ tin judge-a, còn judge-c bị loại vì probe của nó không phân biệt được candidate với reference.
+
+## Run 1: `rd79p0603gjn` (Vega #2): test dict với các mapping thay thế còn hẹp
+
+- **Lỗi của candidate:** khi `**m` có thể là một trong nhiều mapping, `arguments.py` của candidate yield entry của từng mapping nối tiếp nhau. Nếu các mapping **trùng key**, giá trị sau ghi đè giá trị trước (`non_matching_keys[key] = argument`), nên chỉ một alternative được kiểm tra. Với tham số có tên thì nó lại báo nhầm là duplicate keyword. Reference xử lý đúng vì gộp theo key bằng `_merge_alternative_entries`.
+- **Lý do test không bắt được:** `test_dict_with_alternative_entries` chỉ có các case candidate tình cờ làm đúng: cùng key nhưng cả hai giá trị đều được `type[A]` nhận, hoặc khác key.
+- **Probe phân biệt được** (overload `type[A]->RA`, `type[C]->RB`, `type->RC`):
+  ```python
+  m = {"p": C} if random.random() else {"p": A}; f(**dict(m))   # cần ['RC'], candidate trả ['RB']
+  ```
+  Probe này cũng hỏng với `f(**m)` không bọc `dict(...)`, khi đảo thứ tự A|C, và với `dict(p=C) if ... else dict(p=A)`.
+- **Cách sửa:** thêm vào test các case trùng key mà chỉ overload sau mới nhận được. Cần có cả dạng `f(**m)`, không chỉ `f(**dict(m))`, và cả trường hợp tham số có tên.
+
+## Run 2: `rd7cbx229j7z` (Vega #8): test pass nhờ may mắn (phụ thuộc hash seed)
+
+- **Lỗi của candidate:** `_tuple_matches` nhận diện `tuple[X, ...]` bằng cách kiểm tra `py__name__() == 'ellipsis'`. Nhưng typeshed định nghĩa `ellipsis = EllipsisType`, nên tùy `PYTHONHASHSEED` và trạng thái cache, jedi có thể suy ra `EllipsisType`. Khi đó annotation bị coi là tuple cố định 2 phần tử và chọn sai overload.
+- **Lý do vẫn pass:** test hidden `test_elements_of_containers[tuple[type[A], ...]-tuple[type[C], ...]-f((C, C))]` fail khi chạy riêng lẻ với seed 0–5, nhưng pass khi chạy cả suite nhờ thứ tự test và cache. Reference pass với mọi seed.
+- **Cách sửa:** trong `test.sh`, chạy test mới với vài giá trị `PYTHONHASHSEED` hoặc tách process theo từng test, để thứ tự và cache không che lỗi. Thêm cả case `Tuple[Type[A], ...]` với `(C,)` và `tuple[int, ...]` vs `tuple[str, ...]`.
+
+## Những điểm phụ
+
+- Adjudicator ghi chú: worktree mới cần submodule typeshed và django-stubs, nếu không 48/53 test fail vì lý do không liên quan. Dockerfile đã fetch hai submodule này, nên đây chủ yếu là vấn đề môi trường của panel.
+- Judge-c còn kêu về `dict(zip(...))` và `functools.partial` với union mapping. Adjudicator loại hai probe này vì reference cũng fail và jedi không suy ra được phần tử của `zip`. Không cần sửa, nhưng nên cân nhắc thu hẹp câu "in any call form that `dict` supports" để panel không bám vào nữa.
+- **Thư mục local `olympus-kh7d8...-v0` đã cũ hơn bản trên platform:** `test.patch` local không có test tuple nào, và câu trong description mà panel trích ("a value derived from an unpacked argument") cũng không có trong `task.md`. Nên tải lại bản mới nhất trước khi sửa.
+
+Sau khi sửa test, phải chạy lại agents rồi chạy lại FP check (8 token). Nếu test chặt hơn khiến Vega không còn run nào pass thì lại rớt tiêu chí Vega >0%.
+
+Lệnh `runs show` đang bị server error, nên tôi lấy kết quả trực tiếp từ query `fpReview.getFpCheckForVersion`. Toàn bộ JSON ở `/tmp/claude-1000/-home-tes-Desktop-ADK-olympus-project/48361a5a-ef18-4a75-a5b5-8e873747f90a/scratchpad/fp.json`.
