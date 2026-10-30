@@ -1,0 +1,128 @@
+{
+  "canContest": false,
+  "canEditKeepPaths": true,
+  "canOverrideFailed": false,
+  "canRun": true,
+  "completedAt": 1791942247949,
+  "hasEligiblePasses": true,
+  "hasMinimumRunCohort": true,
+  "minWorkingRuns": 12,
+  "passed": true,
+  "passesChangedSinceCheck": false,
+  "refunded": false,
+  "requestedAt": 1791941061506,
+  "resultSummary": [
+    {
+      "adjudication": {
+        "changedByPanel": false,
+        "confidence": "high",
+        "distrustedRuns": [],
+        "durationSeconds": 88,
+        "feedback": "This is a legitimate implementation. It uses a NullSafeChain node with a sentinel error, which differs structurally from the reference, but the behavior matches it on every prompt-required case. The hidden tests cover the stated semantics well. No action is needed on the verifier.",
+        "independentReasoning": "Before reading the critiques, I built CLI binaries for the candidate and the reference and ran 55 evaluator probes covering ?? precedence and laziness, ?. on null, missing, hidden, out-of-bounds and negative indices, strings, self/super, chain skipping through calls, indices and slices, chain boundaries at brackets and parentheses, and o?.a.b still raising an error. Output was identical between the two on every probe. I also ran 9 formatter probes, and they matched the reference too. The full g…",
+        "independentSignal": "true_positive",
+        "label": "adjudicator",
+        "ok": true,
+        "panelAssessment": {
+          "judge-a": {
+            "discriminates": false,
+            "fairProbe": true,
+            "notes": "Verdict is TP. I re-ran its probes on the candidate plus hidden tests and they pass. Its findings agree with my own reference-diff sweep.",
+            "reran": true
+          },
+          "judge-c": {
+            "discriminates": false,
+            "fairProbe": true,
+            "notes": "Verdict is TP and its probes are prompt-grounded with no discriminator. I did not re-run it because my own sweep already covers its claims.",
+            "reran": false
+          }
+        },
+        "rating": "good",
+        "rawSignal": "true_positive",
+        "reasoning": "The candidate's evaluator output was byte-identical to the reference across 55 edge-case probes (artifacts/cases.txt, probe_out.txt). Formatter output matched on 9 spacing probes. go test ./... passes with the hidden tests applied. Both judges independently reached true_positive, and neither found a discriminator. I re-ran judge-a's probe suite on the verifier state and it passes.",
+        "reran": true,
+        "signal": "true_positive",
+        "skipped": false,
+        "tags": [
+          "PANEL_AGREED_WITH_ME",
+          "RERAN_PROBE",
+          "REFERENCE_DIFF_SWEEP"
+        ],
+        "trustedRuns": [
+          "judge-a",
+          "judge-c"
+        ]
+      },
+      "durationSeconds": 1176,
+      "finalConfidence": "high",
+      "finalSignal": "true_positive",
+      "judgeDissent": false,
+      "judges": [
+        {
+          "confidence": "high",
+          "discriminatingTestNames": [],
+          "durationSeconds": 337,
+          "fairness": "fair",
+          "feedback": "The candidate's NullSafeChain-plus-sentinel design is a legitimate alternative to the reference's iterative chain evaluator. Coalescing laziness, precedence, the missing/null/out-of-bounds rules, self/super, assertions, chain skipping and chain boundaries all behave as the prompt requires. The only divergences are unspecified: ?. followed by an object literal, and formatter whitespace around a ?.[ split across lines.",
+          "foundDiscriminator": false,
+          "label": "judge-a",
+          "nFalsificationAttempts": 6,
+          "nRequirements": 9,
+          "nRequirementsFailed": 0,
+          "ok": true,
+          "quickSummary": "A real solve. The sentinel-based ?. chain and lazy ?? matched the reference on every fair probe across the evaluator, formatter and linter.",
+          "rating": "good",
+          "rawSignal": "true_positive",
+          "signal": "true_positive",
+          "skipped": false,
+          "tags": [
+            "OUTCOME_VERIFIER_PASSED",
+            "FALSIFICATION_ATTEMPTED",
+            "FALSIFICATION_NO_FAIR_DISCRIMINATOR",
+            "ARTIFACT_PROBE_TESTS_PATCH_WRITTEN",
+            "ARTIFACT_PROBE_TESTS_ENTRYPOINT_WRITTEN",
+            "ARTIFACT_SURRENDER_NOTE_WRITTEN",
+            "FAIRNESS_FAIR",
+            "VERDICT_TRUE_POSITIVE",
+            "UNDERSPECIFIED_EDGE"
+          ]
+        },
+        {
+          "confidence": "high",
+          "discriminatingTestNames": [],
+          "durationSeconds": 1071,
+          "fairness": "fair",
+          "feedback": "The pass is deserved. The candidate meets all explicit evaluator, parser, formatter, and linter requirements; no fair probe discriminated. The standalone probe patch and runner are saved under /var/artifacts/fp-critiques/judge-c/fp-critique-artifacts.",
+          "foundDiscriminator": false,
+          "label": "judge-c",
+          "nFalsificationAttempts": 7,
+          "nRequirements": 7,
+          "nRequirementsFailed": 0,
+          "ok": true,
+          "quickSummary": "True positive: the candidate meets the explicit semantics and integration requirements; no fair discriminator was found.",
+          "rating": "good",
+          "rawSignal": "true_positive",
+          "signal": "true_positive",
+          "skipped": false,
+          "tags": [
+            "OUTCOME_VERIFIER_PASSED",
+            "FALSIFICATION_ATTEMPTED",
+            "FALSIFICATION_NO_FAIR_DISCRIMINATOR",
+            "ARTIFACT_PROBE_TESTS_PATCH_WRITTEN",
+            "ARTIFACT_PROBE_TESTS_ENTRYPOINT_WRITTEN",
+            "ARTIFACT_SURRENDER_NOTE_WRITTEN",
+            "FAIRNESS_FAIR",
+            "VERDICT_TRUE_POSITIVE"
+          ]
+        }
+      ],
+      "runId": "rd77ptm9173gfcr9jh124q3vas8g9327",
+      "skipped": false,
+      "taskAgentCodename": "Orion"
+    }
+  ],
+  "state": "passed",
+  "tokenCost": 8,
+  "viewerIsAuthor": true,
+  "workingRunCount": 17
+}
