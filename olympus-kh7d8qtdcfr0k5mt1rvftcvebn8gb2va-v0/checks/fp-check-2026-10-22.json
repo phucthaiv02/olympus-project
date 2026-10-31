@@ -1,0 +1,145 @@
+{
+ "canContest": false,
+ "canEditKeepPaths": true,
+ "canOverrideFailed": false,
+ "canRun": true,
+ "completedAt": 1792559119303,
+ "hasEligiblePasses": true,
+ "hasMinimumRunCohort": true,
+ "minWorkingRuns": 12,
+ "passed": true,
+ "passesChangedSinceCheck": false,
+ "refunded": false,
+ "requestedAt": 1792556850123,
+ "resultSummary": [
+  {
+   "adjudication": {
+    "changedByPanel": false,
+    "confidence": "high",
+    "distrustedRuns": [
+     "judge-c"
+    ],
+    "durationSeconds": 187,
+    "feedback": "Deserved pass. The candidate's matcher is general and handles prompt-stated cases even better than the reference (forward-ref TypeVar bounds and constraints, type[A] | None). The critique and adjudication harness must populate jedi/third_party/typeshed (a git submodule) in fresh worktrees. Otherwise jedi inference breaks and judges report bogus failures, as happened with judge-c.",
+    "independentReasoning": "The candidate adds a general annotation-acceptance matcher (type[...], Type, type[Any], TypeVar bounds/constraints, Optional, Union, containers with dict key and value checks, tuples). It applies the matcher to every argument collected into *args/**kwargs, expands all dict(...) call forms during overload matching, and fixes functools.partial merging so call keywords replace partial keywords. After copying typeshed into the worktrees, the 62 hidden tests pass. My 21 extra probes on prompt behavi…",
+    "independentSignal": "true_positive",
+    "label": "adjudicator",
+    "ok": true,
+    "panelAssessment": {
+     "judge-a": {
+      "discriminates": false,
+      "fairProbe": true,
+      "notes": "Re-ran its 59 probes: candidate 59/59, reference 57/59 (pipe_optional, typevar_constraint_forward). Its true_positive verdict holds.",
+      "reran": true
+     },
+     "judge-c": {
+      "discriminates": false,
+      "fairProbe": false,
+      "notes": "Its replay ran with an empty typeshed submodule, which produced the spurious failures (it even saw hidden tests fail). With the environment fixed, the candidate passes 20/21. The remaining failure (dict({'other': 0}, item=1)) also fails on the reference, and the probe's expectation is wrong: the ex…",
+      "reran": true
+     }
+    },
+    "rating": "good",
+    "rawSignal": "true_positive",
+    "reasoning": "I re-ran the hidden suite in worktrees with jedi/third_party/typeshed and django-stubs populated: 62/62 on both candidate and reference. Without them, both fail 54/62 because of the empty submodule. The 552 overload/pep0484 integration cases pass. My 21 probes: candidate 21/21, reference 20/21. I re-ran judge-a's 59 probes: candidate 59/59, reference 57/59. I re-ran judge-c's 21 probes: candidate 20/21. Judge-c's reported 15 failures came from the broken environment, and its replay even contradicts the hidden tests passing. The one probe that still fails, choose(**dict({\"other\": 0}, item=1)), also fails on the reference and expects the wrong answer. The call passes an unexpected keyword 'other', so no overload matches. The prompt says a no-match call should combine all overloads, which is what the candidate returns.",
+    "reran": true,
+    "signal": "true_positive",
+    "skipped": false,
+    "tags": [
+     "PANEL_AGREED_WITH_ME",
+     "OVERFLAGGED",
+     "RERAN_PROBE",
+     "SOLO_FP_REJECTED",
+     "ENV_SUBMODULE_MISSING_IN_WORKTREE"
+    ],
+    "trustedRuns": [
+     "judge-a"
+    ]
+   },
+   "durationSeconds": 2257,
+   "finalConfidence": "high",
+   "finalSignal": "true_positive",
+   "judgeDissent": true,
+   "judges": [
+    {
+     "confidence": "high",
+     "discriminatingTestNames": [],
+     "durationSeconds": 275,
+     "fairness": "fair",
+     "feedback": "Deserved pass. The candidate implemented type-checker-like overload matching that holds up beyond the hidden tests: forward-ref TypeVar constraints, `type[A] | None`, sets and dict comprehensions, multiple ** unpackings, dict(...) built from variables, and partials of bound methods, nested partials and partials with star/dict arguments. It beats the reference on two prompt-stated cases. Minor weakness: ** unpacking of an iterable it can't infer (dict(zip(...))) is treated as empty and picks the first overload instead of falling back to the union. This is pre-existing jedi behavior and outside the stated requirements.",
+     "foundDiscriminator": false,
+     "label": "judge-a",
+     "nFalsificationAttempts": 8,
+     "nRequirements": 11,
+     "nRequirementsFailed": 0,
+     "ok": true,
+     "quickSummary": "Real solve: the candidate's general overload matcher passed 59/59 fair adversarial probes. Its only misses are on behaviors the task doesn't require (dict(zip), Callable, plain-T bounds), where base or reference also fail.",
+     "rating": "good",
+     "rawSignal": "true_positive",
+     "signal": "true_positive",
+     "skipped": false,
+     "tags": [
+      "OUTCOME_VERIFIER_PASSED",
+      "FALSIFICATION_ATTEMPTED",
+      "FALSIFICATION_NO_FAIR_DISCRIMINATOR",
+      "ARTIFACT_PROBE_TESTS_PATCH_WRITTEN",
+      "ARTIFACT_PROBE_TESTS_ENTRYPOINT_WRITTEN",
+      "ARTIFACT_SURRENDER_NOTE_WRITTEN",
+      "FAIRNESS_FAIR",
+      "UNDERSPECIFIED_EDGE",
+      "VERDICT_TRUE_POSITIVE"
+     ]
+    },
+    {
+     "confidence": "medium",
+     "discriminatingTestNames": [
+      "test_type_parameter_accepts_subclasses_but_rejects_instances",
+      "test_typevar_constraint_rejects_unrelated_class",
+      "test_nonmatching_first_type_overload_falls_through",
+      "test_container_requires_every_element_to_match",
+      "test_mapping_checks_both_keys_and_values",
+      "test_dict_constructor_unpacking_counts_keyword_value",
+      "test_partial_overload_uses_call_time_class",
+      "test_unpacked_positional_arguments_are_included",
+      "test_type_and_type_any_accept_classes_not_instances",
+      "test_optional_accepts_none_and_the_underlying_type"
+     ],
+     "durationSeconds": 2055,
+     "fairness": "fair",
+     "feedback": "The pass is undeserved: the candidate selects type[X] for instances, over-accepts constrained/container inputs, fails dict(...) argument expansion and partial keyword replacement, and errors on unpacked tuple/list arguments. Reference replay shares many defects, so this is also a spec gap; the prompt remains authoritative. The staged pass conflicts with isolated replay, so confidence is medium.",
+     "foundDiscriminator": true,
+     "label": "judge-c",
+     "nFalsificationAttempts": 14,
+     "nRequirements": 11,
+     "nRequirementsFailed": 9,
+     "ok": true,
+     "quickSummary": "False positive: targeted replay of the candidate violates multiple prompt-stated overload behaviors despite the recorded verifier pass.",
+     "rating": "bad",
+     "rawSignal": "false_positive",
+     "signal": "false_positive",
+     "skipped": false,
+     "tags": [
+      "OUTCOME_VERIFIER_PASSED",
+      "FALSIFICATION_ATTEMPTED",
+      "FALSIFICATION_DISCRIMINATOR_FOUND",
+      "ARTIFACT_PROBE_TESTS_PATCH_WRITTEN",
+      "ARTIFACT_PROBE_TESTS_ENTRYPOINT_WRITTEN",
+      "FAIRNESS_FAIR",
+      "VERDICT_FALSE_POSITIVE",
+      "SPEC_GAP_REFERENCE_ALSO_FAILS"
+     ]
+    }
+   ],
+   "runId": "rd79r9dcebpjcn4reyqjtm8v818gpjjw",
+   "skipped": false,
+   "taskAgentCodename": "Vega"
+  }
+ ],
+ "state": "passed_with_warnings",
+ "tokenCost": 8,
+ "viewerIsAuthor": true,
+ "warnings": [
+  "judge_dissent"
+ ],
+ "workingRunCount": 12
+}
