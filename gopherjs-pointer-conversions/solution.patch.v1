@@ -1,0 +1,115 @@
+diff --git a/compiler/expressions.go b/compiler/expressions.go
+index a2c65878..e0a5ce96 100644
+--- a/compiler/expressions.go
++++ b/compiler/expressions.go
+@@ -1290,6 +1290,9 @@ func (fc *funcContext) translateConversion(expr ast.Expr, desiredType types.Type
+ 					return fc.formatExpr("new Uint8Array(%d)", int(sizes32.Sizeof(fc.typeOf(call.Args[0]))))
+ 				}
+ 			}
++			if _, isPtr := exprType.Underlying().(*types.Pointer); isPtr {
++				return fc.formatExpr("$pointerToUnsafe(%e)", expr)
++			}
+ 		}
+ 
+ 	case *types.Slice:
+@@ -1317,8 +1320,10 @@ func (fc *funcContext) translateConversion(expr ast.Expr, desiredType types.Type
+ 			if _, ok := exprType.Underlying().(*types.Slice); ok {
+ 				return fc.formatExpr("$sliceToGoArray(%e, %s)", expr, fc.typeName(desiredType))
+ 			}
+-			// TODO(nevkontakte): Is this just for aliased types (e.g. `type a [4]byte`)?
+-			return fc.translateExpr(expr)
++			// Pointers to arrays are represented by the array itself, which all
++			// pointer types to the same array share, but each pointer type has its
++			// own nil value.
++			return fc.formatExpr("$pointerConversion(%e, %s)", expr, fc.typeName(desiredType))
+ 		case *types.Struct: // (*StructT)(expr) — converting expr to a pointer to a struct.
+ 			if fc.pkgCtx.Pkg.Path() == "syscall" && types.Identical(exprType, types.Typ[types.UnsafePointer]) {
+ 				// Special case: converting an unsafe pointer to a byte array into a
+@@ -1339,19 +1344,18 @@ func (fc *funcContext) translateConversion(expr ast.Expr, desiredType types.Type
+ 		}
+ 
+ 		if types.Identical(exprType, types.Typ[types.UnsafePointer]) {
+-			// TODO(nevkontakte): Why do we fall through to the implicit conversion here?
+-			// Conversion from unsafe.Pointer() requires explicit type conversion: https://play.golang.org/p/IQxtmpn1wgc.
++			// The unsafe.Pointer value is reused as is, except for nil, which
++			// becomes the nil value of the target pointer type.
+ 			// Possibly related to https://github.com/gopherjs/gopherjs/issues/1001.
+-			break // Fall through to fc.translateImplicitConversionWithCloning() below.
++			return fc.formatExpr("$pointerConversion(%e, %s)", expr, fc.typeName(desiredType))
+ 		}
+ 		// Handle remaining cases, for example:
+ 		// type iPtr *int; var c int = 42; println((iPtr)(&c));
+-		// TODO(nevkontakte): Are there any other cases that fall into this case?
+ 		exprTypeElem := exprType.Underlying().(*types.Pointer).Elem()
+ 		ptrVar := fc.newLocalVariable("_ptr")
+ 		getterConv := fc.translateConversion(fc.setType(&ast.StarExpr{X: fc.newIdent(ptrVar, exprType)}, exprTypeElem), t.Elem())
+ 		setterConv := fc.translateConversion(fc.newIdent("$v", t.Elem()), exprTypeElem)
+-		return fc.formatExpr("(%1s = %2e, new %3s(function() { return %4s; }, function($v) { %1s.$set(%5s); }, %1s.$target, %1s.$index))", ptrVar, expr, fc.typeName(desiredType), getterConv, setterConv)
++		return fc.formatExpr("$pointerConversion(%2e, %3s, %1s => new %3s(function() { return %4s; }, function($v) { %1s.$set(%5s); }, %1s.$target, %1s.$index))", ptrVar, expr, fc.typeName(desiredType), getterConv, setterConv)
+ 
+ 	case *types.Interface:
+ 		if types.Identical(exprType, types.Typ[types.UnsafePointer]) {
+@@ -1413,6 +1417,11 @@ func (fc *funcContext) translateImplicitConversion(expr ast.Expr, desiredType ty
+ 				return fc.formatExpr("$pointerOfStructConversion(%e, %s)", expr, fc.typeName(desiredType))
+ 			}
+ 		}
++		// The same goes for the other pointer types: the value must become a
++		// pointer of the desired type, with nil mapped to its nil value.
++		if _, ok := exprType.Underlying().(*types.Pointer); ok {
++			return fc.translateConversion(expr, desiredType)
++		}
+ 	}
+ 
+ 	return fc.translateExpr(expr)
+diff --git a/compiler/prelude/prelude.js b/compiler/prelude/prelude.js
+index 9e158d29..fd8b660a 100644
+--- a/compiler/prelude/prelude.js
++++ b/compiler/prelude/prelude.js
+@@ -506,8 +506,46 @@ var $clone = (src, type) => {
+     return clone;
+ };
+ 
++// Reports whether obj is a nil pointer of its own type or the zero
++// unsafe.Pointer value.
++var $isNilPointer = obj => {
++    return obj === 0 || obj === (obj.constructor && obj.constructor.nil);
++};
++
++// Convert a pointer to a different pointer type with the same element
++// representation. Nil pointers become the nil value of the target type, and
++// converting the same pointer to the same type always yields the same object,
++// so that the converted pointers compare equal. makeProxy creates the pointer
++// object of the target type when the source can't be reused as is; it may be
++// omitted when the source representation is shared by both types, which is
++// the case for pointers to arrays.
++var $pointerConversion = (obj, type, makeProxy) => {
++    if ($isNilPointer(obj)) {
++        return type.nil;
++    }
++    if (makeProxy === undefined || obj.constructor === type) {
++        return obj;
++    }
++    if (obj.$proxies === undefined) {
++        obj.$proxies = {};
++        obj.$proxies[obj.constructor.id] = obj;
++    }
++    var proxy = obj.$proxies[type.id];
++    if (proxy === undefined) {
++        proxy = makeProxy(obj);
++        obj.$proxies[type.id] = proxy;
++        proxy.$proxies = obj.$proxies;
++    }
++    return proxy;
++};
++
++// Convert a pointer to unsafe.Pointer, which represents nil as 0.
++var $pointerToUnsafe = obj => {
++    return $isNilPointer(obj) ? 0 : obj;
++};
++
+ var $pointerOfStructConversion = (obj, type) => {
+-    if (obj === (obj.constructor && obj.constructor.nil)) {
++    if ($isNilPointer(obj)) {
+         return type.nil;
+     }
+     if (obj.$proxies === undefined) {
