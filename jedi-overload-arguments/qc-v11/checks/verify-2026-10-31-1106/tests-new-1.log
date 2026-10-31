@@ -1,0 +1,2723 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.4.2, pluggy-1.6.0 -- /usr/local/bin/python
+rootdir: /app
+configfile: pytest.ini
+plugins: anyio-4.13.0
+collecting ... collected 73 items
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_issue_example FAILED [  1%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(A)-expected0-type[A]] FAILED [  2%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(A)-expected0-Type[A]] FAILED [  4%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(B)-expected1-type[A]] FAILED [  5%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(B)-expected1-Type[A]] FAILED [  6%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(C)-expected2-type[A]] FAILED [  8%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(C)-expected2-Type[A]] FAILED [  9%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_rejects_instances FAILED [ 10%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class[type] FAILED [ 12%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class[Type] FAILED [ 13%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class[type[Any]] FAILED [ 15%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class[Type[Any]] FAILED [ 16%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_union[type[Union[A, C]]] FAILED [ 17%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_union[Type[A | C]] FAILED [ 19%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_union[type[A] | type[C]] FAILED [ 20%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_type_var FAILED [ 21%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_var_with_forward_references FAILED [ 23%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_one_constraint_for_the_whole_call FAILED [ 24%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_from_annotated_names FAILED [ 26%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_first_matching_overload_wins FAILED [ 27%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_keyword_argument FAILED [ 28%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_every_argument_has_to_fit FAILED [ 30%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_positional[*x: %s] FAILED [ 31%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_positional[y: int, *x: %s] FAILED [ 32%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_positional_unpacked FAILED [ 34%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_keyword[**x: %s] FAILED [ 35%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_keyword[y: int, **x: %s] FAILED [ 36%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_keyword_unpacked FAILED [ 38%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_variadic_parameters_with_other_annotations FAILED [ 39%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_variadic_parameters_together FAILED [ 41%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_no_matching_overload FAILED [ 42%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_dict_unpacking FAILED [ 43%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_dict_unpacking_into_named_parameters FAILED [ 45%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_unpacked_sequences_of_several_lengths FAILED [ 46%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_unpacked_values_of_unknown_length FAILED [ 47%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_optional_accepts_none FAILED [ 49%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_dict_unpacking_in_method FAILED [ 50%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_union_argument FAILED [ 52%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class_defined_later[type] FAILED [ 53%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class_defined_later[Type] FAILED [ 54%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class_defined_later[type[Any]] FAILED [ 56%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class_defined_later[Type[Any]] FAILED [ 57%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_optional_of_class FAILED [ 58%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_every_collected_argument_is_checked FAILED [ 60%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_dict_unpacking_in_classmethod FAILED [ 61%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[list[type[A]]-list[type[C]]-f([C])] FAILED [ 63%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[List[Type[A]]-List[Type[C]]-x = [C, C]\nf(x)] FAILED [ 64%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[Sequence[type[A]]-Sequence[type[C]]-f((C, C))] FAILED [ 65%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[Iterable[type[A]]-Iterable[type[C]]-f({C})] FAILED [ 67%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[tuple[type[A], ...]-tuple[type[C], ...]-f((C, C))] FAILED [ 68%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[dict[str, type[A]]-dict[str, type[C]]-f({"k": C})] FAILED [ 69%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[Mapping[str, type[A]]-Mapping[str, type[C]]-f({"k": C})] FAILED [ 71%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[dict[str, list[type[A]]]-dict[str, list[type[C]]]-f({"k": [C]})] FAILED [ 72%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[list[type[A]]-list[type[C]]-f([C, *[C]])] FAILED [ 73%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[Sequence[type[A]]-Sequence[type[C]]-f((C, *[C]))] FAILED [ 75%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_every_element_has_to_fit FAILED [ 76%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((C,))-expected0] FAILED [ 78%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((C, C, C))-expected1] FAILED [ 79%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[Tuple[Type[A], ...]-Tuple[Type[C], ...]-f((C,))-expected2] FAILED [ 80%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[int, ...]-tuple[str, ...]-f(("a", "b"))-expected3] FAILED [ 82%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[int, ...]-tuple[str, ...]-f((1, 2, 3))-expected4] FAILED [ 83%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((B, A))-expected5] FAILED [ 84%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((A, C))-expected6] FAILED [ 86%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], type[A]]-tuple[type[C], ...]-f((C, C))-expected7] FAILED [ 87%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[C], ...]-object-f(())-expected8] FAILED [ 89%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_numbers_accepted_by_wider_number_types FAILED [ 90%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_first_of_two_equal_keys_stays FAILED [ 91%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_items_of_mappings_and_other_containers FAILED [ 93%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_unknown_length FAILED [ 94%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_empty_comprehensions FAILED [ 95%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_entries_of_dict_comprehensions FAILED [ 97%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_entries_that_may_be_missing_in_nested_mappings FAILED [ 98%]
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_keys_that_are_not_strings FAILED [100%]
+
+=================================== FAILURES ===================================
+______________________________ test_issue_example ______________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_issue_example(Script):
+        code = dedent('''\
+            from typing import overload
+    
+            class Foo: pass
+    
+            class FooBuilder:
+                def func_foo(self): pass
+    
+            class Bar: pass
+    
+            class BarBuilder:
+                def func_bar(self): pass
+    
+            @overload
+            def get_obj(input: type[Foo]) -> FooBuilder: ...
+            @overload
+            def get_obj(input: type[Bar]) -> BarBuilder: ...
+            def get_obj(input: type): pass
+    
+            builder = get_obj(Foo)
+            builder.''')
+        names = [c.name for c in Script(code).complete()]
+        assert 'func_foo' in names
+>       assert 'func_bar' not in names
+E       AssertionError: assert 'func_bar' not in ['func_bar', 'func_foo', '__annotations__', '__class__', '__delattr__', '__dict__', ...]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:63: AssertionError
+__________________ test_type_of_class[f(A)-expected0-type[A]] __________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'type[A]', call = 'f(A)', expected = ['RA']
+
+    @pytest.mark.parametrize('first', ['type[A]', 'Type[A]'])
+    @pytest.mark.parametrize(
+        'call, expected', [
+            ('f(A)', ['RA']),
+            ('f(B)', ['RA']),
+            ('f(C)', ['RB']),
+        ]
+    )
+    def test_type_of_class(Script, first, call, expected):
+>       check(Script, [first, 'type[C]'], call, expected)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:80: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['type[A]', 'type[C]'], call = 'f(A)', expected = ['RA']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['type[A]', 'type[C]'], 'f(A)')
+E       assert ['RA', 'RB'] == ['RA']
+E         
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__________________ test_type_of_class[f(A)-expected0-Type[A]] __________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'Type[A]', call = 'f(A)', expected = ['RA']
+
+    @pytest.mark.parametrize('first', ['type[A]', 'Type[A]'])
+    @pytest.mark.parametrize(
+        'call, expected', [
+            ('f(A)', ['RA']),
+            ('f(B)', ['RA']),
+            ('f(C)', ['RB']),
+        ]
+    )
+    def test_type_of_class(Script, first, call, expected):
+>       check(Script, [first, 'type[C]'], call, expected)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:80: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Type[A]', 'type[C]'], call = 'f(A)', expected = ['RA']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Type[A]', 'type[C]'], 'f(A)')
+E       assert ['RA', 'RB'] == ['RA']
+E         
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__________________ test_type_of_class[f(B)-expected1-type[A]] __________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'type[A]', call = 'f(B)', expected = ['RA']
+
+    @pytest.mark.parametrize('first', ['type[A]', 'Type[A]'])
+    @pytest.mark.parametrize(
+        'call, expected', [
+            ('f(A)', ['RA']),
+            ('f(B)', ['RA']),
+            ('f(C)', ['RB']),
+        ]
+    )
+    def test_type_of_class(Script, first, call, expected):
+>       check(Script, [first, 'type[C]'], call, expected)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:80: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['type[A]', 'type[C]'], call = 'f(B)', expected = ['RA']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['type[A]', 'type[C]'], 'f(B)')
+E       assert ['RA', 'RB'] == ['RA']
+E         
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__________________ test_type_of_class[f(B)-expected1-Type[A]] __________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'Type[A]', call = 'f(B)', expected = ['RA']
+
+    @pytest.mark.parametrize('first', ['type[A]', 'Type[A]'])
+    @pytest.mark.parametrize(
+        'call, expected', [
+            ('f(A)', ['RA']),
+            ('f(B)', ['RA']),
+            ('f(C)', ['RB']),
+        ]
+    )
+    def test_type_of_class(Script, first, call, expected):
+>       check(Script, [first, 'type[C]'], call, expected)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:80: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Type[A]', 'type[C]'], call = 'f(B)', expected = ['RA']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Type[A]', 'type[C]'], 'f(B)')
+E       assert ['RA', 'RB'] == ['RA']
+E         
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__________________ test_type_of_class[f(C)-expected2-type[A]] __________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'type[A]', call = 'f(C)', expected = ['RB']
+
+    @pytest.mark.parametrize('first', ['type[A]', 'Type[A]'])
+    @pytest.mark.parametrize(
+        'call, expected', [
+            ('f(A)', ['RA']),
+            ('f(B)', ['RA']),
+            ('f(C)', ['RB']),
+        ]
+    )
+    def test_type_of_class(Script, first, call, expected):
+>       check(Script, [first, 'type[C]'], call, expected)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:80: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['type[A]', 'type[C]'], call = 'f(C)', expected = ['RB']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['type[A]', 'type[C]'], 'f(C)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__________________ test_type_of_class[f(C)-expected2-Type[A]] __________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'Type[A]', call = 'f(C)', expected = ['RB']
+
+    @pytest.mark.parametrize('first', ['type[A]', 'Type[A]'])
+    @pytest.mark.parametrize(
+        'call, expected', [
+            ('f(A)', ['RA']),
+            ('f(B)', ['RA']),
+            ('f(C)', ['RB']),
+        ]
+    )
+    def test_type_of_class(Script, first, call, expected):
+>       check(Script, [first, 'type[C]'], call, expected)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:80: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Type[A]', 'type[C]'], call = 'f(C)', expected = ['RB']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Type[A]', 'type[C]'], 'f(C)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_________________________ test_type_rejects_instances __________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_type_rejects_instances(Script):
+>       check(Script, ['type[A]', 'A'], 'f(A())', ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['type[A]', 'A'], call = 'f(A())', expected = ['RB'], prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['type[A]', 'A'], 'f(A())')
+E       assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_____________________________ test_any_class[type] _____________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'type'
+
+    @pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
+    def test_any_class(Script, annotation):
+        for cls in ['A', 'B', 'C', 'int', 'str']:
+>           check(Script, ['int', annotation], 'f(%s)' % cls, ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'type'], call = 'f(A)', expected = ['RB'], prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'type'], 'f(A)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_____________________________ test_any_class[Type] _____________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'Type'
+
+    @pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
+    def test_any_class(Script, annotation):
+        for cls in ['A', 'B', 'C', 'int', 'str']:
+>           check(Script, ['int', annotation], 'f(%s)' % cls, ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'Type'], call = 'f(A)', expected = ['RB'], prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'Type'], 'f(A)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__________________________ test_any_class[type[Any]] ___________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'type[Any]'
+
+    @pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
+    def test_any_class(Script, annotation):
+        for cls in ['A', 'B', 'C', 'int', 'str']:
+>           check(Script, ['int', annotation], 'f(%s)' % cls, ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'type[Any]'], call = 'f(A)', expected = ['RB']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'type[Any]'], 'f(A)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__________________________ test_any_class[Type[Any]] ___________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'Type[Any]'
+
+    @pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
+    def test_any_class(Script, annotation):
+        for cls in ['A', 'B', 'C', 'int', 'str']:
+>           check(Script, ['int', annotation], 'f(%s)' % cls, ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'Type[Any]'], call = 'f(A)', expected = ['RB']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'Type[Any]'], 'f(A)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+____________________ test_type_of_union[type[Union[A, C]]] _____________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'type[Union[A, C]]'
+
+    @pytest.mark.parametrize('annotation', ['type[Union[A, C]]', 'Type[A | C]', 'type[A] | type[C]'])
+    def test_type_of_union(Script, annotation):
+>       check(Script, ['int', annotation], 'f(C)', ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'type[Union[A, C]]'], call = 'f(C)', expected = ['RB']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'type[Union[A, C]]'], 'f(C)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_______________________ test_type_of_union[Type[A | C]] ________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'Type[A | C]'
+
+    @pytest.mark.parametrize('annotation', ['type[Union[A, C]]', 'Type[A | C]', 'type[A] | type[C]'])
+    def test_type_of_union(Script, annotation):
+>       check(Script, ['int', annotation], 'f(C)', ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'Type[A | C]'], call = 'f(C)', expected = ['RB']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'Type[A | C]'], 'f(C)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+____________________ test_type_of_union[type[A] | type[C]] _____________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'type[A] | type[C]'
+
+    @pytest.mark.parametrize('annotation', ['type[Union[A, C]]', 'Type[A | C]', 'type[A] | type[C]'])
+    def test_type_of_union(Script, annotation):
+>       check(Script, ['int', annotation], 'f(C)', ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'type[A] | type[C]'], call = 'f(C)', expected = ['RB']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'type[A] | type[C]'], 'f(C)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+____________________________ test_type_of_type_var _____________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_type_of_type_var(Script):
+        bound = 'T = TypeVar("T", bound=A)\n'
+>       check(Script, ['type[T]', 'int'], 'f(C)', ['RA', 'RB'], prefix=bound)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:107: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['type[T]', 'int'], call = 'f(C)', expected = ['RA', 'RB']
+prefix = 'T = TypeVar("T", bound=A)\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['type[T]', 'int'], 'f(C)')
+E       assert ['RA'] == ['RA', 'RB']
+E         
+E         Right contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         -     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+____________________ test_type_var_with_forward_references _____________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_type_var_with_forward_references(Script):
+        bound = 'T = TypeVar("T", bound="A")\n'
+        check(Script, ['type[T]', 'type[C]'], 'f(B)', ['RA'], prefix=bound)
+>       check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RB'], prefix=bound)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['type[T]', 'type[C]'], call = 'f(C)', expected = ['RB']
+prefix = 'T = TypeVar("T", bound="A")\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['type[T]', 'type[C]'], 'f(C)')
+E       assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+____________________ test_one_constraint_for_the_whole_call ____________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_one_constraint_for_the_whole_call(Script):
+        # Every use of a constrained TypeVar in a call takes the same constraint.
+        prefix = 'T = TypeVar("T", A, int)\n'
+        code = prefix + signatures('x: type[T], y: type[T]', 'x: object, y: object')
+        for call, expected in [
+            ('f(A, int)', ['RB']),
+            ('f(int, B)', ['RB']),
+            ('f(y=int, x=A)', ['RB']),
+            ('f(A, B)', ['RA']),
+            ('f(int, int)', ['RA']),
+        ]:
+>           assert infer_result(Script, code + call) == expected, call
+E           AssertionError: f(A, int)
+E           assert ['RA'] == ['RB']
+E             
+E             At index 0 diff: 'RA' != 'RB'
+E             
+E             Full diff:
+E               [
+E             -     'RB',
+E             ?       ^...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:146: AssertionError
+________________________ test_type_from_annotated_names ________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_type_from_annotated_names(Script):
+>       check(Script, ['type[A]', 'type[C]'], 'f(t)', ['RB'], prefix='t: type[C]\n')
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:157: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['type[A]', 'type[C]'], call = 'f(t)', expected = ['RB']
+prefix = 't: type[C]\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['type[A]', 'type[C]'], 'f(t)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+______________________ test_first_matching_overload_wins _______________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_first_matching_overload_wins(Script):
+>       check(Script, ['type[A]', 'type[B]'], 'f(B)', ['RA'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['type[A]', 'type[B]'], call = 'f(B)', expected = ['RA']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['type[A]', 'type[B]'], 'f(B)')
+E       assert ['RA', 'RB'] == ['RA']
+E         
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__________________________ test_type_keyword_argument __________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_type_keyword_argument(Script):
+>       check(Script, ['int', 'type[C]'], 'f(x=C)', ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:173: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'type[C]'], call = 'f(x=C)', expected = ['RB']
+prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'type[C]'], 'f(x=C)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+________________________ test_every_argument_has_to_fit ________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_every_argument_has_to_fit(Script):
+        for call, expected in [
+            ('g(A, C)', ['RA']),
+            ('g(B, C)', ['RA']),
+            ('g(A, A)', ['RB']),
+            ('g(A, y=B)', ['RB']),
+            ('g(y=C, x=B)', ['RA']),
+            ('g(x=A, y=A)', ['RB']),
+            ('g(C, A)', ['RA', 'RB']),
+            ('g(A, A())', ['RA', 'RB']),
+        ]:
+>           assert infer_result(Script, TWO_PARAMETERS + call) == expected, call
+E           AssertionError: g(A, C)
+E           assert ['RA', 'RB'] == ['RA']
+E             
+E             Left contains one more item: 'RB'
+E             
+E             Full diff:
+E               [
+E                   'RA',
+E             +     'RB',
+E               ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:198: AssertionError
+_________________________ test_var_positional[*x: %s] __________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+signature = '*x: %s'
+
+    @pytest.mark.parametrize('signature', ['*x: %s', 'y: int, *x: %s'])
+    def test_var_positional(Script, signature):
+        prefix = '1, ' if signature.startswith('y') else ''
+        for arguments, expected in [
+            ('C, C', ['RB']),
+            ('A, B', ['RA']),
+            ('A, C', ['RA', 'RB']),
+            ('C, A', ['RA', 'RB']),
+            ('', ['RA']),
+        ]:
+            call = 'f(%s)' % (prefix + arguments).rstrip(', ')
+            code = variadic('type[A]', 'type[C]', signature) + call
+>           assert infer_result(Script, code) == expected, (signature, call)
+E           AssertionError: ('*x: %s', 'f(C, C)')
+E           assert ['RA'] == ['RB']
+E             
+E             At index 0 diff: 'RA' != 'RB'
+E             
+E             Full diff:
+E               [
+E             -     'RB',
+E             ?       ^...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:221: AssertionError
+_____________________ test_var_positional[y: int, *x: %s] ______________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+signature = 'y: int, *x: %s'
+
+    @pytest.mark.parametrize('signature', ['*x: %s', 'y: int, *x: %s'])
+    def test_var_positional(Script, signature):
+        prefix = '1, ' if signature.startswith('y') else ''
+        for arguments, expected in [
+            ('C, C', ['RB']),
+            ('A, B', ['RA']),
+            ('A, C', ['RA', 'RB']),
+            ('C, A', ['RA', 'RB']),
+            ('', ['RA']),
+        ]:
+            call = 'f(%s)' % (prefix + arguments).rstrip(', ')
+            code = variadic('type[A]', 'type[C]', signature) + call
+>           assert infer_result(Script, code) == expected, (signature, call)
+E           AssertionError: ('y: int, *x: %s', 'f(1, C, C)')
+E           assert ['RA'] == ['RB']
+E             
+E             At index 0 diff: 'RA' != 'RB'
+E             
+E             Full diff:
+E               [
+E             -     'RB',
+E             ?       ^...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:221: AssertionError
+_________________________ test_var_positional_unpacked _________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_var_positional_unpacked(Script):
+        code = variadic('type[A]', 'type[C]', '*x: %s')
+>       assert infer_result(Script, code + 'ks = (C, C)\nf(*ks)') == ['RB']
+E       AssertionError: assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:226: AssertionError
+__________________________ test_var_keyword[**x: %s] ___________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+signature = '**x: %s'
+
+    @pytest.mark.parametrize('signature', ['**x: %s', 'y: int, **x: %s'])
+    def test_var_keyword(Script, signature):
+        prefix = 'y=1, ' if signature.startswith('y') else ''
+        for arguments, expected in [
+            ('p=C, q=C', ['RB']),
+            ('p=A, q=B', ['RA']),
+            ('p=A, q=C', ['RA', 'RB']),
+            ('', ['RA']),
+        ]:
+            call = 'f(%s)' % (prefix + arguments).rstrip(', ')
+            code = variadic('type[A]', 'type[C]', signature) + call
+>           assert infer_result(Script, code) == expected, (signature, call)
+E           AssertionError: ('**x: %s', 'f(p=C, q=C)')
+E           assert ['RA'] == ['RB']
+E             
+E             At index 0 diff: 'RA' != 'RB'
+E             
+E             Full diff:
+E               [
+E             -     'RB',
+E             ?       ^...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:251: AssertionError
+______________________ test_var_keyword[y: int, **x: %s] _______________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+signature = 'y: int, **x: %s'
+
+    @pytest.mark.parametrize('signature', ['**x: %s', 'y: int, **x: %s'])
+    def test_var_keyword(Script, signature):
+        prefix = 'y=1, ' if signature.startswith('y') else ''
+        for arguments, expected in [
+            ('p=C, q=C', ['RB']),
+            ('p=A, q=B', ['RA']),
+            ('p=A, q=C', ['RA', 'RB']),
+            ('', ['RA']),
+        ]:
+            call = 'f(%s)' % (prefix + arguments).rstrip(', ')
+            code = variadic('type[A]', 'type[C]', signature) + call
+>           assert infer_result(Script, code) == expected, (signature, call)
+E           AssertionError: ('y: int, **x: %s', 'f(y=1, p=C, q=C)')
+E           assert ['RA'] == ['RB']
+E             
+E             At index 0 diff: 'RA' != 'RB'
+E             
+E             Full diff:
+E               [
+E             -     'RB',
+E             ?       ^...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:251: AssertionError
+__________________________ test_var_keyword_unpacked ___________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_var_keyword_unpacked(Script):
+        code = variadic('type[A]', 'type[C]', '**x: %s')
+>       assert infer_result(Script, code + "f(**{'p': C})") == ['RB']
+E       AssertionError: assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:256: AssertionError
+_______________ test_variadic_parameters_with_other_annotations ________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_variadic_parameters_with_other_annotations(Script):
+        prefix = 'T = TypeVar("T", bound=A)\n'
+        code = prefix + variadic('type[T]', 'type[Union[A, C]]', '*x: %s')
+        assert infer_result(Script, code + 'f(A, B)') == ['RA']
+>       assert infer_result(Script, code + 'f(A, C)') == ['RB']
+E       AssertionError: assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:263: AssertionError
+______________________ test_variadic_parameters_together _______________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_variadic_parameters_together(Script):
+        code = dedent('''\
+            @overload
+            def f(y: int, *x: type[A], z: int = 0, **k: type[A]) -> RA: ...
+            @overload
+            def f(y: int, *x: type[C], z: int = 0, **k: type[C]) -> RB: ...
+            def f(*args, **kwargs): ...
+            ''')
+        for call, expected in [
+            ('f(1, A, B, p=A)', ['RA']),
+            ('f(1, C, z=2, p=C)', ['RB']),
+            ('f(1, A, p=C)', ['RA', 'RB']),
+            ('f(1, p=C)', ['RB']),
+            ('f(1, C)', ['RB']),
+            ('f(1, z=2)', ['RA']),
+        ]:
+>           assert infer_result(Script, code + call) == expected, call
+E           AssertionError: f(1, C, z=2, p=C)
+E           assert ['RA'] == ['RB']
+E             
+E             At index 0 diff: 'RA' != 'RB'
+E             
+E             Full diff:
+E               [
+E             -     'RB',
+E             ?       ^...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:287: AssertionError
+__________________________ test_no_matching_overload ___________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_no_matching_overload(Script):
+        check(Script, ['type[A]', 'int'], 'f(C)', ['RA', 'RB'])
+>       check(Script, ['type[A]', 'int'], 'f(A)', ['RA'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:292: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['type[A]', 'int'], call = 'f(A)', expected = ['RA'], prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['type[A]', 'int'], 'f(A)')
+E       assert ['RA', 'RB'] == ['RA']
+E         
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_____________________________ test_dict_unpacking ______________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_dict_unpacking(Script):
+        code = variadic('type[A]', 'type[C]', '**x: %s')
+        for call, expected in [
+            ('f(**{"p": C})', ['RB']),
+            ('f(**{"p": A})', ['RA']),
+            ('d = {"p": C}\nf(**d)', ['RB']),
+            ('f(**{"p": A, "q": C})', ['RA', 'RB']),
+            ('f(**{"p": A}, **{"q": C})', ['RA', 'RB']),
+            ('import random\nf(**{"p": C, **({"p": A} if random.random() else {})})', ['RA', 'RB']),
+        ]:
+>           assert infer_result(Script, code + call) == expected, call
+E           AssertionError: f(**{"p": C})
+E           assert ['RA'] == ['RB']
+E             
+E             At index 0 diff: 'RA' != 'RB'
+E             
+E             Full diff:
+E               [
+E             -     'RB',
+E             ?       ^...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:307: AssertionError
+__________________ test_dict_unpacking_into_named_parameters ___________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_dict_unpacking_into_named_parameters(Script):
+        code = overloads('type[A]', 'type[C]', 'object')
+        for call, expected in [
+            ('f(**{"x": C})', ['RB']),
+            ('f(**{"x": A})', ['RA']),
+            ('d = {"x": C}\nf(**d)', ['RB']),
+            ('f(**{"x": 1})', ['RC']),
+            ('f(**{**{"x": A}, "x": C})', ['RB']),
+        ]:
+>           assert infer_result(Script, code + call) == expected, call
+E           AssertionError: f(**{"x": C})
+E           assert ['RC'] == ['RB']
+E             
+E             At index 0 diff: 'RC' != 'RB'
+E             
+E             Full diff:
+E               [
+E             -     'RB',
+E             ?       ^...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:319: AssertionError
+__________________ test_unpacked_sequences_of_several_lengths __________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_unpacked_sequences_of_several_lengths(Script):
+        prefix = dedent('''\
+            import random
+            maybe_a = [A] if random.random() else []
+            maybe_c = [C] if random.random() else []
+            one_c = [C] if random.random() else [C]
+            c_or_ca = [C] if random.random() else [C, A]
+            ''')
+        with_defaults = signatures('x: type[A] = A, y: type[C] = C',
+                                   'x: object = None, y: object = None')
+        for call, expected in [
+            # If the list is empty, ``C`` is the first argument.
+            ('f(*maybe_a, C)', ['RB']),
+            ('f(*[*maybe_a, C])', ['RB']),
+            ('f(*maybe_a)', ['RA']),
+        ]:
+>           assert infer_result(Script, prefix + with_defaults + call) == expected, call
+E           AssertionError: f(*maybe_a)
+E           assert ['RB'] == ['RA']
+E             
+E             At index 0 diff: 'RB' != 'RA'
+E             
+E             Full diff:
+E               [
+E             -     'RA',
+E             ?       ^...
+E             
+E             ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:356: AssertionError
+____________________ test_unpacked_values_of_unknown_length ____________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_unpacked_values_of_unknown_length(Script):
+        prefix = dedent('''\
+            def any_number() -> tuple[type[C], ...]: ...
+            def c_list() -> list[type[C]]: ...
+            ''')
+        # The unpacked value may give any number of arguments.
+        code = prefix + signatures('x: type[C]', '*args: type[C]', '*args: object')
+        assert infer_result(Script, code + 'f(*any_number())') == ['RB']
+        assert infer_result(Script, code + 'f(*c_list())') == ['RB']
+        assert infer_result(Script, code + 'f(*[*any_number()])') == ['RB']
+        code = prefix + signatures('x: type[C] = C, *args: type[C]', '*args: object')
+>       assert infer_result(Script, code + 'f(*any_number())') == ['RA']
+E       AssertionError: assert ['RB'] == ['RA']
+E         
+E         At index 0 diff: 'RB' != 'RA'
+E         
+E         Full diff:
+E           [
+E         -     'RA',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:379: AssertionError
+__________________________ test_optional_accepts_none __________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_optional_accepts_none(Script):
+        prefix = 'from typing import Optional\n'
+>       check(Script, ['Optional[int]', 'str'], 'f(None)', ['RA'], prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Optional[int]', 'str'], call = 'f(None)', expected = ['RA']
+prefix = 'from typing import Optional\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Optional[int]', 'str'], 'f(None)')
+E       assert ['RA', 'RB'] == ['RA']
+E         
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+________________________ test_dict_unpacking_in_method _________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_dict_unpacking_in_method(Script):
+        code = dedent('''\
+            class K:
+                @overload
+                def f(self, **x: type[A]) -> RA: ...
+                @overload
+                def f(self, **x: type[C]) -> RB: ...
+                def f(self, **x): ...
+            ''')
+>       assert infer_result(Script, code + 'K().f(**{"p": C})') == ['RB']
+E       AssertionError: assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:402: AssertionError
+_____________________________ test_union_argument ______________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_union_argument(Script):
+        prefix = dedent('''\
+            def g(x: Union[A, C]):
+                return x
+            ''')
+        # Every type the argument may have has to be accepted.
+>       check(Script, ['A', 'C'], 'f(g(A()))', ['RA', 'RB'], prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['A', 'C'], call = 'f(g(A()))', expected = ['RA', 'RB']
+prefix = 'def g(x: Union[A, C]):\n    return x\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['A', 'C'], 'f(g(A()))')
+E       assert ['RA'] == ['RA', 'RB']
+E         
+E         Right contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         -     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+______________________ test_any_class_defined_later[type] ______________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'type'
+
+    @pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
+    def test_any_class_defined_later(Script, annotation):
+        prefix = 'class D(C): pass\n'
+>       check(Script, ['int', annotation], 'f(D)', ['RB'], prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'type'], call = 'f(D)', expected = ['RB']
+prefix = 'class D(C): pass\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'type'], 'f(D)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+______________________ test_any_class_defined_later[Type] ______________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'Type'
+
+    @pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
+    def test_any_class_defined_later(Script, annotation):
+        prefix = 'class D(C): pass\n'
+>       check(Script, ['int', annotation], 'f(D)', ['RB'], prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'Type'], call = 'f(D)', expected = ['RB']
+prefix = 'class D(C): pass\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'Type'], 'f(D)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+___________________ test_any_class_defined_later[type[Any]] ____________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'type[Any]'
+
+    @pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
+    def test_any_class_defined_later(Script, annotation):
+        prefix = 'class D(C): pass\n'
+>       check(Script, ['int', annotation], 'f(D)', ['RB'], prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'type[Any]'], call = 'f(D)', expected = ['RB']
+prefix = 'class D(C): pass\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'type[Any]'], 'f(D)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+___________________ test_any_class_defined_later[Type[Any]] ____________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotation = 'Type[Any]'
+
+    @pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])
+    def test_any_class_defined_later(Script, annotation):
+        prefix = 'class D(C): pass\n'
+>       check(Script, ['int', annotation], 'f(D)', ['RB'], prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['int', 'Type[Any]'], call = 'f(D)', expected = ['RB']
+prefix = 'class D(C): pass\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['int', 'Type[Any]'], 'f(D)')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+____________________________ test_optional_of_class ____________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_optional_of_class(Script):
+        prefix = 'from typing import Optional\n'
+        check(Script, ['Optional[A]', 'C'], 'f(B())', ['RA'], prefix)
+>       check(Script, ['Optional[A]', 'C'], 'f(None)', ['RA'], prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:427: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Optional[A]', 'C'], call = 'f(None)', expected = ['RA']
+prefix = 'from typing import Optional\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Optional[A]', 'C'], 'f(None)')
+E       assert ['RA', 'RB'] == ['RA']
+E         
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+___________________ test_every_collected_argument_is_checked ___________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_every_collected_argument_is_checked(Script):
+        code = variadic('type[A]', 'type', '*x: %s')
+>       assert infer_result(Script, code + 'f(A, B, C)') == ['RB']
+E       AssertionError: assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:433: AssertionError
+______________________ test_dict_unpacking_in_classmethod ______________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_dict_unpacking_in_classmethod(Script):
+        code = dedent('''\
+            class K:
+                @overload
+                @classmethod
+                def f(cls, **x: type[A]) -> RA: ...
+                @overload
+                @classmethod
+                def f(cls, **x: type[C]) -> RB: ...
+                @classmethod
+                def f(cls, **x): ...
+            ''')
+>       assert infer_result(Script, code + 'K.f(**{"p": C})') == ['RB']
+E       AssertionError: assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:452: AssertionError
+_______ test_elements_of_containers[list[type[A]]-list[type[C]]-f([C])] ________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'list[type[A]]', second = 'list[type[C]]', call = 'f([C])'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['list[type[A]]', 'list[type[C]]', 'object'], call = 'f([C])'
+expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['list[type[A]]', 'list[type[C]]', 'object'], 'f([C])')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__ test_elements_of_containers[List[Type[A]]-List[Type[C]]-x = [C, C]\nf(x)] ___
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'List[Type[A]]', second = 'List[Type[C]]', call = 'x = [C, C]\nf(x)'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['List[Type[A]]', 'List[Type[C]]', 'object']
+call = 'x = [C, C]\nf(x)', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['List[Type[A]]', 'List[Type[C]]', 'object'], 'x = [C, C]
+E         f(x)')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+__ test_elements_of_containers[Sequence[type[A]]-Sequence[type[C]]-f((C, C))] __
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'Sequence[type[A]]', second = 'Sequence[type[C]]', call = 'f((C, C))'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Sequence[type[A]]', 'Sequence[type[C]]', 'object']
+call = 'f((C, C))', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Sequence[type[A]]', 'Sequence[type[C]]', 'object'], 'f((C, C))')
+E       assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+___ test_elements_of_containers[Iterable[type[A]]-Iterable[type[C]]-f({C})] ____
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'Iterable[type[A]]', second = 'Iterable[type[C]]', call = 'f({C})'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Iterable[type[A]]', 'Iterable[type[C]]', 'object']
+call = 'f({C})', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Iterable[type[A]]', 'Iterable[type[C]]', 'object'], 'f({C})')
+E       assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_elements_of_containers[tuple[type[A], ...]-tuple[type[C], ...]-f((C, C))] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'tuple[type[A], ...]', second = 'tuple[type[C], ...]'
+call = 'f((C, C))'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object']
+call = 'f((C, C))', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object'], 'f((C, C))')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_elements_of_containers[dict[str, type[A]]-dict[str, type[C]]-f({"k": C})] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'dict[str, type[A]]', second = 'dict[str, type[C]]'
+call = 'f({"k": C})'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['dict[str, type[A]]', 'dict[str, type[C]]', 'object']
+call = 'f({"k": C})', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['dict[str, type[A]]', 'dict[str, type[C]]', 'object'], 'f({"k": C})')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_elements_of_containers[Mapping[str, type[A]]-Mapping[str, type[C]]-f({"k": C})] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'Mapping[str, type[A]]', second = 'Mapping[str, type[C]]'
+call = 'f({"k": C})'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'object']
+call = 'f({"k": C})', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'object'], 'f({"k": C})')
+E       assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_elements_of_containers[dict[str, list[type[A]]]-dict[str, list[type[C]]]-f({"k": [C]})] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'dict[str, list[type[A]]]', second = 'dict[str, list[type[C]]]'
+call = 'f({"k": [C]})'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'object']
+call = 'f({"k": [C]})', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'object'], 'f({"k": [C]})')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+____ test_elements_of_containers[list[type[A]]-list[type[C]]-f([C, *[C]])] _____
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'list[type[A]]', second = 'list[type[C]]', call = 'f([C, *[C]])'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['list[type[A]]', 'list[type[C]]', 'object']
+call = 'f([C, *[C]])', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['list[type[A]]', 'list[type[C]]', 'object'], 'f([C, *[C]])')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_elements_of_containers[Sequence[type[A]]-Sequence[type[C]]-f((C, *[C]))] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'Sequence[type[A]]', second = 'Sequence[type[C]]', call = 'f((C, *[C]))'
+
+    @pytest.mark.parametrize('first, second, call', [
+        ('list[type[A]]', 'list[type[C]]', 'f([C])'),
+        ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\nf(x)'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),
+        ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),
+        ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({"k": C})'),
+        ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f({"k": C})'),
+        ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({"k": [C]})'),
+        ('list[type[A]]', 'list[type[C]]', 'f([C, *[C]])'),
+        ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, *[C]))'),
+    ])
+    def test_elements_of_containers(Script, first, second, call):
+>       check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:472: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Sequence[type[A]]', 'Sequence[type[C]]', 'object']
+call = 'f((C, *[C]))', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Sequence[type[A]]', 'Sequence[type[C]]', 'object'], 'f((C, *[C]))')
+E       assert ['RA'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         
+E         Full diff:
+E           [
+E         -     'RB',
+E         ?       ^...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+________________________ test_every_element_has_to_fit _________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_every_element_has_to_fit(Script):
+        annotations = ['list[type[A]]', 'list[type[C]]', 'object']
+        for call in [
+            'f([A, C])',
+            'f([C()])',
+            'f((C,))',
+            'f([C] if random.random() else [A])',
+            'f([C if random.random() else A])',
+            'f([C, *[A]])',
+            'f([*[A], C])',
+            'f([*[C], *(A,)])',
+        ]:
+>           check(Script, annotations, call, ['RC'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:491: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['list[type[A]]', 'list[type[C]]', 'object'], call = 'f([A, C])'
+expected = ['RC']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['list[type[A]]', 'list[type[C]]', 'object'], 'f([A, C])')
+E       assert ['RA', 'RB', 'RC'] == ['RC']
+E         
+E         At index 0 diff: 'RA' != 'RC'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((C,))-expected0] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'tuple[type[A], ...]', second = 'tuple[type[C], ...]', call = 'f((C,))'
+expected = ['RB']
+
+    @pytest.mark.parametrize('first, second, call, expected', [
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),
+        ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f(("a", "b"))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),
+        ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),
+        ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),
+    ])
+    def test_tuples_of_any_length(Script, first, second, call, expected):
+        prefix = CONTAINERS + 'from typing import Tuple\n'
+>       check(Script, [first, second, 'object'], call, expected, prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object']
+call = 'f((C,))', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nfrom typing import Tuple\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object'], 'f((C,))')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((C, C, C))-expected1] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'tuple[type[A], ...]', second = 'tuple[type[C], ...]'
+call = 'f((C, C, C))', expected = ['RB']
+
+    @pytest.mark.parametrize('first, second, call, expected', [
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),
+        ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f(("a", "b"))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),
+        ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),
+        ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),
+    ])
+    def test_tuples_of_any_length(Script, first, second, call, expected):
+        prefix = CONTAINERS + 'from typing import Tuple\n'
+>       check(Script, [first, second, 'object'], call, expected, prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object']
+call = 'f((C, C, C))', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nfrom typing import Tuple\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object'], 'f((C, C, C))')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_tuples_of_any_length[Tuple[Type[A], ...]-Tuple[Type[C], ...]-f((C,))-expected2] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'Tuple[Type[A], ...]', second = 'Tuple[Type[C], ...]', call = 'f((C,))'
+expected = ['RB']
+
+    @pytest.mark.parametrize('first, second, call, expected', [
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),
+        ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f(("a", "b"))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),
+        ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),
+        ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),
+    ])
+    def test_tuples_of_any_length(Script, first, second, call, expected):
+        prefix = CONTAINERS + 'from typing import Tuple\n'
+>       check(Script, [first, second, 'object'], call, expected, prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'object']
+call = 'f((C,))', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nfrom typing import Tuple\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'object'], 'f((C,))')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_tuples_of_any_length[tuple[int, ...]-tuple[str, ...]-f(("a", "b"))-expected3] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'tuple[int, ...]', second = 'tuple[str, ...]', call = 'f(("a", "b"))'
+expected = ['RB']
+
+    @pytest.mark.parametrize('first, second, call, expected', [
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),
+        ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f(("a", "b"))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),
+        ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),
+        ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),
+    ])
+    def test_tuples_of_any_length(Script, first, second, call, expected):
+        prefix = CONTAINERS + 'from typing import Tuple\n'
+>       check(Script, [first, second, 'object'], call, expected, prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[int, ...]', 'tuple[str, ...]', 'object']
+call = 'f(("a", "b"))', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nfrom typing import Tuple\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[int, ...]', 'tuple[str, ...]', 'object'], 'f(("a", "b"))')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_tuples_of_any_length[tuple[int, ...]-tuple[str, ...]-f((1, 2, 3))-expected4] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'tuple[int, ...]', second = 'tuple[str, ...]', call = 'f((1, 2, 3))'
+expected = ['RA']
+
+    @pytest.mark.parametrize('first, second, call, expected', [
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),
+        ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f(("a", "b"))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),
+        ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),
+        ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),
+    ])
+    def test_tuples_of_any_length(Script, first, second, call, expected):
+        prefix = CONTAINERS + 'from typing import Tuple\n'
+>       check(Script, [first, second, 'object'], call, expected, prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[int, ...]', 'tuple[str, ...]', 'object']
+call = 'f((1, 2, 3))', expected = ['RA']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nfrom typing import Tuple\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[int, ...]', 'tuple[str, ...]', 'object'], 'f((1, 2, 3))')
+E       assert ['RA', 'RB', 'RC'] == ['RA']
+E         
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E         +     'RC',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((B, A))-expected5] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'tuple[type[A], ...]', second = 'tuple[type[C], ...]'
+call = 'f((B, A))', expected = ['RA']
+
+    @pytest.mark.parametrize('first, second, call, expected', [
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),
+        ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f(("a", "b"))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),
+        ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),
+        ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),
+    ])
+    def test_tuples_of_any_length(Script, first, second, call, expected):
+        prefix = CONTAINERS + 'from typing import Tuple\n'
+>       check(Script, [first, second, 'object'], call, expected, prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object']
+call = 'f((B, A))', expected = ['RA']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nfrom typing import Tuple\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object'], 'f((B, A))')
+E       assert ['RA', 'RB', 'RC'] == ['RA']
+E         
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E         +     'RC',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((A, C))-expected6] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'tuple[type[A], ...]', second = 'tuple[type[C], ...]'
+call = 'f((A, C))', expected = ['RC']
+
+    @pytest.mark.parametrize('first, second, call, expected', [
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),
+        ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f(("a", "b"))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),
+        ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),
+        ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),
+    ])
+    def test_tuples_of_any_length(Script, first, second, call, expected):
+        prefix = CONTAINERS + 'from typing import Tuple\n'
+>       check(Script, [first, second, 'object'], call, expected, prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object']
+call = 'f((A, C))', expected = ['RC']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nfrom typing import Tuple\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[type[A], ...]', 'tuple[type[C], ...]', 'object'], 'f((A, C))')
+E       assert ['RA', 'RB', 'RC'] == ['RC']
+E         
+E         At index 0 diff: 'RA' != 'RC'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_ test_tuples_of_any_length[tuple[type[A], type[A]]-tuple[type[C], ...]-f((C, C))-expected7] _
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'tuple[type[A], type[A]]', second = 'tuple[type[C], ...]'
+call = 'f((C, C))', expected = ['RB']
+
+    @pytest.mark.parametrize('first, second, call, expected', [
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),
+        ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f(("a", "b"))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),
+        ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),
+        ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),
+    ])
+    def test_tuples_of_any_length(Script, first, second, call, expected):
+        prefix = CONTAINERS + 'from typing import Tuple\n'
+>       check(Script, [first, second, 'object'], call, expected, prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'object']
+call = 'f((C, C))', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nfrom typing import Tuple\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'object'], 'f((C, C))')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+____ test_tuples_of_any_length[tuple[type[C], ...]-object-f(())-expected8] _____
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+first = 'tuple[type[C], ...]', second = 'object', call = 'f(())'
+expected = ['RA']
+
+    @pytest.mark.parametrize('first, second, call, expected', [
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),
+        ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f(("a", "b"))', ['RB']),
+        ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),
+        ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),
+        ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),
+        ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),
+    ])
+    def test_tuples_of_any_length(Script, first, second, call, expected):
+        prefix = CONTAINERS + 'from typing import Tuple\n'
+>       check(Script, [first, second, 'object'], call, expected, prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[type[C], ...]', 'object', 'object'], call = 'f(())'
+expected = ['RA']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nfrom typing import Tuple\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[type[C], ...]', 'object', 'object'], 'f(())')
+E       assert ['RA', 'RB', 'RC'] == ['RA']
+E         
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E         +     'RC',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_________________ test_numbers_accepted_by_wider_number_types __________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_numbers_accepted_by_wider_number_types(Script):
+>       check(Script, ['float', 'str'], 'f(1)', ['RA'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:511: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['float', 'str'], call = 'f(1)', expected = ['RA'], prefix = ''
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['float', 'str'], 'f(1)')
+E       assert ['RA', 'RB'] == ['RA']
+E         
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+______________________ test_first_of_two_equal_keys_stays ______________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_first_of_two_equal_keys_stays(Script):
+        # Python replaces the value of an equal key and keeps the key object.
+        annotations = ['dict[bool, type[C]]', 'dict[int, type[C]]', 'object']
+>       check(Script, annotations, 'f({True: C, 1: C})', ['RA'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:520: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['dict[bool, type[C]]', 'dict[int, type[C]]', 'object']
+call = 'f({True: C, 1: C})', expected = ['RA']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['dict[bool, type[C]]', 'dict[int, type[C]]', 'object'], 'f({True: C, 1: C})')
+E       assert ['RA', 'RB', 'RC'] == ['RA']
+E         
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E         +     'RC',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_________________ test_items_of_mappings_and_other_containers __________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_items_of_mappings_and_other_containers(Script):
+        def check_items(first, second, call, expected=['RB'], prefix=''):
+            check(Script, [first, second, 'object'], call, expected, prefix=CONTAINERS + prefix)
+    
+>       check_items('dict[type[A], int]', 'dict[type[C], int]', 'f({C: 1})')
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:528: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:526: in check_items
+    check(Script, [first, second, 'object'], call, expected, prefix=CONTAINERS + prefix)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['dict[type[A], int]', 'dict[type[C], int]', 'object']
+call = 'f({C: 1})', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['dict[type[A], int]', 'dict[type[C], int]', 'object'], 'f({C: 1})')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+________________________ test_tuples_of_unknown_length _________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_tuples_of_unknown_length(Script):
+        prefix = 'def g() -> tuple[int, ...]: ...\ndef h() -> tuple[int]: ...\n'
+>       check(Script, ['tuple[int]', 'tuple[int, ...]'], 'f(g())', ['RB'], prefix=prefix)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:551: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['tuple[int]', 'tuple[int, ...]'], call = 'f(g())'
+expected = ['RB']
+prefix = 'def g() -> tuple[int, ...]: ...\ndef h() -> tuple[int]: ...\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['tuple[int]', 'tuple[int, ...]'], 'f(g())')
+E       assert ['RA', 'RB'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains one more item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',
+E               'RB',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+____________________ test_elements_of_empty_comprehensions _____________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_elements_of_empty_comprehensions(Script):
+        # A comprehension over an empty literal holds no elements.
+        annotations = ['list[type[A]]', 'list[type[C]]', 'object']
+>       check(Script, annotations, 'f([C for _ in []])', ['RA'], prefix=CONTAINERS)
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['list[type[A]]', 'list[type[C]]', 'object']
+call = 'f([C for _ in []])', expected = ['RA']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['list[type[A]]', 'list[type[C]]', 'object'], 'f([C for _ in []])')
+E       assert ['RA', 'RB', 'RC'] == ['RA']
+E         
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E         +     'RC',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_____________________ test_entries_of_dict_comprehensions ______________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_entries_of_dict_comprehensions(Script):
+        def check_items(call, expected):
+            check(Script, ['dict[str, type[A]]', 'dict[str, type[C]]', 'object'], call, expected,
+                  prefix=CONTAINERS)
+    
+        # A comprehension over an empty literal holds no entries.
+>       check_items('f({"k": C for _ in []})', ['RA'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:569: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:565: in check_items
+    check(Script, ['dict[str, type[A]]', 'dict[str, type[C]]', 'object'], call, expected,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['dict[str, type[A]]', 'dict[str, type[C]]', 'object']
+call = 'f({"k": C for _ in []})', expected = ['RA']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['dict[str, type[A]]', 'dict[str, type[C]]', 'object'], 'f({"k": C for _ in []})')
+E       assert ['RA', 'RB', 'RC'] == ['RA']
+E         
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E               'RA',
+E         +     'RB',
+E         +     'RC',
+E           ]
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+_____________ test_entries_that_may_be_missing_in_nested_mappings ______________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_entries_that_may_be_missing_in_nested_mappings(Script):
+        prefix = CONTAINERS + dedent('''\
+            d1 = {'p': A} if random.random() else {}
+            d2 = {'p': A} if random.random() else {}
+            d3 = {**d1, **d2}
+            ''')
+    
+        def check_items(call, expected):
+            check(Script, ['dict[str, type[A]]', 'dict[str, type[C]]', 'object'], call, expected,
+                  prefix=prefix)
+    
+        # Neither ``d1`` nor ``d2`` may have the entry.
+>       check_items("f({'p': C, **d3})", ['RC'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:590: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:586: in check_items
+    check(Script, ['dict[str, type[A]]', 'dict[str, type[C]]', 'object'], call, expected,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['dict[str, type[A]]', 'dict[str, type[C]]', 'object']
+call = "f({'p': C, **d3})", expected = ['RC']
+prefix = "import random\nfrom typing import Iterable, List, Mapping, Sequence\nd1 = {'p': A} if random.random() else {}\nd2 = {'p': A} if random.random() else {}\nd3 = {**d1, **d2}\n"
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['dict[str, type[A]]', 'dict[str, type[C]]', 'object'], "f({'p': C, **d3})")
+E       assert ['RA', 'RB', 'RC'] == ['RC']
+E         
+E         At index 0 diff: 'RA' != 'RC'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+________________________ test_keys_that_are_not_strings ________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+
+    def test_keys_that_are_not_strings(Script):
+        def check_items(key, call, expected):
+            annotations = ['dict[%s, type[A]]' % key, 'dict[%s, type[C]]' % key, 'object']
+            prefix = CONTAINERS + 'k = "a" if random.random() else "a"\n'
+            check(Script, annotations, call, expected, prefix=prefix)
+    
+>       check_items('type[C]', 'f({C: A, C: C})', ['RB'])
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:602: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:600: in check_items
+    check(Script, annotations, call, expected, prefix=prefix)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.13 in /usr/local>)
+annotations = ['dict[type[C], type[A]]', 'dict[type[C], type[C]]', 'object']
+call = 'f({C: A, C: C})', expected = ['RB']
+prefix = 'import random\nfrom typing import Iterable, List, Mapping, Sequence\nk = "a" if random.random() else "a"\n'
+
+    def check(Script, annotations, call, expected, prefix=''):
+        code = prefix + overloads(*annotations) + call
+>       assert infer_result(Script, code) == expected, (annotations, call)
+E       AssertionError: (['dict[type[C], type[A]]', 'dict[type[C], type[C]]', 'object'], 'f({C: A, C: C})')
+E       assert ['RA', 'RB', 'RC'] == ['RB']
+E         
+E         At index 0 diff: 'RA' != 'RB'
+E         Left contains 2 more items, first extra item: 'RB'
+E         
+E         Full diff:
+E           [
+E         +     'RA',...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py:36: AssertionError
+------------------- generated xml file: /out/tests-new-1.xml -------------------
+=========================== short test summary info ============================
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_issue_example
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(A)-expected0-type[A]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(A)-expected0-Type[A]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(B)-expected1-type[A]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(B)-expected1-Type[A]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(C)-expected2-type[A]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_class[f(C)-expected2-Type[A]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_rejects_instances
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class[type]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class[Type]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class[type[Any]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class[Type[Any]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_union[type[Union[A, C]]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_union[Type[A | C]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_union[type[A] | type[C]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_of_type_var
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_var_with_forward_references
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_one_constraint_for_the_whole_call
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_from_annotated_names
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_first_matching_overload_wins
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_type_keyword_argument
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_every_argument_has_to_fit
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_positional[*x: %s]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_positional[y: int, *x: %s]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_positional_unpacked
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_keyword[**x: %s]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_keyword[y: int, **x: %s]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_var_keyword_unpacked
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_variadic_parameters_with_other_annotations
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_variadic_parameters_together
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_no_matching_overload
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_dict_unpacking
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_dict_unpacking_into_named_parameters
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_unpacked_sequences_of_several_lengths
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_unpacked_values_of_unknown_length
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_optional_accepts_none
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_dict_unpacking_in_method
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_union_argument
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class_defined_later[type]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class_defined_later[Type]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class_defined_later[type[Any]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_any_class_defined_later[Type[Any]]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_optional_of_class
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_every_collected_argument_is_checked
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_dict_unpacking_in_classmethod
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[list[type[A]]-list[type[C]]-f([C])]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[List[Type[A]]-List[Type[C]]-x = [C, C]\nf(x)]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[Sequence[type[A]]-Sequence[type[C]]-f((C, C))]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[Iterable[type[A]]-Iterable[type[C]]-f({C})]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[tuple[type[A], ...]-tuple[type[C], ...]-f((C, C))]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[dict[str, type[A]]-dict[str, type[C]]-f({"k": C})]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[Mapping[str, type[A]]-Mapping[str, type[C]]-f({"k": C})]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[dict[str, list[type[A]]]-dict[str, list[type[C]]]-f({"k": [C]})]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[list[type[A]]-list[type[C]]-f([C, *[C]])]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_containers[Sequence[type[A]]-Sequence[type[C]]-f((C, *[C]))]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_every_element_has_to_fit
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((C,))-expected0]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((C, C, C))-expected1]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[Tuple[Type[A], ...]-Tuple[Type[C], ...]-f((C,))-expected2]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[int, ...]-tuple[str, ...]-f(("a", "b"))-expected3]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[int, ...]-tuple[str, ...]-f((1, 2, 3))-expected4]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((B, A))-expected5]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], ...]-tuple[type[C], ...]-f((A, C))-expected6]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[A], type[A]]-tuple[type[C], ...]-f((C, C))-expected7]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_any_length[tuple[type[C], ...]-object-f(())-expected8]
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_numbers_accepted_by_wider_number_types
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_first_of_two_equal_keys_stays
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_items_of_mappings_and_other_containers
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_tuples_of_unknown_length
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_elements_of_empty_comprehensions
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_entries_of_dict_comprehensions
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_entries_that_may_be_missing_in_nested_mappings
+FAILED test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py::test_keys_that_are_not_strings
+============================== 73 failed in 8.72s ==============================

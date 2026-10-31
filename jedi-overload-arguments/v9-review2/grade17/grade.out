@@ -1,0 +1,11 @@
+rd71y20sejecb3c8gfacbk6er18h65aa | 4 failed, 67 passed | items_of_mappings_and_other_containers keys_that_are_not_strings one_constraint_for_the_whole_call type_var_with_forward_references 
+rd728n1vyae9r7x47tn0kn6n258h9gdz | 4 failed, 67 passed | elements_of_containers[Mapping[str, type[A]]-Mapping[str, type[C]]-f({"k": C})] items_of_mappings_and_other_containers one_constraint_for_the_whole_call type_var_with_forward_references 
+rd72fhffh02xme47z58ea5pphx8h67z0 | 6 failed, 65 passed | elements_of_containers[Iterable[type[A]]-Iterable[type[C]]-f({C})] items_of_mappings_and_other_containers keys_that_are_not_strings optional_accepts_none optional_of_class type_var_with_forward_references 
+rd74jzw6p14pk8gx685e2rjcsn8h8ze4 | 4 failed, 67 passed | items_of_mappings_and_other_containers keys_that_are_not_strings one_constraint_for_the_whole_call type_var_with_forward_references 
+rd74kzfetgw99j148306bwcn198h6ams | 2 failed, 69 passed | one_constraint_for_the_whole_call type_var_with_forward_references 
+rd74wc0e3hx2ss0wjp0t6vc75s8h97y2 | 2 failed, 69 passed | one_constraint_for_the_whole_call type_var_with_forward_references 
+rd75hxx5j3qh9aq7czhqd9e07d8hbvyr | 3 failed, 68 passed | keys_that_are_not_strings one_constraint_for_the_whole_call type_var_with_forward_references 
+rd76m55vgh5hydhpqzeyng6ctd8h7v8p | 4 failed, 67 passed | dict_unpacking_in_classmethod items_of_mappings_and_other_containers keys_that_are_not_strings type_var_with_forward_references 
+rd778jxzq24yyfx7vyy48khffx8hbsm3 | 3 failed, 68 passed | items_of_mappings_and_other_containers one_constraint_for_the_whole_call type_var_with_forward_references 
+rd793fhw7amga3re11xaspdrws8hbb5b | 3 failed, 68 passed | keys_that_are_not_strings one_constraint_for_the_whole_call type_var_with_forward_references 
+rd7a30yvfjzqcjqc1vb2brhaxd8haqef | 3 failed, 68 passed | keys_that_are_not_strings one_constraint_for_the_whole_call type_var_with_forward_references 

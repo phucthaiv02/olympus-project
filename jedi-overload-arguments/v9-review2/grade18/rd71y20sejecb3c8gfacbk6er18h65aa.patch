@@ -1,0 +1,2072 @@
+diff --git a/CHANGELOG.rst b/CHANGELOG.rst
+index 32e693a..b9972cb 100644
+--- a/CHANGELOG.rst
++++ b/CHANGELOG.rst
+@@ -6,6 +6,13 @@ Changelog
+ Unreleased
+ ++++++++++
+ 
++- ``@overload``: The first overload that matches the arguments according to
++  typing rules is chosen (e.g. ``type[...]``, unions, ``Self``), considering
++  the actual content of tuples, lists and dicts in the code, also with ``*``
++  and ``**``. If no overload matches, the results are still combined.
++- Support for ``Literal``
++- Better inference of ``and``/``or``
++
+ 0.20.1 (2026-10-12)
+ +++++++++++++++++++
+ 
+diff --git a/jedi/inference/arguments.py b/jedi/inference/arguments.py
+index 122a8a6..f369cdb 100644
+--- a/jedi/inference/arguments.py
++++ b/jedi/inference/arguments.py
+@@ -139,6 +139,23 @@ class AbstractArguments(_AbstractArgumentsMixin):
+     trailer = None
+ 
+ 
++def comprehension_from_argument(context, argument):
++    """
++    Creates the generator of an argument like ``x for x in y`` in
++    ``f(x for x in y)``.
++    """
++    # Include the brackets with the parent.
++    sync_comp_for = argument.children[1]
++    if sync_comp_for.type == 'comp_for':
++        sync_comp_for = sync_comp_for.children[1]
++    return iterable.GeneratorComprehension(
++        context.inference_state,
++        defining_context=context,
++        sync_comp_for_node=sync_comp_for,
++        entry_node=argument.children[0],
++    )
++
++
+ def unpack_arglist(arglist):
+     if arglist is None:
+         return
+@@ -202,16 +219,7 @@ class TreeArguments(AbstractArguments):
+                     if len(c) == 3:  # Keyword argument.
+                         named_args.append((c[0].value, LazyTreeValue(self.context, c[2]),))
+                     else:  # Generator comprehension.
+-                        # Include the brackets with the parent.
+-                        sync_comp_for = el.children[1]
+-                        if sync_comp_for.type == 'comp_for':
+-                            sync_comp_for = sync_comp_for.children[1]
+-                        comp = iterable.GeneratorComprehension(
+-                            self._inference_state,
+-                            defining_context=self.context,
+-                            sync_comp_for_node=sync_comp_for,
+-                            entry_node=el.children[0],
+-                        )
++                        comp = comprehension_from_argument(self.context, el)
+                         yield None, LazyKnownValue(comp)
+                 else:
+                     yield None, LazyTreeValue(self.context, el)
+@@ -300,6 +308,15 @@ class TreeArgumentsWrapper(_AbstractArgumentsMixin):
+     def unpack(self, func=None):
+         raise NotImplementedError
+ 
++    def unwrap_implicit_values(self):
++        """
++        Returns the values that are passed before the wrapped arguments without
++        being written in the call (like ``self`` for methods) and the wrapped
++        arguments. Returns None if the wrapper changes the arguments in other
++        ways.
++        """
++        return None
++
+     def get_calling_nodes(self):
+         return self._wrapped_arguments.get_calling_nodes()
+ 
+diff --git a/jedi/inference/gradual/matching.py b/jedi/inference/gradual/matching.py
+new file mode 100644
+index 0000000..2d0f790
+--- /dev/null
++++ b/jedi/inference/gradual/matching.py
+@@ -0,0 +1,629 @@
++"""
++Decides whether a call matches a signature according to typing rules. This is
++used to find the ``@overload`` that is called.
++
++The results are True, False or None if it's unknown. A signature only matches
++if Jedi is sure that it accepts the call: Every possible way the arguments are
++passed at runtime (see :mod:`jedi.inference.unpacking`) needs to be accepted
++and every possible value of an argument needs to match the annotation of its
++parameter. If Jedi does not know the type of an argument, the result is
++usually unknown, because it might be anything (like ``Any`` in type checkers).
++"""
++import itertools
++from inspect import Parameter
++
++from jedi.cache import memoize_method
++from jedi.inference import compiled
++from jedi.inference.base_value import ValueSet, NO_VALUES
++from jedi.inference.cache import inference_state_function_cache
++from jedi.inference.helpers import is_string
++from jedi.inference.gradual.base import GenericClass
++from jedi.inference.gradual.type_var import TypeVar
++from jedi.inference.gradual.typing import AnyClass, SelfClass, ProxyWithGenerics, \
++    TypingClassWithGenerics, ProxyTypingValue, ProxyTypingClassValue, TypeAlias, \
++    NewType, Tuple, Callable, LiteralWithValues
++from jedi.inference.unpacking import Variadic, get_call_alternatives, \
++    sequence_alternatives, get_container_content
++
++_POSITIONAL_KINDS = (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
++_KEYWORD_KINDS = (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY)
++_MAX_EXPANSIONS = 256
++_MAX_DEPTH = 10
++# Every class has these, they are not relevant for protocols.
++_IGNORED_PROTOCOL_MEMBERS = {
++    '__slots__', '__doc__', '__module__', '__dict__', '__weakref__',
++    '__annotations__', '__init__', '__new__', '__init_subclass__',
++    '__class_getitem__', '__subclasshook__', '__abstractmethods__',
++    '__parameters__', '__orig_bases__', '__match_args__',
++}
++_sentinel = object()
++
++
++def match_signature(function_value, arguments):
++    """
++    Returns True if the function definitely accepts the arguments, False if it
++    definitely doesn't and None if it's unknown.
++    """
++    alternatives = get_call_alternatives(function_value.inference_state, arguments)
++    if not alternatives:
++        return None
++    signature = _Signature(function_value)
++    matcher = _TypeMatcher(
++        function_value.inference_state,
++        _get_self_classes(function_value, alternatives[0]),
++    )
++    return _all(signature.matches(matcher, call) for call in alternatives)
++
++
++def _all(results):
++    """Like ``all``, but for True, False and None (unknown)."""
++    final = True
++    for result in results:
++        if result is False:
++            return False
++        if result is None:
++            final = None
++    return final
++
++
++def _any(results):
++    """Like ``any``, but for True, False and None (unknown)."""
++    final = False
++    for result in results:
++        if result is True:
++            return True
++        if result is None:
++            final = None
++    return final
++
++
++class _Param:
++    def __init__(self, param_name):
++        self.name = param_name.string_name
++        self.kind = param_name.get_kind()
++        self.has_default = param_name.default_node is not None
++        self._param_name = param_name
++
++    @memoize_method
++    def get_annotations(self):
++        return self._param_name.infer_annotation(execute_annotation=False, ignore_stars=True)
++
++
++class _Signature:
++    def __init__(self, function_value):
++        self._params = [_Param(n) for n in function_value.get_param_names()]
++        self._positional_params = [p for p in self._params if p.kind in _POSITIONAL_KINDS]
++        self._keyword_params = {p.name: p for p in self._params if p.kind in _KEYWORD_KINDS}
++        self._var_positional = self._find_param(Parameter.VAR_POSITIONAL)
++        self._var_keyword = self._find_param(Parameter.VAR_KEYWORD)
++
++    def _find_param(self, kind):
++        return next((p for p in self._params if p.kind == kind), None)
++
++    def matches(self, matcher, call):
++        if not call.is_valid:
++            return call.is_valid
++        max_count = len(self._positional_params) + 1
++        return _all(
++            None if positional is None
++            else self._bound_call_matches(matcher, positional, call)
++            for positional in _expand_variadics(call.positional, max_count)
++        )
++
++    def _bound_call_matches(self, matcher, positional, call):
++        assigned = set()
++        checks = []
++        for i, item in enumerate(positional):
++            if i < len(self._positional_params):
++                param = self._positional_params[i]
++                assigned.add(param.name)
++            elif self._var_positional is not None:
++                param = self._var_positional
++            else:
++                return False  # Too many positional arguments
++            checks.append((item.values, param))
++
++        used_keywords = set()
++        for name, values in call.keywords:
++            if name in used_keywords:
++                return False  # Multiple values for the same keyword argument
++            used_keywords.add(name)
++            param = self._keyword_params.get(name)
++            if param is None:
++                if self._var_keyword is None:
++                    return False  # Unexpected keyword argument
++                param = self._var_keyword
++            elif name in assigned:
++                return False  # Multiple values for an argument
++            assigned.add(name)
++            checks.append((values, param))
++
++        if call.extra_keywords is not None:
++            # Keyword arguments with unknown names might go to any parameter
++            # that accepts keywords, but also to **kwargs.
++            if self._var_keyword is None:
++                return False
++            checks.append((call.extra_keywords, self._var_keyword))
++            for name, param in self._keyword_params.items():
++                if name in assigned:
++                    return False
++                checks.append((call.extra_keywords, param))
++
++        for param in self._params:
++            if param.kind not in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD) \
++                    and param.name not in assigned and not param.has_default:
++                return False  # Missing argument
++
++        return _all(matcher.values_match(values, param.get_annotations())
++                    for values, param in checks)
++
++
++def _get_self_classes(function_value, call):
++    """Returns the classes that ``Self`` refers to."""
++    if call.positional and call.positional[0].is_implicit:
++        return ValueSet(
++            value if _is_class(value) else value.py__class__()
++            for value in call.positional[0].values
++        )
++    context = function_value.parent_context
++    if context.is_class():
++        return ValueSet([context.get_value()])
++    return None
++
++
++def _expand_variadics(items, max_count):
++    """
++    Yields the positional arguments for every possible length of the
++    :class:`Variadic` items. More than ``max_count`` arguments don't need to be
++    checked, because the additional ones would be passed to ``*args`` or fail.
++    Yields None if there are too many combinations.
++    """
++    variadic_count = sum(isinstance(item, Variadic) for item in items)
++    if (max_count + 1) ** variadic_count > _MAX_EXPANSIONS:
++        yield None
++        return
++    for counts in itertools.product(range(max_count + 1), repeat=variadic_count):
++        count_iterator = iter(counts)
++        expanded = []
++        for item in items:
++            if isinstance(item, Variadic):
++                expanded += [item] * next(count_iterator)
++            else:
++                expanded.append(item)
++        yield expanded
++
++
++class _TypeMatcher:
++    def __init__(self, inference_state, self_classes):
++        self._inference_state = inference_state
++        self._self_classes = self_classes
++        self._cache = {}
++        self._depth = 0
++
++    def values_match(self, values, annotations):
++        """
++        Checks if every value matches one of the annotations (which are a
++        union). No annotations means that there is no annotation.
++        """
++        if not annotations:
++            return True
++        key = values, annotations
++        try:
++            return self._cache[key]
++        except KeyError:
++            pass
++        if self._depth > _MAX_DEPTH:
++            return None
++
++        self._cache[key] = None  # In case of recursion
++        self._depth += 1
++        try:
++            if any(self._accepts_anything(a) for a in annotations):
++                result = True
++            elif not values:
++                # Jedi does not know the value, it might be anything.
++                result = None
++            else:
++                result = _all(
++                    _any(self._value_matches(value, a) for a in annotations)
++                    for value in values
++                )
++        finally:
++            self._depth -= 1
++        self._cache[key] = result
++        return result
++
++    def _accepts_anything(self, annotation):
++        if isinstance(annotation, AnyClass):
++            return True
++        if isinstance(annotation, TypeVar):
++            return not annotation.bound and not annotation.constraints
++        if isinstance(annotation, SelfClass):
++            return self._self_classes is None
++        if isinstance(annotation, TypingClassWithGenerics):
++            return False
++        if isinstance(annotation, ProxyWithGenerics):
++            return any(self._accepts_anything(a) for a in _get_union_members(annotation))
++        if isinstance(annotation, ProxyTypingClassValue):
++            return False
++        if isinstance(annotation, ProxyTypingValue):
++            # Something like a bare Optional, which is not a valid annotation.
++            return True
++        if is_string(annotation):
++            # An unresolvable forward reference.
++            return True
++        return _is_class(annotation) and _is_builtin(annotation, 'object')
++
++    def _value_matches(self, value, annotation):
++        if self._accepts_anything(annotation):
++            return True
++        if isinstance(annotation, TypeVar):
++            return self._matches_type_var(value, annotation, self._value_matches)
++        if isinstance(annotation, SelfClass):
++            return _any(self._is_instance(value, cls) for cls in self._self_classes)
++        if isinstance(annotation, TypingClassWithGenerics):
++            name = annotation.py__name__()
++            generics = annotation.get_generics()
++            if name == 'Type':
++                if not _is_class(value):
++                    return False
++                if not generics or not generics[0]:
++                    return True
++                return _any(self._is_subclass(value, a) for a in generics[0])
++            if name == 'Tuple':
++                return self._tuple_matches(value, annotation)
++            if name == 'Callable':
++                return self._callable_matches(value, generics)
++            return False
++        if isinstance(annotation, ProxyWithGenerics):
++            if annotation.py__name__() == 'Optional' and _is_none(value):
++                return True
++            members = _get_union_members(annotation)
++            if not members:
++                return True
++            return _any(self._value_matches(value, a) for a in members)
++        if isinstance(annotation, ProxyTypingClassValue):
++            name = annotation.py__name__()
++            if name == 'Type':
++                return _is_class(value)
++            if name == 'Tuple':
++                return self._is_instance(value, self._builtin('tuple'))
++            if name == 'Callable':
++                return _is_callable(value)
++            return False
++        if isinstance(annotation, TypeAlias):
++            # e.g. List without generics
++            return _any(self._is_instance(value, cls)
++                        for cls in annotation.gather_annotation_classes())
++        if isinstance(annotation, NewType):
++            # Jedi infers NewType calls as their underlying type.
++            return self.values_match(ValueSet([value]), annotation._type_value_set)
++        if isinstance(annotation, LiteralWithValues):
++            return any(_is_same_literal(value, literal)
++                       for literal in annotation.get_literal_values())
++        if _is_class(annotation):
++            return self._is_instance(value, annotation)
++        if _is_none(annotation):
++            return _is_none(value)
++        return False
++
++    def _callable_matches(self, value, generics):
++        if not _is_callable(value):
++            return False
++        # The parameters are not checked, only the return type.
++        if len(generics) != 2:
++            return True
++        returns = generics[1]
++        if not returns or any(self._accepts_anything(a) for a in returns):
++            return True
++        return self.values_match(value.execute_with_values(), returns)
++
++    def _matches_type_var(self, value, type_var, match):
++        bound = type_var.bound
++        if bound:
++            return _any(True if is_string(b) else match(value, b) for b in bound)
++        constraints = type_var.constraints
++        if not constraints:
++            return True
++        return _any(match(value, c) for c in constraints)
++
++    def _builtin(self, name):
++        return compiled.builtin_from_name(self._inference_state, name)
++
++    def _is_instance(self, value, cls):
++        if _is_builtin(cls, 'object'):
++            return True
++        content = get_container_content(value)
++        if content is None:
++            value_class = _get_class(value)
++            elements = None
++        else:
++            value_class, elements = content
++        if value_class is None:
++            return None
++
++        base = _find_base(value_class, cls)
++        if base is None:
++            return _any([
++                self._is_promoted(value, cls),
++                self._implements_protocol(value, cls),
++            ])
++        if not isinstance(cls, GenericClass):
++            return True
++        return self._generics_match(base, cls, elements)
++
++    def _implements_protocol(self, value, cls):
++        # The types of the members are not checked.
++        if not _is_protocol(cls):
++            return False
++        members = _get_protocol_members(self._inference_state, _get_plain_class(cls))
++        return all(_has_attribute(value, name) for name in members)
++
++    def _is_promoted(self, value, cls):
++        """int is accepted for float and int/float for complex."""
++        if _is_builtin(cls, 'float'):
++            names = ['int']
++        elif _is_builtin(cls, 'complex'):
++            names = ['int', 'float']
++        else:
++            return False
++        return _any(self._is_instance(value, self._builtin(name)) for name in names)
++
++    def _generics_match(self, base, cls, elements):
++        """
++        Compares the generics of ``cls`` (e.g. ``Sequence[int]``) with the
++        generics of ``base``, which is the same class in the MRO of the value.
++        ``elements`` are the elements of containers written in the code.
++        """
++        base_generics = _get_generics(base)
++        type_vars = _get_plain_class(cls).list_type_vars()
++        results = []
++        for i, annotations in enumerate(cls.get_generics()):
++            if not annotations:
++                continue  # Not inferable, e.g. not existing names.
++            try:
++                generic = base_generics[i]
++            except IndexError:
++                return None
++
++            element_values = _get_element_values(generic, elements)
++            if element_values is not None:
++                # The actual content is known, so just compare that. This is
++                # what type checkers do as well, e.g. `[1]` is a valid
++                # `list[float]`.
++                results += [self.values_match(values, annotations)
++                            for values in element_values]
++            else:
++                type_var = type_vars[i] if i < len(type_vars) else None
++                results.append(self._types_match(generic, annotations, type_var))
++            if False in results:
++                return False
++        return _all(results)
++
++    def _types_match(self, types, annotations, type_var):
++        """
++        Compares two generics, e.g. the ``int`` of a ``list[int]`` value with
++        the ``float`` of a ``list[float]`` annotation, according to the
++        variance of the type var.
++        """
++        if any(self._accepts_anything(a) for a in annotations):
++            return True
++        is_covariant = type_var is None or type_var.is_covariant
++        is_contravariant = type_var is not None and type_var.is_contravariant
++        results = []
++        if not is_contravariant:
++            results.append(self.values_match(types.execute_annotation(None), annotations))
++        if not is_covariant and not any(self._accepts_anything(t) for t in types):
++            results.append(self.values_match(annotations.execute_annotation(None), types))
++        return _all(results)
++
++    def _tuple_matches(self, value, annotation):
++        is_tuple = self._is_instance(value, self._builtin('tuple'))
++        if not is_tuple:
++            return is_tuple
++        generics = annotation.get_generics()
++        if not generics:
++            return True
++        is_homogenous = annotation._generics_manager.is_homogenous_tuple()
++        results = []
++        for alternative in sequence_alternatives(ValueSet([value])):
++            if is_homogenous:
++                results += [self.values_match(item.values, generics[0])
++                            for item in alternative]
++                continue
++            for item in alternative:
++                if isinstance(item, Variadic):
++                    # A tuple of unknown length is only accepted if it's
++                    # a tuple[Any, ...].
++                    return None if not item.values else False
++            if len(alternative) != len(generics):
++                return False
++            results += [self.values_match(item.values, annotations)
++                        for item, annotations in zip(alternative, generics)]
++        return _all(results)
++
++    def _is_subclass(self, cls, annotation):
++        """Checks a class for ``type[annotation]``."""
++        if self._accepts_anything(annotation):
++            return True
++        if isinstance(annotation, TypeVar):
++            return self._matches_type_var(cls, annotation, self._is_subclass)
++        if isinstance(annotation, SelfClass):
++            return any(_find_base(cls, c) is not None for c in self._self_classes)
++        if isinstance(annotation, (TypingClassWithGenerics, ProxyTypingClassValue)):
++            if annotation.py__name__() == 'Tuple':
++                return _find_base(cls, self._builtin('tuple')) is not None
++            return False
++        if isinstance(annotation, ProxyWithGenerics):
++            return _any(self._is_subclass(cls, a) for a in _get_union_members(annotation))
++        if isinstance(annotation, TypeAlias):
++            return any(_find_base(cls, c) is not None
++                       for c in annotation.gather_annotation_classes())
++        if _is_class(annotation):
++            return _find_base(cls, annotation) is not None \
++                or self._implements_protocol(cls, annotation)
++        return False
++
++
++def _get_union_members(annotation):
++    """For Union, Optional, Annotated, ClassVar and Final."""
++    generics = annotation.get_generics()
++    if annotation.py__name__() == 'Union':
++        return ValueSet.from_sets(generics)
++    return generics[0] if generics else NO_VALUES
++
++
++def _get_element_values(generic, elements):
++    """
++    Returns the elements for a generic of a container written in the code,
++    e.g. the keys of a dict for the ``_KT`` of ``Mapping[_KT, _VT_co]``.
++    """
++    if elements is None or len(generic) != 1:
++        return None
++    type_var, = generic
++    if not isinstance(type_var, TypeVar):
++        return None
++    return elements.get(type_var.py__name__())
++
++
++def _get_class(value):
++    if isinstance(value, Tuple):
++        return compiled.builtin_from_name(value.inference_state, 'tuple')
++    get_annotated_class_object = getattr(value, 'get_annotated_class_object', None)
++    if get_annotated_class_object is not None \
++            and value.is_instance() and not value.is_compiled():
++        # Contains the generics that are inferred from the arguments of the
++        # class, e.g. Box[int] for Box(1).
++        return get_annotated_class_object()
++    try:
++        return value.py__class__()
++    except AttributeError:
++        return None
++
++
++def _get_generics(cls):
++    try:
++        return cls.get_generics()
++    except AttributeError:
++        pass
++    try:
++        type_vars = cls.list_type_vars()
++    except AttributeError:
++        return ()
++    return tuple(ValueSet([type_var]) for type_var in type_vars)
++
++
++def _get_mro(cls):
++    try:
++        return cls.py__mro__()
++    except AttributeError:
++        return [cls]
++
++
++def _find_base(cls, base):
++    """Returns ``base`` how it appears in the MRO of ``cls``."""
++    for c in _get_mro(cls):
++        if _is_same_class(c, base):
++            return c
++    return None
++
++
++def _is_same_class(cls1, cls2):
++    if cls1 == cls2:
++        return True
++    node1 = cls1.tree_node
++    node2 = cls2.tree_node
++    if node1 is not None and node2 is not None \
++            and node1.get_root_node() is node2.get_root_node():
++        return node1 == node2
++
++    # Classes in stubs and compiled classes are not the same objects as the
++    # classes in Python files.
++    names = cls1.get_qualified_names()
++    return names is not None and names == cls2.get_qualified_names() \
++        and cls1.get_root_context().py__name__() == cls2.get_root_context().py__name__()
++
++
++def _get_plain_class(cls):
++    while isinstance(cls, GenericClass):
++        cls = cls._class_value
++    return cls
++
++
++def _is_builtin(cls, name):
++    try:
++        return cls.py__name__() == name and cls.get_root_context().is_builtins_module()
++    except AttributeError:
++        return False
++
++
++def _is_class(value):
++    is_class = getattr(value, 'is_class', None)
++    return is_class is not None and is_class()
++
++
++def _is_none(value):
++    try:
++        return value.is_compiled() and not value.is_class() \
++            and value.get_safe_value(default=_sentinel) is None
++    except AttributeError:
++        return False
++
++
++def _get_safe_value(value):
++    try:
++        return value.get_safe_value(default=_sentinel)
++    except AttributeError:
++        return _sentinel
++
++
++def _is_same_literal(value, literal):
++    expected = _get_safe_value(literal)
++    if expected is _sentinel:
++        # Enum members
++        node = literal.tree_node
++        return value == literal or node is not None and value.tree_node == node
++    actual = _get_safe_value(value)
++    # Literal[1] does not accept True, even though 1 == True.
++    return type(actual) is type(expected) and actual == expected
++
++
++def _has_attribute(value, name):
++    try:
++        return bool(value.goto(name, analysis_errors=False))
++    except AttributeError:
++        return False
++
++
++def _is_callable(value):
++    if isinstance(value, Callable) or _is_class(value):
++        return True
++    if getattr(value, 'api_type', None) == 'function':
++        return True
++    return _has_attribute(value, '__call__')
++
++
++def _is_protocol(cls):
++    cls = _get_plain_class(cls)
++    try:
++        lazy_bases = cls.py__bases__()
++    except AttributeError:
++        return False
++    return any(
++        isinstance(base, (ProxyTypingClassValue, TypingClassWithGenerics))
++        and base.py__name__() == 'Protocol'
++        for lazy_base in lazy_bases
++        for base in lazy_base.infer()
++    )
++
++
++@inference_state_function_cache()
++def _get_protocol_members(inference_state, protocol):
++    names = set()
++    for cls in _get_mro(protocol):
++        cls = _get_plain_class(cls)
++        if _is_protocol(cls):
++            class_filter = next(cls.get_filters(include_metaclasses=False), None)
++            if class_filter is not None:
++                names |= {name.string_name for name in class_filter.values()}
++    return names - _IGNORED_PROTOCOL_MEMBERS
+diff --git a/jedi/inference/gradual/type_var.py b/jedi/inference/gradual/type_var.py
+index d74c97a..f237fae 100644
+--- a/jedi/inference/gradual/type_var.py
++++ b/jedi/inference/gradual/type_var.py
+@@ -62,7 +62,7 @@ class TypeVar(BaseTypingValue):
+                 elif key == 'covariant':
+                     self._covariant_lazy_value = lazy_value
+                 elif key == 'contravariant':
+-                    self._contra_variant_lazy_value = lazy_value
++                    self._contravariant_lazy_value = lazy_value
+                 else:
+                     debug.warning('Invalid TypeVar param name %s', key)
+ 
+@@ -90,6 +90,20 @@ class TypeVar(BaseTypingValue):
+             lazy.infer() for lazy in self._constraints_lazy_values
+         )
+ 
++    @property
++    def bound(self):
++        if self._bound_lazy_value is None:
++            return NO_VALUES
++        return self._bound_lazy_value.infer()
++
++    @property
++    def is_covariant(self):
++        return _is_true(self._covariant_lazy_value)
++
++    @property
++    def is_contravariant(self):
++        return _is_true(self._contravariant_lazy_value)
++
+     def define_generics(self, type_var_dict):
+         try:
+             found = type_var_dict[self.py__name__()]
+@@ -118,6 +132,12 @@ class TypeVar(BaseTypingValue):
+         return '<%s: %s>' % (self.__class__.__name__, self.py__name__())
+ 
+ 
++def _is_true(lazy_value):
++    if lazy_value is None:
++        return False
++    return any(v.get_safe_value(default=None) is True for v in lazy_value.infer())
++
++
+ class TypeWrapper(ValueWrapper):
+     def __init__(self, wrapped_value, original_value):
+         super().__init__(wrapped_value)
+diff --git a/jedi/inference/gradual/typing.py b/jedi/inference/gradual/typing.py
+index febb80c..8892738 100644
+--- a/jedi/inference/gradual/typing.py
++++ b/jedi/inference/gradual/typing.py
+@@ -17,6 +17,7 @@ from jedi.inference.arguments import repack_with_argument_clinic
+ from jedi.inference.filters import FilterWrapper
+ from jedi.inference.names import NameWrapper, ValueName
+ from jedi.inference.value.klass import ClassMixin
++from jedi.inference.value.iterable import SequenceLiteralValue
+ from jedi.inference.gradual.base import BaseTypingValue, \
+     BaseTypingClassWithGenerics, BaseTypingInstance
+ from jedi.inference.gradual.type_var import TypeVarClass
+@@ -86,6 +87,9 @@ class TypingModuleName(NameWrapper):
+         elif name == 'Self':
+             yield SelfClass.create_cached(
+                 inference_state, self.parent_context, self.tree_name)
++        elif name == 'Literal':
++            yield LiteralClass.create_cached(
++                inference_state, self.parent_context, self.tree_name)
+         elif name == 'TypedDict':
+             # TODO doesn't even exist in typeshed/typing.py, yet. But will be
+             # added soon.
+@@ -409,6 +413,51 @@ class SelfClass(BaseTypingValue):
+         return NO_VALUES
+ 
+ 
++class LiteralClass(BaseTypingValue):
++    def py__getitem__(self, index_value_set, contextualized_node):
++        values = NO_VALUES
++        for index_value in index_value_set:
++            if isinstance(index_value, SequenceLiteralValue) \
++                    and index_value.array_type == 'tuple':
++                # Literal[1, 2]
++                for lazy_value in index_value.py__iter__():
++                    values |= lazy_value.infer()
++            else:
++                values |= ValueSet([index_value])
++        return ValueSet([LiteralWithValues.create_cached(
++            self.inference_state,
++            self.parent_context,
++            self._tree_name,
++            values,
++        )])
++
++
++class LiteralWithValues(BaseTypingValue):
++    """
++    An annotation like ``Literal[1, 2]``. When executed, it returns the
++    values, e.g. ``1`` and ``2``.
++    """
++    def __init__(self, parent_context, tree_name, values):
++        super().__init__(parent_context, tree_name)
++        # Nested Literals are allowed, e.g. Literal[Literal[1], 2]
++        self._values = ValueSet.from_sets(
++            v.get_literal_values() if isinstance(v, LiteralWithValues) else ValueSet([v])
++            for v in values
++        )
++
++    def get_literal_values(self):
++        return self._values
++
++    def execute_annotation(self, context):
++        return self._values
++
++    def gather_annotation_classes(self):
++        return self._values.py__class__()
++
++    def __repr__(self):
++        return '%s(%s)' % (self.__class__.__name__, self._values)
++
++
+ class OverloadFunction(BaseTypingValue):
+     @repack_with_argument_clinic('func, /')
+     def py__call__(self, func_value_set):
+diff --git a/jedi/inference/param.py b/jedi/inference/param.py
+index b8ec4d3..574add0 100644
+--- a/jedi/inference/param.py
++++ b/jedi/inference/param.py
+@@ -1,5 +1,4 @@
+ from collections import defaultdict
+-from inspect import Parameter
+ 
+ from jedi import debug
+ from jedi.inference.utils import PushBackIterator
+@@ -19,32 +18,13 @@ def _add_argument_issue(error_name, lazy_value, message):
+ 
+ 
+ class ExecutedParamName(ParamName):
+-    def __init__(self, function_value, arguments, param_node, lazy_value, is_default=False):
++    def __init__(self, function_value, arguments, param_node, lazy_value):
+         super().__init__(function_value, param_node.name, arguments=arguments)
+         self._lazy_value = lazy_value
+-        self._is_default = is_default
+ 
+     def infer(self):
+         return self._lazy_value.infer()
+ 
+-    def matches_signature(self):
+-        if self._is_default:
+-            return True
+-        argument_values = self.infer().py__class__()
+-        if self.get_kind() in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
+-            return True
+-        annotations = self.infer_annotation(execute_annotation=False)
+-        if not annotations:
+-            # If we cannot infer annotations - or there aren't any - pretend
+-            # that the signature matches.
+-            return True
+-        matches = any(c1.is_sub_class_of(c2)
+-                      for c1 in argument_values
+-                      for c2 in annotations.gather_annotation_classes())
+-        debug.dbg("param compare %s: %s <=> %s",
+-                  matches, argument_values, annotations, color='BLUE')
+-        return matches
+-
+     def __repr__(self):
+         return '<%s: %s>' % (self.__class__.__name__, self.string_name)
+ 
+@@ -109,7 +89,6 @@ def get_executed_param_names_and_issues(function_value, arguments):
+         # args / kwargs will just be empty arrays / dicts, respectively.
+         # Wrong value count is just ignored. If you try to test cases that are
+         # not allowed in Python, Jedi will maybe not show any completions.
+-        is_default = False
+         key, argument = next(var_arg_iterator, (None, None))
+         while key is not None:
+             keys_only = True
+@@ -178,12 +157,11 @@ def get_executed_param_names_and_issues(function_value, arguments):
+                             )
+                 else:
+                     result_arg = LazyTreeValue(default_param_context, param.default)
+-                    is_default = True
+             else:
+                 result_arg = argument
+ 
+         result_params.append(ExecutedParamName(
+-            function_value, arguments, param, result_arg, is_default=is_default
++            function_value, arguments, param, result_arg
+         ))
+         if not isinstance(result_arg, LazyUnknownValue):
+             keys_used[param.name.value] = result_params[-1]
+diff --git a/jedi/inference/signature.py b/jedi/inference/signature.py
+index c968bf2..c4e5f7a 100644
+--- a/jedi/inference/signature.py
++++ b/jedi/inference/signature.py
+@@ -65,6 +65,10 @@ class AbstractSignature(_SignatureMixin):
+         raise NotImplementedError
+ 
+     def matches_signature(self, arguments):
++        """
++        Returns True if the arguments definitely match the signature, False if
++        they don't and None if it's unknown.
++        """
+         return True
+ 
+     def __repr__(self):
+@@ -107,20 +111,17 @@ class TreeSignature(AbstractSignature):
+         return params
+ 
+     def matches_signature(self, arguments):
+-        from jedi.inference.param import get_executed_param_names_and_issues
+-        executed_param_names, issues = \
+-            get_executed_param_names_and_issues(self._function_value, arguments)
+-        if issues:
+-            return False
+-
+-        matches = all(executed_param_name.matches_signature()
+-                      for executed_param_name in executed_param_names)
++        from jedi.inference.gradual.matching import match_signature
++        matches = match_signature(self._function_value, arguments)
+         if debug.enable_notice:
+             tree_node = self._function_value.tree_node
+             signature = parser_utils.get_signature(tree_node)
+             if matches:
+                 debug.dbg("Overloading match: %s@%s (%s)",
+                           signature, tree_node.start_pos[0], arguments, color='BLUE')
++            elif matches is None:
++                debug.dbg("Overloading unknown match: %s@%s (%s)",
++                          signature, tree_node.start_pos[0], arguments, color='BLUE')
+             else:
+                 debug.dbg("Overloading no match: %s@%s (%s)",
+                           signature, tree_node.start_pos[0], arguments, color='BLUE')
+diff --git a/jedi/inference/syntax_tree.py b/jedi/inference/syntax_tree.py
+index ff5b4fc..de0ba0d 100644
+--- a/jedi/inference/syntax_tree.py
++++ b/jedi/inference/syntax_tree.py
+@@ -21,7 +21,7 @@ from jedi.inference.value import iterable
+ from jedi.inference.value.dynamic_arrays import ListModification, DictModification
+ from jedi.inference.value import TreeInstance
+ from jedi.inference.helpers import is_string, is_literal, is_number, \
+-    get_names_of_node, is_big_annoying_library
++    get_names_of_node, is_big_annoying_library, get_int_or_none
+ from jedi.inference.compiled.access import COMPARISON_OPERATORS
+ from jedi.inference.cache import inference_state_method_cache
+ from jedi.inference.gradual.stub_value import VersionInfo
+@@ -30,7 +30,8 @@ from jedi.inference.names import TreeNameDefinition
+ from jedi.inference.context import CompForContext
+ from jedi.inference.value.decorator import Decoratee
+ from jedi.plugins import plugin_manager
+-from jedi.inference.gradual.typing import ProxyTypingValue, IGNORE_ANNOTATION_PARTS
++from jedi.inference.gradual.typing import ProxyTypingValue, IGNORE_ANNOTATION_PARTS, \
++    LiteralWithValues
+ from jedi.inference.gradual.type_var import TypeVar
+ 
+ operator_to_magic_method = {
+@@ -470,14 +471,18 @@ def infer_or_test(context, or_test):
+ 
+         # handle type inference of and/or here.
+         if operator in ('and', 'or'):
+-            left_bools = set(left.py__bool__() for left in types)
+-            if left_bools == {True}:
+-                if operator == 'and':
+-                    types = context.infer_node(right)
+-            elif left_bools == {False}:
+-                if operator != 'and':
+-                    types = context.infer_node(right)
+-            # Otherwise continue, because of uncertainty.
++            # `a or b` returns `a` if it's truthy, otherwise `b`. `a and b`
++            # returns `a` if it's falsy, otherwise `b`.
++            left_is_returned_if = operator == 'or'
++            left_bools = {left: left.py__bool__() for left in types}
++            if left_bools:
++                # py__bool__ returns None if it's unknown.
++                types = ValueSet(
++                    left for left, bool_ in left_bools.items()
++                    if bool_ in (left_is_returned_if, None)
++                )
++                if any(bool_ is not left_is_returned_if for bool_ in left_bools.values()):
++                    types |= context.infer_node(right)
+         else:
+             types = _infer_comparison(context, types, operator,
+                                       context.infer_node(right))
+@@ -531,7 +536,8 @@ def _infer_comparison(context, left_values, operator, right_values):
+         result = (left_values or NO_VALUES) | (right_values or NO_VALUES)
+         return _literals_to_types(state, result)
+     elif operator_str == "|" and all(
+-        value.is_class() or value.is_compiled() or isinstance(value, TypeVar)
++        value.is_class() or value.is_compiled()
++        or isinstance(value, (TypeVar, LiteralWithValues))
+         for value in itertools.chain(left_values, right_values)
+     ):
+         # ^^^ A naive hack for PEP 604
+@@ -604,10 +610,16 @@ def _infer_comparison_part(inference_state, context, left, operator, right):
+         str_operator = str(operator.value)
+ 
+     if str_operator == '*':
+-        # for iterables, ignore * operations
+-        if isinstance(left, iterable.Sequence) or is_string(left):
++        # Repeating iterables doesn't change the type of their values.
++        if isinstance(left, iterable.Sequence):
++            return ValueSet([iterable.RepeatedArray(
++                inference_state, left, get_int_or_none(right))])
++        elif isinstance(right, iterable.Sequence):
++            return ValueSet([iterable.RepeatedArray(
++                inference_state, right, get_int_or_none(left))])
++        elif is_string(left):
+             return ValueSet([left])
+-        elif isinstance(right, iterable.Sequence) or is_string(right):
++        elif is_string(right):
+             return ValueSet([right])
+     elif str_operator == '+':
+         if l_is_num and r_is_num or is_string(left) and is_string(right):
+diff --git a/jedi/inference/unpacking.py b/jedi/inference/unpacking.py
+new file mode 100644
+index 0000000..94ff4b8
+--- /dev/null
++++ b/jedi/inference/unpacking.py
+@@ -0,0 +1,530 @@
++"""
++Python creates the content of containers like ``[A, *b]`` or
++``{'k': C, **d}`` at runtime. Jedi usually merges the values of containers,
++which is good enough for completions, but not for deciding which ``@overload``
++is called: For that it matters how many arguments are passed and which
++argument ends up at which position.
++
++The functions in this module therefore return lists of alternatives. Every
++alternative is one possible runtime content. An alternative of a sequence is a
++tuple of :class:`Exact` (exactly one element) and :class:`Variadic` (any
++number of elements, including none) items. If Jedi does not know something,
++like the length of a ``list[int]``, :class:`Variadic` is used.
++"""
++import operator
++
++from jedi import debug
++from jedi.inference import compiled
++from jedi.inference.base_value import ValueSet, NO_VALUES
++from jedi.inference.cache import inference_state_function_cache
++from jedi.inference.lazy_value import MergedLazyValues
++from jedi.inference.arguments import TreeArguments, TreeArgumentsWrapper, \
++    unpack_arglist, comprehension_from_argument
++from jedi.inference.value import iterable
++from jedi.inference.value.dynamic_arrays import check_array_additions
++from jedi.inference.gradual.typing import Tuple
++
++# More alternatives than this are merged, which loses precision, but avoids
++# exponential growth.
++_MAX_ALTERNATIVES = 64
++# Avoids endless recursion in cases like ``a = [*a]``.
++_MAX_DEPTH = 10
++# Avoids huge alternatives in cases like ``[1] * 10**9``.
++_MAX_REPEATED_ITEMS = 256
++_UNKNOWN_KEY = object()
++
++
++class Exact:
++    """Exactly one element with one of the given ``values``."""
++    def __init__(self, values, is_implicit=False):
++        self.values = values
++        # Implicit arguments like ``self`` are not written in a call.
++        self.is_implicit = is_implicit
++
++    def __repr__(self):
++        return '<%s: %s>' % (self.__class__.__name__, self.values)
++
++
++class Variadic:
++    """Any number of elements (including none) with one of the ``values``."""
++    is_implicit = False
++
++    def __init__(self, values):
++        self.values = values
++
++    def __repr__(self):
++        return '<%s: %s>' % (self.__class__.__name__, self.values)
++
++
++class DictContent:
++    """
++    The content of a dict. ``entries`` maps keys that are known (as Python
++    objects) to tuples of the inferred key and value. If ``extra_keys`` is not
++    None, there might be other entries with these keys and ``extra_values``.
++    """
++    def __init__(self, entries=None, extra_keys=None, extra_values=None):
++        self.entries = {} if entries is None else entries
++        self.extra_keys = extra_keys
++        self.extra_values = extra_values
++
++    def with_item(self, key, key_values, values):
++        if key is _UNKNOWN_KEY:
++            return self.with_unknown_items(key_values, values)
++        entries = dict(self.entries)
++        if key in entries:
++            # Python keeps the first key, e.g. ``{1: A, True: C} == {1: C}``.
++            key_values = entries[key][0]
++        entries[key] = key_values, values
++        return DictContent(entries, self.extra_keys, self.extra_values)
++
++    def with_unknown_items(self, key_values, values):
++        # An unknown key might replace the value of every known key.
++        entries = {
++            key: (known_key_values, known_values | values)
++            for key, (known_key_values, known_values) in self.entries.items()
++        }
++        return DictContent(
++            entries,
++            _union(self.extra_keys, key_values),
++            _union(self.extra_values, values),
++        )
++
++    def merged(self, other):
++        """Returns the content of ``{**self, **other}``."""
++        result = self
++        for key, (key_values, values) in other.entries.items():
++            result = result.with_item(key, key_values, values)
++        if other.extra_keys is not None:
++            result = result.with_unknown_items(other.extra_keys, other.extra_values)
++        return result
++
++    def __repr__(self):
++        return '<%s: %s, %s: %s>' % (
++            self.__class__.__name__, self.entries, self.extra_keys, self.extra_values)
++
++
++class CallAlternative:
++    """
++    One possible way the arguments of a call are passed at runtime.
++    ``extra_keywords`` is not None if there might be keyword arguments with
++    unknown names.
++    """
++    def __init__(self, positional=(), keywords=(), extra_keywords=None, is_valid=True):
++        self.positional = positional
++        self.keywords = keywords
++        self.extra_keywords = extra_keywords
++        # False if Python raises a TypeError or if Jedi gave up.
++        self.is_valid = is_valid
++
++    def with_positional(self, items):
++        return CallAlternative(
++            self.positional + tuple(items), self.keywords,
++            self.extra_keywords, self.is_valid,
++        )
++
++    def with_keyword(self, name, values):
++        return CallAlternative(
++            self.positional, self.keywords + ((name, values),),
++            self.extra_keywords, self.is_valid,
++        )
++
++    def with_mapping(self, dict_content):
++        """Adds ``**mapping``."""
++        is_valid = self.is_valid
++        keywords = list(self.keywords)
++        for key, (_, values) in dict_content.entries.items():
++            if isinstance(key, str):
++                keywords.append((key, values))
++            else:
++                # TypeError: keywords must be strings
++                is_valid = False
++        extra_keywords = self.extra_keywords
++        if dict_content.extra_keys is not None:
++            extra_keywords = _union(extra_keywords, dict_content.extra_values)
++        return CallAlternative(self.positional, tuple(keywords), extra_keywords, is_valid)
++
++    def __repr__(self):
++        return '<%s: %s, %s, %s>' % (
++            self.__class__.__name__, self.positional, self.keywords, self.extra_keywords)
++
++
++def _union(value_set, other):
++    if value_set is None:
++        return other
++    return value_set | other
++
++
++def _combine(alternatives, choices, combine, merge):
++    """
++    Combines every alternative with every choice. ``merge`` is used to merge
++    the alternatives if there are too many.
++    """
++    result = [combine(alternative, choice)
++              for alternative in alternatives
++              for choice in choices]
++    if len(result) > _MAX_ALTERNATIVES:
++        debug.dbg('Too many alternatives (%s), merging them', len(result))
++        return [merge(result)]
++    return result
++
++
++def _merge_sequences(alternatives):
++    return (Variadic(ValueSet.from_sets(
++        item.values for alternative in alternatives for item in alternative
++    )),)
++
++
++def _merge_dicts(alternatives):
++    keys = values = NO_VALUES
++    for dict_content in alternatives:
++        for key_values, entry_values in dict_content.entries.values():
++            keys |= key_values
++            values |= entry_values
++        if dict_content.extra_keys is not None:
++            keys |= dict_content.extra_keys
++            values |= dict_content.extra_values
++    return DictContent(extra_keys=keys, extra_values=values)
++
++
++def _merge_calls(alternatives):
++    return CallAlternative(is_valid=False)
++
++
++def sequence_alternatives(values, depth=0):
++    """
++    Returns the possible contents of iterating over one of the ``values``.
++    """
++    if not values or depth > _MAX_DEPTH:
++        return [(Variadic(NO_VALUES),)]
++    alternatives = []
++    for value in values:
++        alternatives += _value_sequence_alternatives(value, depth)
++    if len(alternatives) > _MAX_ALTERNATIVES:
++        return [_merge_sequences(alternatives)]
++    return alternatives
++
++
++def _value_sequence_alternatives(value, depth):
++    if isinstance(value, (iterable.DictLiteralValue, iterable.DictComprehension,
++                          iterable.FakeDict)):
++        # Iterating over a dict returns its keys.
++        return [
++            tuple(Exact(key_values) for key_values, _ in dict_content.entries.values())
++            + (() if dict_content.extra_keys is None
++               else (Variadic(dict_content.extra_keys),))
++            for dict_content in _value_dict_alternatives(value, depth)
++        ]
++    if isinstance(value, iterable.SequenceLiteralValue):
++        alternatives = _literal_sequence_alternatives(value, depth)
++    elif isinstance(value, iterable.ComprehensionMixin):
++        alternatives = _comprehension_alternatives(value, depth)
++    elif isinstance(value, iterable.MergedArray):
++        alternatives = [()]
++        for array in value._arrays:
++            alternatives = _combine(
++                alternatives,
++                _value_sequence_alternatives(array, depth + 1),
++                operator.add,
++                _merge_sequences,
++            )
++    elif isinstance(value, iterable.SlicedArray):
++        # The bounds of slices are often unknown.
++        alternatives = [_merge_sequences(_value_sequence_alternatives(value.array, depth + 1))]
++    elif isinstance(value, iterable.RepeatedArray):
++        alternatives = _value_sequence_alternatives(value.array, depth + 1)
++        if value.count is None \
++                or value.count * max(map(len, alternatives)) > _MAX_REPEATED_ITEMS:
++            alternatives = [_merge_sequences(alternatives)]
++        else:
++            alternatives = [alternative * value.count for alternative in alternatives]
++    elif isinstance(value, (iterable.FakeTuple, iterable.FakeList)):
++        lazy_values = list(value.py__iter__())
++        if not lazy_values:
++            # Jedi also uses empty tuples for *args if it does not know them.
++            return [(Variadic(NO_VALUES),)]
++        alternatives = [tuple(
++            Variadic(lazy_value.infer())
++            if isinstance(lazy_value, MergedLazyValues)
++            or lazy_value.min != 1 or lazy_value.max != 1
++            else Exact(lazy_value.infer())
++            for lazy_value in lazy_values
++        )]
++    elif isinstance(value, Tuple):
++        lazy_values = list(value.py__iter__())
++        if value._is_homogenous():
++            return [_merge_sequences([[Exact(lazy_value.infer()) for lazy_value in lazy_values]])]
++        return [tuple(Exact(lazy_value.infer()) for lazy_value in lazy_values)]
++    else:
++        return [(Variadic(value.merge_types_of_iterate()),)]
++
++    if value.array_type == 'set':
++        # The order of sets is unknown and duplicates are removed.
++        return [_merge_sequences(alternatives)]
++    return alternatives
++
++
++def _get_literal_element_nodes(atom):
++    if atom.type in iterable.SequenceLiteralValue._TUPLE_LIKE:
++        return atom.children[::2]
++    inner = atom.children[1]
++    if inner in (')', ']', '}'):
++        return []
++    if inner.type in ('testlist_comp', 'dictorsetmaker'):
++        return inner.children[::2]
++    return [inner]
++
++
++def _literal_sequence_alternatives(sequence, depth):
++    context = sequence._defining_context
++    alternatives = [()]
++    for node in _get_literal_element_nodes(sequence.atom):
++        if node.type == 'star_expr':
++            choices = sequence_alternatives(context.infer_node(node.children[1]), depth + 1)
++        else:
++            choices = [(Exact(context.infer_node(node)),)]
++        alternatives = _combine(alternatives, choices, operator.add, _merge_sequences)
++
++    additions = check_array_additions(context, sequence)
++    if additions:
++        # It's unknown where and how often values are added.
++        added = ValueSet.from_sets(lazy_value.infer() for lazy_value in additions)
++        alternatives = [_merge_sequences(alternatives + [(Variadic(added),)])]
++    return alternatives
++
++
++def _get_input_alternatives(comprehension, depth):
++    """
++    Returns the possible contents of the iterable of the first ``for`` of a
++    comprehension or None for ``async for``.
++    """
++    comp_for = comprehension._sync_comp_for_node
++    if comp_for.parent.type == 'comp_for':  # async for
++        return None
++    input_values = comprehension._defining_context.infer_node(comp_for.children[3])
++    return sequence_alternatives(input_values, depth + 1)
++
++
++def _is_empty(alternatives):
++    return alternatives is not None and all(not alternative for alternative in alternatives)
++
++
++def _comprehension_alternatives(comprehension, depth):
++    inputs = _get_input_alternatives(comprehension, depth)
++    if _is_empty(inputs):
++        return [()]
++    entries = comprehension._iterate()
++    if inputs is not None and len(inputs) == 1 \
++            and len(comprehension._sync_comp_for_node.children) == 4 \
++            and all(isinstance(item, Exact) for item in inputs[0]) \
++            and len(entries) == len(inputs[0]):
++        # A simple comprehension like ``[x for x in (A, C)]`` without ``if``
++        # and nested ``for``: Every element of the input creates an element.
++        return [tuple(Exact(values) for values in entries)]
++    return [(Variadic(ValueSet.from_sets(entries)),)]
++
++
++def dict_alternatives(values, depth=0):
++    """
++    Returns the possible :class:`DictContent` of one of the ``values``.
++    """
++    if not values or depth > _MAX_DEPTH:
++        return [DictContent(extra_keys=NO_VALUES, extra_values=NO_VALUES)]
++    alternatives = []
++    for value in values:
++        alternatives += _value_dict_alternatives(value, depth)
++    if len(alternatives) > _MAX_ALTERNATIVES:
++        return [_merge_dicts(alternatives)]
++    return alternatives
++
++
++def _value_dict_alternatives(value, depth):
++    if isinstance(value, iterable.DictLiteralValue):
++        return _literal_dict_alternatives(value, depth)
++    if isinstance(value, iterable.DictComprehension):
++        if _is_empty(_get_input_alternatives(value, depth)):
++            return [DictContent()]
++        entries = value._iterate()
++        return [DictContent(
++            extra_keys=ValueSet.from_sets(keys for keys, _ in entries),
++            extra_values=ValueSet.from_sets(values for _, values in entries),
++        )]
++    if isinstance(value, iterable.FakeDict):
++        items = list(value.exact_key_items())
++        if items:
++            return [DictContent({
++                key: (
++                    ValueSet([compiled.create_simple_object(value.inference_state, key)]),
++                    lazy_value.infer(),
++                )
++                for key, lazy_value in items
++            })]
++        # Jedi also uses empty dicts for **kwargs if it does not know them.
++        return [DictContent(extra_keys=NO_VALUES, extra_values=NO_VALUES)]
++
++    # Some other mapping, e.g. an instance of ``dict[str, int]``.
++    values = value.py__getattribute__('values', analysis_errors=False)
++    return [DictContent(
++        extra_keys=value.merge_types_of_iterate(),
++        extra_values=values.execute_with_values().merge_types_of_iterate(),
++    )]
++
++
++def _literal_dict_alternatives(dct, depth):
++    context = dct._defining_context
++    alternatives = [DictContent()]
++    inner = dct.atom.children[1]
++    if inner == '}':
++        return alternatives
++
++    iterator = iter(inner.children)
++    for node in iterator:
++        if node == '**':
++            choices = dict_alternatives(context.infer_node(next(iterator)), depth + 1)
++            alternatives = _combine(alternatives, choices, DictContent.merged, _merge_dicts)
++        else:
++            next(iterator)  # The colon
++            values = context.infer_node(next(iterator))
++            alternatives = _combine(
++                alternatives,
++                _get_key_choices(context.infer_node(node)),
++                lambda dict_content, choice: dict_content.with_item(*choice, values),
++                _merge_dicts,
++            )
++        next(iterator, None)  # The comma
++    return alternatives
++
++
++def _get_key_choices(key_values):
++    """
++    Returns the possible keys as tuples of the key as a Python object and the
++    inferred key.
++    """
++    choices = []
++    for key_value in key_values:
++        key = _get_safe_key(key_value)
++        if key is _UNKNOWN_KEY:
++            return [(_UNKNOWN_KEY, key_values)]
++        choices.append((key, ValueSet([key_value])))
++    return choices or [(_UNKNOWN_KEY, NO_VALUES)]
++
++
++def _get_safe_key(value):
++    try:
++        key = value.get_safe_value(default=_UNKNOWN_KEY)
++    except AttributeError:
++        return _UNKNOWN_KEY
++    try:
++        hash(key)
++    except TypeError:
++        return _UNKNOWN_KEY
++    return key
++
++
++def get_container_content(value):
++    """
++    For containers that are written in the code (or created by Jedi), returns
++    the class of the container and a dict that maps the type var names of the
++    class to lists of the values of the elements, e.g. ``{'_T': [...]}`` for
++    lists or ``{'_KT': [...], '_VT': [...]}`` for dicts. Returns None for other
++    values.
++    """
++    if isinstance(value, (iterable.DictLiteralValue, iterable.DictComprehension,
++                          iterable.FakeDict)):
++        keys = []
++        values = []
++        for dict_content in _value_dict_alternatives(value, 0):
++            for key_values, entry_values in dict_content.entries.values():
++                keys.append(key_values)
++                values.append(entry_values)
++            if dict_content.extra_keys is not None:
++                keys.append(dict_content.extra_keys)
++                values.append(dict_content.extra_values)
++        cls = compiled.builtin_from_name(value.inference_state, 'dict')
++        element_lists = [keys, values]
++    elif isinstance(value, (iterable.SequenceLiteralValue, iterable.ComprehensionMixin,
++                            iterable.MergedArray, iterable.RepeatedArray, iterable.SlicedArray,
++                            iterable.FakeTuple, iterable.FakeList)):
++        if isinstance(value, iterable.GeneratorComprehension):
++            cls = value._get_cls()
++        else:
++            cls = compiled.builtin_from_name(value.inference_state, value.array_type)
++        element_lists = [[
++            item.values
++            for alternative in _value_sequence_alternatives(value, 0)
++            for item in alternative
++        ]]
++    else:
++        return None
++    type_var_names = [type_var.py__name__() for type_var in cls.list_type_vars()]
++    return cls, dict(zip(type_var_names, element_lists))
++
++
++@inference_state_function_cache(default=None)
++def get_call_alternatives(inference_state, arguments):
++    """
++    Returns the possible ways the ``arguments`` are passed at runtime as a list
++    of :class:`CallAlternative`.
++    """
++    alternatives = _get_call_alternatives(arguments, ())
++    if len(alternatives) > _MAX_ALTERNATIVES:
++        return [_merge_calls(alternatives)]
++    return alternatives
++
++
++def _get_call_alternatives(arguments, implicit_items):
++    if isinstance(arguments, TreeArguments):
++        return _tree_call_alternatives(arguments, implicit_items)
++
++    if isinstance(arguments, TreeArgumentsWrapper):
++        unwrapped = arguments.unwrap_implicit_values()
++        if unwrapped is not None:
++            implicit_values, wrapped_arguments = unwrapped
++            return _get_call_alternatives(
++                wrapped_arguments,
++                implicit_items + tuple(
++                    Exact(ValueSet([v]), is_implicit=True) for v in implicit_values
++                ),
++            )
++
++    alternative = CallAlternative(implicit_items)
++    for key, lazy_value in arguments.unpack():
++        if key is not None:
++            alternative = alternative.with_keyword(key, lazy_value.infer())
++        elif isinstance(lazy_value, MergedLazyValues) \
++                or lazy_value.min != 1 or lazy_value.max != 1:
++            alternative = alternative.with_positional([Variadic(lazy_value.infer())])
++        else:
++            alternative = alternative.with_positional([Exact(lazy_value.infer())])
++    return [alternative]
++
++
++def _tree_call_alternatives(arguments, implicit_items):
++    context = arguments.context
++    alternatives = [CallAlternative(implicit_items)]
++    for star_count, node in unpack_arglist(arguments.argument_node):
++        if star_count == 1:
++            alternatives = _combine(
++                alternatives,
++                sequence_alternatives(context.infer_node(node)),
++                CallAlternative.with_positional,
++                _merge_calls,
++            )
++        elif star_count == 2:
++            alternatives = _combine(
++                alternatives,
++                dict_alternatives(context.infer_node(node)),
++                CallAlternative.with_mapping,
++                _merge_calls,
++            )
++        elif node.type == 'argument' and len(node.children) == 3:
++            name = node.children[0].value
++            values = context.infer_node(node.children[2])
++            alternatives = [a.with_keyword(name, values) for a in alternatives]
++        else:
++            if node.type == 'argument':
++                # A generator comprehension like ``f(x for x in y)``.
++                values = ValueSet([comprehension_from_argument(context, node)])
++            else:
++                values = context.infer_node(node)
++            alternatives = [a.with_positional([Exact(values)]) for a in alternatives]
++    return alternatives
+diff --git a/jedi/inference/value/function.py b/jedi/inference/value/function.py
+index 40e9019..2e36078 100644
+--- a/jedi/inference/value/function.py
++++ b/jedi/inference/value/function.py
+@@ -403,17 +403,23 @@ class OverloadedFunctionValue(FunctionMixin, ValueWrapper):
+ 
+     def py__call__(self, arguments):
+         debug.dbg("Execute overloaded function %s", self._wrapped_value, color='BLUE')
+-        function_executions = []
+-        for signature in self.get_signatures():
+-            function_execution = signature.value.as_context(arguments)
+-            function_executions.append(function_execution)
+-            if signature.matches_signature(arguments):
+-                return function_execution.infer()
++        signatures = self.get_signatures()
++        for signature in signatures:
++            matches = signature.matches_signature(arguments)
++            if matches:
++                return signature.value.as_context(arguments).infer()
++            if matches is None:
++                # It's unknown if this overload is used (e.g. because the type
++                # of an argument is unknown), so all overloads are possible.
++                break
+ 
+         if self.inference_state.is_analysis:
+             # In this case we want precision.
+             return NO_VALUES
+-        return ValueSet.from_sets(fe.infer() for fe in function_executions)
++        return ValueSet.from_sets(
++            signature.value.as_context(arguments).infer()
++            for signature in signatures
++        )
+ 
+     def get_signature_functions(self):
+         return self._overloaded_functions
+diff --git a/jedi/inference/value/instance.py b/jedi/inference/value/instance.py
+index 2080b9a..eb94301 100644
+--- a/jedi/inference/value/instance.py
++++ b/jedi/inference/value/instance.py
+@@ -31,9 +31,6 @@ class InstanceExecutedParamName(ParamName):
+     def infer(self):
+         return ValueSet([self._instance])
+ 
+-    def matches_signature(self):
+-        return True
+-
+ 
+ class AnonymousMethodExecutionFilter(AnonymousFunctionExecutionFilter):
+     def __init__(self, instance, *args, **kwargs):
+@@ -327,14 +324,17 @@ class TreeInstance(_BaseTreeInstance):
+             infer_type_vars_for_execution
+ 
+         args = InstanceArguments(self, self._arguments)
+-        for signature in init_or_new_func(self.class_value).get_signatures():
++        signatures = init_or_new_func(self.class_value).get_signatures()
++        for signature in signatures:
+             # Just take the first result, it should always be one, because we
+             # control the typeshed code.
+             funcdef = signature.value.tree_node
+-            if funcdef is None or funcdef.type != 'funcdef' \
+-                    or not signature.matches_signature(args):
+-                # First check if the signature even matches, if not we don't
+-                # need to infer anything.
++            if funcdef is None or funcdef.type != 'funcdef':
++                continue
++            if len(signatures) > 1 and not signature.matches_signature(args):
++                # For overloads, first check if the signature even matches, if
++                # not we don't need to infer anything. Without overloads, the
++                # type vars are inferred even if the call is not valid.
+                 continue
+             bound_method = BoundMethod(self, self.class_value.as_context(), signature.value)
+             all_annotations = py__annotations__(funcdef)
+@@ -611,3 +611,6 @@ class InstanceArguments(TreeArgumentsWrapper):
+     def unpack(self, func=None):
+         yield None, LazyKnownValue(self.instance)
+         yield from self._wrapped_arguments.unpack(func)
++
++    def unwrap_implicit_values(self):
++        return [self.instance], self._wrapped_arguments
+diff --git a/jedi/inference/value/iterable.py b/jedi/inference/value/iterable.py
+index 0bcda9d..9f18e6f 100644
+--- a/jedi/inference/value/iterable.py
++++ b/jedi/inference/value/iterable.py
+@@ -244,7 +244,7 @@ class ListComprehension(_BaseComprehension, Sequence):
+ 
+     def py__simple_getitem__(self, index):
+         if isinstance(index, slice):
+-            return ValueSet([self])
++            return ValueSet([SlicedArray(self.inference_state, self)])
+ 
+         all_types = list(self.py__iter__())
+         with reraise_getitem_errors(IndexError, TypeError):
+@@ -354,7 +354,7 @@ class SequenceLiteralValue(Sequence):
+     def py__simple_getitem__(self, index):
+         """Here the index is an int/str. Raises IndexError/KeyError."""
+         if isinstance(index, slice):
+-            return ValueSet([self])
++            return ValueSet([SlicedArray(self.inference_state, self)])
+         else:
+             with reraise_getitem_errors(TypeError, KeyError, IndexError):
+                 node = self.get_tree_entries()[index]
+@@ -513,7 +513,7 @@ class _FakeSequence(Sequence):
+ 
+     def py__simple_getitem__(self, index):
+         if isinstance(index, slice):
+-            return ValueSet([self])
++            return ValueSet([SlicedArray(self.inference_state, self)])
+ 
+         with reraise_getitem_errors(IndexError, TypeError):
+             lazy_value = self._lazy_value_list[index]
+@@ -587,6 +587,37 @@ class MergedArray(Sequence):
+         return ValueSet.from_sets(lazy_value.infer() for lazy_value in self.py__iter__())
+ 
+ 
++class _ArrayWrapper(Sequence):
++    """
++    For most purposes this is just the wrapped array, but the actual content
++    is different.
++    """
++    def __init__(self, inference_state, array):
++        super().__init__(inference_state)
++        self.array_type = array.array_type
++        self.array = array
++
++    def py__iter__(self, contextualized_node=None):
++        return self.array.py__iter__(contextualized_node)
++
++    def py__simple_getitem__(self, index):
++        return self.array.py__simple_getitem__(index)
++
++    def __repr__(self):
++        return '<%s of %s>' % (type(self).__name__, self.array)
++
++
++class RepeatedArray(_ArrayWrapper):
++    """``array * count``. The count is None if it's unknown."""
++    def __init__(self, inference_state, array, count):
++        super().__init__(inference_state, array)
++        self.count = count
++
++
++class SlicedArray(_ArrayWrapper):
++    """``array[start:stop]``"""
++
++
+ def unpack_tuple_to_dict(context, types, exprlist):
+     """
+     Unpacking tuple assignments in for statements and expr_stmts.
+diff --git a/jedi/plugins/stdlib.py b/jedi/plugins/stdlib.py
+index bf75309..784ba61 100644
+--- a/jedi/plugins/stdlib.py
++++ b/jedi/plugins/stdlib.py
+@@ -377,6 +377,9 @@ class ClassMethodArguments(TreeArgumentsWrapper):
+         for values in self._wrapped_arguments.unpack(func):
+             yield values
+ 
++    def unwrap_implicit_values(self):
++        return [self._class], self._wrapped_arguments
++
+ 
+ @argument_clinic('sequence, /', want_value=True, want_arguments=True)
+ def builtins_classmethod(functions, value, arguments):
+diff --git a/test/completion/pep0484_overload.py b/test/completion/pep0484_overload.py
+index 45edeb5..aee9b91 100644
+--- a/test/completion/pep0484_overload.py
++++ b/test/completion/pep0484_overload.py
+@@ -111,3 +111,285 @@ def typing_direct(x: str) -> str: ...
+ typing_direct(1)
+ #? str()
+ typing_direct("")
++
++# -------------------------
++# Choosing the overload that matches the call
++# -------------------------
++
++from typing import Type, Literal, Sequence, Optional, Self
++
++class FooBuilder:
++    def foo_method(self): ...
++class BarBuilder:
++    def bar_method(self): ...
++class Foo: ...
++class SubFoo(Foo): ...
++class Bar: ...
++
++@overload
++def get_obj(input: type[Foo]) -> FooBuilder: ...
++@overload
++def get_obj(input: Type[Bar]) -> BarBuilder: ...
++def get_obj(input): ...
++
++#? FooBuilder()
++get_obj(Foo)
++#? ['foo_method']
++get_obj(Foo).foo_m
++#? []
++get_obj(Foo).bar_m
++#? BarBuilder()
++get_obj(Bar)
++#? FooBuilder()
++get_obj(input=Foo)
++#? FooBuilder()
++get_obj(SubFoo)
++# An instance is not a type
++#? FooBuilder() BarBuilder()
++get_obj(Foo())
++#? FooBuilder() BarBuilder()
++get_obj(Foo if bool() else Bar)
++foo_or_bar = Foo if bool() else Bar
++#? FooBuilder() BarBuilder()
++get_obj(foo_or_bar)
++#? FooBuilder() BarBuilder()
++get_obj(undefined_name)
++#? FooBuilder() BarBuilder()
++get_obj(Foo, Bar)
++#? FooBuilder() BarBuilder()
++get_obj(Foo, input=Foo)
++#? FooBuilder() BarBuilder()
++get_obj(other=Foo)
++
++
++class RA: ...
++class RC: ...
++class RN: ...
++class RAC: ...
++class RCC: ...
++
++@overload
++def args_f(x: type[Foo]) -> RA: ...
++@overload
++def args_f(x: type[Bar]) -> RC: ...
++@overload
++def args_f() -> RN: ...
++@overload
++def args_f(x: type[Foo], y: type[Bar]) -> RAC: ...
++@overload
++def args_f(x: type[Bar], y: type[Bar]) -> RCC: ...
++def args_f(*args): ...
++
++#? RN()
++args_f()
++#? RAC()
++args_f(Foo, Bar)
++#? RCC()
++args_f(Bar, y=Bar)
++#? RAC()
++args_f(y=Bar, x=Foo)
++#? RA()
++args_f(*[Foo])
++#? RAC()
++args_f(*(Foo, Bar))
++bars = [Bar]
++#? RAC()
++args_f(*[Foo, *bars])
++#? RAC()
++args_f(*(Foo, *(Bar,)))
++foo_and_bar = [Foo, Bar]
++#? RAC()
++args_f(*foo_and_bar)
++#? RN()
++args_f(*[Bar for _ in []])
++#? RC()
++args_f(*[Bar for _ in []], Bar)
++#? RA()
++args_f(*[x for x in [Foo]])
++#? RAC()
++args_f(*[Foo] * 1, *[Bar] * 1)
++#? RCC()
++args_f(*[Bar] * 2)
++
++# The length is unknown
++list_of_bars: list[type[Bar]]
++#? RA() RC() RN() RAC() RCC()
++args_f(*list_of_bars)
++#? RA() RC() RN() RAC() RCC()
++args_f(*[Bar for _ in range(1)])
++#? RA() RC() RN() RAC() RCC()
++args_f(*(Foo, Bar)[1:])
++#? RA() RC() RN() RAC() RCC()
++args_f(*[Bar] * int())
++
++# Bar can be the first or the second argument
++maybe_foo = [Foo] if bool() else []
++#? RA() RC() RN() RAC() RCC()
++args_f(*maybe_foo, Bar)
++foo_in_tuple_or_list = [Foo] if bool() else (Foo,)
++#? RAC()
++args_f(*foo_in_tuple_or_list, Bar)
++
++#? RC()
++args_f(**{'x': Bar})
++#? RAC()
++args_f(**{'x': Foo, 'y': Bar})
++#? RC()
++args_f(**{'x': Foo, 'x': Bar})
++maybe_x_foo = {'x': Foo} if bool() else {}
++#? RA() RC() RN() RAC() RCC()
++args_f(**{'x': Bar, **maybe_x_foo})
++#? RA()
++args_f(**{'x': Bar, **{'x': Foo}})
++dict_of_bars: dict[str, type[Bar]]
++#? RA() RC() RN() RAC() RCC()
++args_f(**dict_of_bars)
++# Keywords need to be strings
++#? RA() RC() RN() RAC() RCC()
++args_f(**{1: Foo})
++
++
++@overload
++def dict_f(x: dict[int, type[Foo]]) -> RA: ...
++@overload
++def dict_f(x: dict[int, type[Bar]]) -> RC: ...
++def dict_f(x): ...
++
++# 1 and True are the same key
++#? RC()
++dict_f({1: Foo, True: Bar})
++#? RA()
++dict_f({1: Bar, True: Foo})
++#? RA() RC()
++dict_f({1: Foo, 2: Bar})
++#? RA()
++dict_f({})
++dict_with_foo = {1: Foo}
++#? RC()
++dict_f({**dict_with_foo, 1: Bar})
++#? RC()
++dict_f({k: Bar for k in [1]})
++
++
++@overload
++def list_f(x: list[type[Foo]]) -> RA: ...
++@overload
++def list_f(x: list[type[Bar]]) -> RC: ...
++def list_f(x): ...
++
++#? RA()
++list_f([Foo, SubFoo])
++#? RA() RC()
++list_f([Foo, Bar])
++#? RC()
++list_f([Bar])
++#? RA()
++list_f([Bar for _ in []])
++#? RC()
++list_f([Bar for _ in range(3)])
++#? RC()
++list_f(list_of_bars)
++list_of_sub_foos: list[type[SubFoo]]
++#? RA() RC()
++list_f(list_of_sub_foos)
++
++
++@overload
++def tuple_f(x: tuple[type[Foo], type[Bar]]) -> RA: ...
++@overload
++def tuple_f(x: tuple[type[Bar], ...]) -> RC: ...
++def tuple_f(x): ...
++
++#? RA()
++tuple_f((Foo, Bar))
++#? RC()
++tuple_f((Bar, Bar, Bar))
++#? RC()
++tuple_f(())
++#? RA() RC()
++tuple_f((Bar, Foo))
++#? RA() RC()
++tuple_f([Foo, Bar])
++tuple_of_bars: tuple[type[Bar], ...]
++#? RC()
++tuple_f(tuple_of_bars)
++
++
++@overload
++def types_f(x: int) -> RA: ...
++@overload
++def types_f(x: float) -> RC: ...
++@overload
++def types_f(x: Optional[str]) -> RN: ...
++@overload
++def types_f(x: Sequence[int]) -> RAC: ...
++@overload
++def types_f(x: Literal['a', 'b']) -> RCC: ...
++@overload
++def types_f(x: object) -> Foo: ...
++def types_f(x): ...
++
++#? RA()
++types_f(1)
++#? RA()
++types_f(True)
++#? RC()
++types_f(1.0)
++#? RC()
++types_f(1 if bool() else 1.0)
++#? RN()
++types_f(None)
++#? RN()
++types_f('a')
++#? RAC()
++types_f([1, 2])
++#? Foo()
++types_f([1, ''])
++# bytes is a Sequence[int]
++#? RAC()
++types_f(b'')
++#? Foo()
++types_f(Foo())
++
++
++@overload
++def kw_f(*, a: type[Foo]) -> RA: ...
++@overload
++def kw_f(a: type[Bar], /) -> RC: ...
++@overload
++def kw_f(**kwargs: type[Bar]) -> RN: ...
++def kw_f(*args, **kwargs): ...
++
++#? RA()
++kw_f(a=Foo)
++#? RC()
++kw_f(Bar)
++#? RN()
++kw_f(a=Bar)
++#? RN()
++kw_f(**dict_of_bars)
++#? RA() RC() RN()
++kw_f(Foo)
++
++
++class WithOverloads:
++    @overload
++    def method(self, x: type[Foo]) -> RA: ...
++    @overload
++    def method(self, x: type[Bar]) -> RC: ...
++    def method(self, x): ...
++
++    @overload
++    def same(self, x: Self) -> RA: ...
++    @overload
++    def same(self, x: object) -> RC: ...
++    def same(self, x): ...
++
++#? RC()
++WithOverloads().method(Bar)
++#? RA()
++WithOverloads().method(x=Foo)
++#? RA()
++WithOverloads().same(WithOverloads())
++#? RC()
++WithOverloads().same(Foo())
+diff --git a/test/completion/pep0484_typing.py b/test/completion/pep0484_typing.py
+index c066e75..b0a5a98 100644
+--- a/test/completion/pep0484_typing.py
++++ b/test/completion/pep0484_typing.py
+@@ -605,3 +605,22 @@ def f(x: IntX, y: IntY):
+     x
+     #? int()
+     y
++
++# -----------------
++# Literal
++# -----------------
++
++from typing import Literal
++
++LiteralAB = Literal['a', 'b']
++
++def literal(a: Literal['a', 'b'], b: Literal[1], c: Literal[Literal[1], None],
++            d: LiteralAB | Literal[2]):
++    #? str()
++    a
++    #? int()
++    b
++    #? int() None
++    c
++    #? str() int()
++    d
+diff --git a/test/completion/precedence.py b/test/completion/precedence.py
+index 80c0708..3ab4f7a 100644
+--- a/test/completion/precedence.py
++++ b/test/completion/precedence.py
+@@ -167,7 +167,7 @@ from datetime import datetime, timedelta
+ (datetime - timedelta)
+ #? datetime()
+ (datetime() - timedelta())
+-#? timedelta() datetime()
++#? timedelta()
+ (datetime() - datetime())
+ #? timedelta()
+ (timedelta() - datetime())
+@@ -190,3 +190,20 @@ class C:
+ (C() + object())
+ #? float()
+ (object() + C())
++
++# -----------------
++# and/or
++# -----------------
++
++#? str()
++(None or '')
++#? int()
++(0 or 1)
++#? int() str()
++(str() or 1)
++#? None
++(None and 1)
++#? str()
++(1 and '')
++#? int() str()
++(str() and 1)

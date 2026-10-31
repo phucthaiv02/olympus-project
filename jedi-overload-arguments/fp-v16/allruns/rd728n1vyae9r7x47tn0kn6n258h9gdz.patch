@@ -1,0 +1,865 @@
+diff --git a/jedi/inference/gradual/overload.py b/jedi/inference/gradual/overload.py
+new file mode 100644
+index 0000000..c2fbc6a
+--- /dev/null
++++ b/jedi/inference/gradual/overload.py
+@@ -0,0 +1,574 @@
++"""Conservative call matching, separate from best-effort argument inference."""
++from inspect import Parameter
++
++from jedi.inference.arguments import TreeArguments, ValuesArguments, unpack_arglist
++from jedi.inference.base_value import NO_VALUES, ValueSet, ValueWrapper
++from jedi.inference.compiled import builtin_from_name, create_simple_object
++from jedi.inference.gradual.base import GenericClass
++from jedi.inference.gradual.conversion import to_stub
++from jedi.inference.gradual.type_var import TypeVar
++from jedi.inference.gradual.typing import AnyClass, ProxyTypingClassValue, ProxyWithGenerics, \
++    Tuple, TypeAlias
++from jedi.inference.lazy_value import LazyKnownValue, LazyKnownValues, LazyTreeValue, \
++    get_merged_lazy_value
++from jedi.inference.value import iterable
++
++
++_MAX_ALTERNATIVES = 128
++_MAX_DEPTH = 20
++_UNKNOWN = object()
++
++
++class _CannotMatch(Exception):
++    pass
++
++
++class _UnknownKey:
++    def __init__(self, values):
++        self.values = values
++
++
++def _concatenate(alternatives, additions):
++    if not additions or len(alternatives) * len(additions) > _MAX_ALTERNATIVES:
++        raise _CannotMatch
++    return [left + right for left in alternatives for right in additions]
++
++
++class SignatureMatcher:
++    """Match every possible call, retaining literal alternatives and cardinality."""
++
++    def __init__(self, function_value, param_names=None):
++        self._inference_state = function_value.inference_state
++        self._params = function_value.get_param_names() if param_names is None else param_names
++
++    def matches(self, arguments):
++        try:
++            return all(self._matches_call(arguments) for arguments in self._unpack(arguments))
++        except _CannotMatch:
++            return False
++
++    def _unpack(self, arguments):
++        from jedi.inference.value.instance import InstanceArguments
++
++        if isinstance(arguments, InstanceArguments):
++            return [[(None, LazyKnownValue(arguments.instance))] + alternative
++                    for alternative in self._unpack(arguments._wrapped_arguments)]
++        if not isinstance(arguments, TreeArguments):
++            return [list(arguments.unpack())]
++
++        alternatives = [[]]
++        for stars, node in unpack_arglist(arguments.argument_node):
++            if stars:
++                values = arguments.context.infer_node(node)
++                if not values:
++                    raise _CannotMatch
++                if stars == 1:
++                    additions = [[(None, lazy) for lazy in sequence]
++                                 for value in values for sequence in self._sequences(value)]
++                else:
++                    additions = [list(mapping.items())
++                                 for value in values for mapping in self._mappings(value)]
++            else:
++                additions = [list(TreeArguments(
++                    self._inference_state, arguments.context, node
++                ).unpack())]
++            alternatives = _concatenate(alternatives, additions)
++        return alternatives
++
++    def _matches_call(self, arguments):
++        """Track all positional offsets, including offsets after variable-length stars."""
++        positional = [param for param in self._params if param.get_kind() in (
++            Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD
++        )]
++        by_name = {param.string_name: param for param in self._params
++                   if param.get_kind() in (
++                       Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY
++                   )}
++        var_positional = next((param for param in self._params
++                               if param.get_kind() == Parameter.VAR_POSITIONAL), None)
++        var_keyword = next((param for param in self._params
++                            if param.get_kind() == Parameter.VAR_KEYWORD), None)
++        counts = {0}
++        for key, lazy in arguments:
++            if key is not None:
++                continue
++            next_counts = set()
++            for count in counts:
++                maximum = min(lazy.max, len(positional) + 1)
++                if var_positional is None and count + lazy.max > len(positional):
++                    return False
++                for index in range(count, min(count + maximum, len(positional))):
++                    if not self._matches_param(lazy, positional[index]):
++                        return False
++                if maximum and count + maximum > len(positional) \
++                        and (var_positional is None
++                             or not self._matches_param(lazy, var_positional)):
++                    return False
++                for length in range(min(lazy.min, maximum), maximum + 1):
++                    next_counts.add(min(count + length, len(positional) + 1))
++            counts = next_counts
++
++        for count in counts:
++            bound = {param.string_name for param in positional[:count]}
++            keywords = set()
++            unknown_keywords = False
++            for key, lazy in arguments:
++                if key is None:
++                    continue
++                if isinstance(key, _UnknownKey):
++                    string = builtin_from_name(self._inference_state, 'str')
++                    if unknown_keywords or var_keyword is None \
++                            or not self._values_match(key.values, ValueSet([string])):
++                        return False
++                    if keywords or any(name in by_name for name in bound):
++                        return False
++                    if not self._matches_param(lazy, var_keyword) \
++                            or not all(self._matches_param(lazy, param)
++                                       for param in by_name.values()):
++                        return False
++                    unknown_keywords = True
++                    continue
++                if not isinstance(key, str) or key in keywords or unknown_keywords:
++                    return False
++                keywords.add(key)
++                param = by_name.get(key)
++                if param is not None:
++                    if key in bound:
++                        return False
++                    bound.add(key)
++                else:
++                    param = var_keyword
++                if param is None or not self._matches_param(lazy, param):
++                    return False
++            if any(param.string_name not in bound and param.default_node is None
++                   for param in self._params if param.get_kind() not in (
++                       Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD
++                   )):
++                return False
++        return True
++
++    def _matches_param(self, lazy, param):
++        annotations = param.infer_annotation(execute_annotation=False, ignore_stars=True)
++        return not annotations or self._values_match(lazy.infer(), annotations)
++
++    def _values_match(self, values, annotations, depth=0):
++        if depth > _MAX_DEPTH:
++            return False
++        if not values:
++            return any(isinstance(annotation, AnyClass)
++                       or isinstance(annotation, TypeVar) and not annotation._get_classes()
++                       for annotation in annotations)
++        return all(any(self._value_matches(value, annotation, depth + 1)
++                       for annotation in annotations) for value in values)
++
++    def _value_matches(self, value, annotation, depth):
++        if depth > _MAX_DEPTH:
++            return False
++        if isinstance(annotation, AnyClass):
++            return True
++        if isinstance(annotation, TypeAlias):
++            return self._values_match(
++                ValueSet([value]), annotation.gather_annotation_classes(), depth
++            )
++        if isinstance(annotation, TypeVar):
++            classes = annotation._get_classes()
++            return not classes or self._values_match(ValueSet([value]), classes, depth)
++        if isinstance(annotation, ProxyTypingClassValue):
++            if annotation.py__name__() == 'Callable':
++                return bool(value.get_signatures())
++            if annotation.py__name__() == 'Type':
++                return value.is_class()
++        if isinstance(annotation, ProxyWithGenerics):
++            name = annotation.py__name__()
++            generics = annotation.get_generics()
++            if name in ('Union', 'Optional'):
++                if name == 'Optional' and value.get_safe_value(default=_UNKNOWN) is None:
++                    return True
++                return any(self._values_match(ValueSet([value]), generic, depth)
++                           for generic in generics)
++            if name in ('Annotated', 'ClassVar', 'Final'):
++                return bool(generics) and self._values_match(
++                    ValueSet([value]), generics[0], depth
++                )
++            if name == 'Type':
++                return value.is_class() and bool(generics) and self._class_matches(
++                    value, generics[0], depth
++                )
++            if name == 'Tuple':
++                return self._tuple_matches(value, annotation, depth)
++            if name == 'Callable':
++                return self._callable_matches(value, generics, depth)
++
++        if annotation.get_safe_value(default=_UNKNOWN) is None:
++            return value.get_safe_value(default=_UNKNOWN) is None
++        if isinstance(annotation, GenericClass):
++            if not self._is_subclass(value.py__class__(), annotation._class_value):
++                return False
++            generics = annotation.get_generics()
++            name = annotation.py__name__()
++            if name in ('list', 'set', 'dict') and not isinstance(value, iterable.Sequence):
++                declared = value.get_annotated_class_object()
++                for base in declared.py__mro__():
++                    if isinstance(base, GenericClass) and self._unwrap_class(base).is_same_class(
++                        self._unwrap_class(annotation)
++                    ):
++                        actual = base.get_generics()
++                        return len(actual) == len(generics) and all(
++                            self._invariant_matches(source, target, depth)
++                            for source, target in zip(actual, generics)
++                        )
++            if name == 'dict' and len(generics) == 2:
++                try:
++                    return all(self._values_match(self._key_values(key), generics[0], depth)
++                               and self._values_match(lazy.infer(), generics[1], depth)
++                               for mapping in self._mappings(value, depth)
++                               for key, lazy in mapping.items())
++                except _CannotMatch:
++                    return False
++            if name in ('list', 'set', 'frozenset', 'Iterable', 'Sequence') and generics:
++                try:
++                    return all(self._values_match(lazy.infer(), generics[0], depth)
++                               for sequence in self._sequences(value, depth) for lazy in sequence)
++                except _CannotMatch:
++                    return False
++        return self._is_subclass(value.py__class__(), annotation)
++
++    def _invariant_matches(self, actual, expected, depth):
++        if any(isinstance(annotation, AnyClass) for annotation in actual | expected):
++            return True
++        if not self._values_match(actual.execute_annotation(None), expected, depth):
++            return False
++        if self._contains_type_vars(expected, depth):
++            return True
++        if self._contains_type_vars(actual, depth) and actual != expected:
++            return False
++        return self._values_match(expected.execute_annotation(None), actual, depth)
++
++    def _contains_type_vars(self, annotations, depth):
++        if depth > _MAX_DEPTH:
++            return False
++        return any(isinstance(annotation, TypeVar)
++                   or isinstance(annotation, (GenericClass, ProxyWithGenerics))
++                   and any(self._contains_type_vars(generic, depth + 1)
++                           for generic in annotation.get_generics())
++                   for annotation in annotations)
++
++    def _is_subclass(self, value, annotation):
++        if isinstance(annotation, GenericClass):
++            return value.is_sub_class_of(annotation)
++        annotation = self._unwrap_class(annotation)
++        annotations = to_stub(annotation) if annotation.is_compiled() else NO_VALUES
++        annotations = annotations or ValueSet([annotation])
++        for base in value.py__mro__():
++            base = self._unwrap_class(base)
++            bases = to_stub(base) if base.is_compiled() else NO_VALUES
++            bases = bases or ValueSet([base])
++            for candidate in annotations:
++                if any(base.is_same_class(candidate) for base in bases):
++                    return True
++                if candidate.get_root_context().is_builtins_module() \
++                        and candidate.py__name__() in ('float', 'complex'):
++                    names = ('int',) if candidate.py__name__() == 'float' else ('int', 'float')
++                    if any(base.get_root_context().is_builtins_module()
++                           and base.py__name__() in names for base in bases):
++                        return True
++        return False
++
++    def _unwrap_class(self, value):
++        for depth in range(_MAX_DEPTH):
++            if isinstance(value, GenericClass):
++                value = value._class_value
++            elif isinstance(value, ValueWrapper):
++                value = value._wrapped_value
++            else:
++                break
++        return value
++
++    def _class_matches(self, value, annotations, depth):
++        if depth > _MAX_DEPTH:
++            return False
++        for annotation in annotations:
++            if isinstance(annotation, AnyClass):
++                return True
++            if isinstance(annotation, TypeVar):
++                classes = annotation._get_classes()
++                if not classes or self._class_matches(value, classes, depth + 1):
++                    return True
++                continue
++            if isinstance(annotation, ProxyWithGenerics) \
++                    and annotation.py__name__() in ('Union', 'Optional'):
++                if any(self._class_matches(value, generic, depth + 1)
++                       for generic in annotation.get_generics()):
++                    return True
++            elif self._is_subclass(value, annotation):
++                return True
++        return False
++
++    def _tuple_matches(self, value, annotation, depth):
++        tuple_class = builtin_from_name(self._inference_state, 'tuple')
++        if not isinstance(value, Tuple) and not self._is_subclass(value.py__class__(), tuple_class):
++            return False
++        generics = annotation.get_generics()
++        try:
++            for sequence in self._sequences(value, depth):
++                if annotation._generics_manager.is_homogenous_tuple():
++                    if not all(self._values_match(lazy.infer(), generics[0], depth)
++                               for lazy in sequence):
++                        return False
++                elif len(sequence) != len(generics) or any(
++                    lazy.min != 1 or lazy.max != 1
++                    or not self._values_match(lazy.infer(), generic, depth)
++                    for lazy, generic in zip(sequence, generics)
++                ):
++                    return False
++        except _CannotMatch:
++            return False
++        return True
++
++    def _callable_matches(self, value, generics, depth):
++        signatures = value.get_signatures()
++        if not signatures or len(generics) != 2:
++            return False
++        parameters, returns = generics
++        for parameter_list in parameters:
++            if isinstance(parameter_list, iterable.SequenceLiteralValue):
++                arguments = ValuesArguments([
++                    lazy.infer().execute_annotation(None) for lazy in parameter_list.py__iter__()
++                ])
++                if not any(SignatureMatcher(signature._function_value,
++                                            signature.get_param_names()).matches(arguments)
++                           for signature in signatures if signature.value.tree_node is not None):
++                    return False
++                results = value.execute(arguments)
++            else:
++                results = value.execute_annotation(None)
++            if not self._values_match(results, returns, depth):
++                return False
++        return True
++
++    def _sequences(self, value, depth=0):
++        if depth > _MAX_DEPTH:
++            raise _CannotMatch
++        if isinstance(value, (iterable.DictLiteralValue, iterable.DictComprehension,
++                              iterable.FakeDict)):
++            return [[LazyKnownValues(self._key_values(key)) for key in mapping]
++                    for mapping in self._mappings(value, depth + 1)]
++        if isinstance(value, iterable.SequenceLiteralValue) \
++                and value.array_type in ('tuple', 'list'):
++            context = value._defining_context
++            if value.atom.type in value._TUPLE_LIKE:
++                entries = value.atom.children[::2]
++            else:
++                node = value.atom.children[1]
++                if node in (')', ']'):
++                    entries = []
++                elif node.type == 'testlist_comp':
++                    entries = node.children[::2]
++                else:
++                    entries = [node]
++            alternatives = [[]]
++            for node in entries:
++                if node.type == 'star_expr':
++                    values = context.infer_node(node.children[1])
++                    additions = [sequence for item in values
++                                 for sequence in self._sequences(item, depth + 1)]
++                else:
++                    additions = [[LazyTreeValue(context, node)]]
++                alternatives = _concatenate(alternatives, additions)
++            additions = iterable.check_array_additions(context, value)
++            if additions:
++                values = ValueSet.from_sets(lazy.infer() for lazy in additions)
++                values |= ValueSet.from_sets(lazy.infer() for sequence in alternatives
++                                             for lazy in sequence)
++                return [[LazyKnownValues(values, min=0, max=float('inf'))]]
++            return alternatives
++        if isinstance(value, (iterable.FakeTuple, iterable.FakeList)) \
++                or isinstance(value, Tuple) and not value._is_homogenous():
++            return [list(value.py__iter__())]
++        if isinstance(value, (iterable.ListComprehension, iterable.GeneratorComprehension)):
++            return self._comprehension(value, value._defining_context,
++                                       value._sync_comp_for_node, depth + 1)
++        if not value.py__getattribute__('__iter__') and not value.py__getattribute__('__getitem__'):
++            raise _CannotMatch
++        try:
++            values = value.merge_types_of_iterate()
++        except AttributeError:
++            raise _CannotMatch
++        return [[LazyKnownValues(values, min=0, max=float('inf'))]]
++
++    def _comprehension(self, value, context, node, depth):
++        if depth > _MAX_DEPTH:
++            raise _CannotMatch
++        if node is None:
++            if value.array_type == 'dict':
++                entry = iterable.FakeTuple(self._inference_state, [
++                    LazyKnownValues(context.infer_node(value._entry_node)),
++                    LazyKnownValues(context.infer_node(value._value_node)),
++                ])
++                return [[LazyKnownValue(entry)]]
++            return [[LazyKnownValues(context.infer_node(value._entry_node))]]
++        if node.type == 'comp_if':
++            conditions = context.infer_node(node.children[1])
++            booleans = {condition.py__bool__() for condition in conditions}
++            if not booleans or None in booleans:
++                booleans = {True, False}
++            alternatives = [[]] if False in booleans else []
++            if True in booleans:
++                tail = node.children[2] if len(node.children) > 2 else None
++                alternatives += self._comprehension(value, context, tail, depth + 1)
++            return alternatives
++        if node.type != 'sync_comp_for':
++            raise _CannotMatch
++        inputs = context.infer_node(node.children[3])
++        if not inputs:
++            raise _CannotMatch
++        alternatives = []
++        for input_value in inputs:
++            for sequence in self._sequences(input_value, depth + 1):
++                entries = [[]]
++                for lazy in sequence:
++                    names = iterable.unpack_tuple_to_dict(context, lazy.infer(), node.children[1])
++                    comp_context = value._get_comp_for_context(context, node)
++                    with comp_context.predefine_names(node, names):
++                        tail = node.children[4] if len(node.children) > 4 else None
++                        additions = self._comprehension(value, comp_context, tail, depth + 1)
++                    if lazy.min != 1 or lazy.max != 1:
++                        repeated = [entry for addition in additions for entry in addition]
++                        values = ValueSet.from_sets(entry.infer() for entry in repeated)
++                        additions = [[LazyKnownValues(values, min=0, max=float('inf'))]] \
++                            if repeated else [[]]
++                    entries = _concatenate(entries, additions)
++                alternatives += entries
++                if len(alternatives) > _MAX_ALTERNATIVES:
++                    raise _CannotMatch
++        return alternatives
++
++    def _mappings(self, value, depth=0):
++        if depth > _MAX_DEPTH:
++            raise _CannotMatch
++        if isinstance(value, iterable.DictLiteralValue):
++            node = value.atom.children[1]
++            if node == '}':
++                return [{}]
++            context = value._defining_context
++            alternatives = [{}]
++            children = iter(node.children)
++            for key_node in children:
++                if key_node == ',':
++                    continue
++                if key_node == '**':
++                    values = context.infer_node(next(children))
++                    additions = [mapping for item in values
++                                 for mapping in self._mappings(item, depth + 1)]
++                else:
++                    if next(children) != ':':
++                        raise _CannotMatch
++                    lazy = LazyTreeValue(context, next(children))
++                    values = context.infer_node(key_node)
++                    additions = [{self._safe_key(key): lazy} for key in values]
++                    if not values:
++                        additions = [{_UnknownKey(NO_VALUES): lazy}]
++                if not additions or len(alternatives) * len(additions) > _MAX_ALTERNATIVES:
++                    raise _CannotMatch
++                alternatives = [self._update_mapping(mapping, addition)
++                                for mapping in alternatives for addition in additions]
++            return alternatives
++        if isinstance(value, iterable.FakeDict):
++            return [dict(value.exact_key_items())]
++        if isinstance(value, iterable.DictComprehension):
++            sequences = self._comprehension(value, value._defining_context,
++                                            value._sync_comp_for_node, depth + 1)
++            alternatives = []
++            for sequence in sequences:
++                mappings = [{}]
++                for lazy in sequence:
++                    additions = []
++                    for pair in lazy.infer():
++                        keys, values = pair.py__iter__()
++                        additions += [{self._safe_key(key): values} for key in keys.infer()]
++                    if lazy.min != 1 or lazy.max != 1:
++                        merged = {}
++                        for addition in additions:
++                            for key, values in addition.items():
++                                if key in merged:
++                                    values = get_merged_lazy_value([merged[key], values])
++                                merged[key] = values
++                        additions = [{}]
++                        for key, values in merged.items():
++                            if len(additions) * 2 > _MAX_ALTERNATIVES:
++                                raise _CannotMatch
++                            additions += [self._update_mapping(addition, {key: values})
++                                          for addition in additions]
++                    if not additions or len(mappings) * len(additions) > _MAX_ALTERNATIVES:
++                        raise _CannotMatch
++                    mappings = [self._update_mapping(mapping, addition)
++                                for mapping in mappings for addition in additions]
++                alternatives += mappings
++            return alternatives
++        try:
++            class_value = value.get_annotated_class_object()
++        except AttributeError:
++            raise _CannotMatch
++        dictionary = builtin_from_name(self._inference_state, 'dict')
++        if not self._is_subclass(class_value, dictionary):
++            raise _CannotMatch
++        try:
++            keys, values = class_value.get_generics()
++        except (AttributeError, ValueError):
++            keys = values = NO_VALUES
++        return [{_UnknownKey(keys.execute_annotation(None)):
++                 LazyKnownValues(values.execute_annotation(None))}]
++
++    def _safe_key(self, value, depth=0):
++        if depth > _MAX_DEPTH:
++            raise _CannotMatch
++        if value.array_type in ('list', 'dict', 'set'):
++            raise _CannotMatch
++        key = value.get_safe_value(default=_UNKNOWN)
++        if key is _UNKNOWN and value.is_class():
++            return self._unwrap_class(value)
++        if key is _UNKNOWN and isinstance(value, iterable.SequenceLiteralValue) \
++                and value.array_type == 'tuple':
++            sequences = self._sequences(value, depth + 1)
++            if len(sequences) == 1 and all(lazy.min == lazy.max == 1 for lazy in sequences[0]):
++                keys = []
++                for lazy in sequences[0]:
++                    values = lazy.infer()
++                    if len(values) != 1:
++                        break
++                    element = self._safe_key(next(iter(values)), depth + 1)
++                    if isinstance(element, _UnknownKey):
++                        break
++                    keys.append(element)
++                else:
++                    return tuple(keys)
++        if key is _UNKNOWN:
++            return _UnknownKey(ValueSet([value]))
++        try:
++            hash(key)
++        except TypeError:
++            raise _CannotMatch
++        return key
++
++    def _key_values(self, key):
++        if isinstance(key, _UnknownKey):
++            return key.values
++        if key is None:
++            return ValueSet([builtin_from_name(self._inference_state, 'None')])
++        if isinstance(key, tuple):
++            return ValueSet([iterable.FakeTuple(self._inference_state, [
++                LazyKnownValues(self._key_values(element)) for element in key
++            ])])
++        if not isinstance(key, (int, float, str, bytes, complex, bool)):
++            return ValueSet([key])
++        return ValueSet([create_simple_object(self._inference_state, key)])
++
++    def _update_mapping(self, mapping, addition):
++        """Apply last-write-wins semantics without dropping optional overwrites."""
++        mapping = dict(mapping)
++        for key, lazy in addition.items():
++            if isinstance(key, _UnknownKey):
++                for previous_key, previous_lazy in list(mapping.items()):
++                    mapping[previous_key] = get_merged_lazy_value([previous_lazy, lazy])
++            mapping[key] = lazy
++        return mapping
+diff --git a/jedi/inference/value/function.py b/jedi/inference/value/function.py
+index 40e9019..3136fd0 100644
+--- a/jedi/inference/value/function.py
++++ b/jedi/inference/value/function.py
+@@ -402,12 +402,14 @@ class OverloadedFunctionValue(FunctionMixin, ValueWrapper):
+         self._overloaded_functions = overloaded_functions
+ 
+     def py__call__(self, arguments):
++        from jedi.inference.gradual.overload import SignatureMatcher
++
+         debug.dbg("Execute overloaded function %s", self._wrapped_value, color='BLUE')
+         function_executions = []
+         for signature in self.get_signatures():
+             function_execution = signature.value.as_context(arguments)
+             function_executions.append(function_execution)
+-            if signature.matches_signature(arguments):
++            if SignatureMatcher(signature.value).matches(arguments):
+                 return function_execution.infer()
+ 
+         if self.inference_state.is_analysis:
+diff --git a/test/test_inference/test_overload.py b/test/test_inference/test_overload.py
+new file mode 100644
+index 0000000..a176c79
+--- /dev/null
++++ b/test/test_inference/test_overload.py
+@@ -0,0 +1,259 @@
++from textwrap import dedent
++
++import pytest
++
++
++_PREAMBLE = dedent('''\
++    from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, overload
++
++    class A:
++        pass
++
++    class B(A):
++        pass
++
++    class C:
++        pass
++
++    condition: bool
++
++    T = TypeVar('T')
++    Bound = TypeVar('Bound', bound=A)
++''')
++
++
++def _infer_overload(Script, first, second, call, setup=''):
++    source = _PREAMBLE + dedent('''\
++        @overload
++        def f(%s) -> int: ...
++        @overload
++        def f(%s) -> str: ...
++    ''') % (first, second)
++    source += setup + '\nf(' + call + ')'
++    return {value.name for value in Script(source).infer()}
++
++
++@pytest.mark.parametrize(('first', 'second', 'call', 'expected'), [
++    ('x: type[A]', 'x: type[C]', 'A', {'int'}),
++    ('x: Type[A]', 'x: Type[C]', 'C', {'str'}),
++    ('x: type[A]', 'x: type[C]', 'B', {'int'}),
++    ('x: type[A]', 'x: type[C]', 'x=A', {'int'}),
++    ('x: type[A]', 'x: type[C]', 'x=C', {'str'}),
++    ('x: type[A]', 'x: type[C]', 'A()', {'int', 'str'}),
++    ('x: A', 'x: C', 'A()', {'int'}),
++    ('x: A', 'x: C', 'B()', {'int'}),
++    ('x: A', 'x: C', 'A', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', 'A if condition else C', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', 'A if condition else B', {'int'}),
++    ('x: type[A | C]', 'x: type[C]', 'A if condition else C', {'int'}),
++    ('x: Union[A, C]', 'x: C', 'A() if condition else C()', {'int'}),
++    ('x: Optional[A]', 'x: C', 'None', {'int'}),
++    ('x: Any', 'x: C', 'C', {'int'}),
++    ('x: type[A]', 'x: object', 'C', {'str'}),
++    ('x: type[A]', 'x: type[A]', 'A', {'int'}),
++    ('x: type[A]', 'x: type[C]', '', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', 'A, C', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', 'unexpected=A', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', 'A, x=A', {'int', 'str'}),
++    ('x: type[A], /', 'x: type[C]', 'x=A', {'int', 'str'}),
++    ('*, x: type[A]', 'x: type[C]', 'A', {'int', 'str'}),
++    ('*, x: type[A]', 'x: type[C]', 'x=A', {'int'}),
++    ('x: type[A] = A', 'x: type[C]', '', {'int'}),
++    ('x: type[A], *, y: type[C]', 'x: type[C]', 'A', {'int', 'str'}),
++    ('x: type[A], *, y: type[C]', 'x: type[C]', 'y=C, x=A', {'int'}),
++    ('*xs: type[A]', '*xs: type[C]', 'A, B', {'int'}),
++    ('*xs: type[A]', '*xs: type[C]', 'C', {'str'}),
++    ('*xs: type[A]', '*xs: type[C]', 'A, C', {'int', 'str'}),
++    ('**xs: type[A]', '**xs: type[C]', 'x=C', {'str'}),
++    ('**xs: type[A]', '**xs: type[C]', 'x=A, y=C', {'int', 'str'}),
++    ('x: type[A], /, **xs: type[C]', 'x: type[C]', 'A, x=C', {'int'}),
++    ('x: object', 'x: Any', 'None', {'int'}),
++    ('x: int', 'x: object', 'True', {'int'}),
++    ('x: float', 'x: object', '1', {'int'}),
++    ('x: type[T]', 'x: object', 'C', {'int'}),
++    ('x: type[Bound]', 'x: object', 'B', {'int'}),
++    ('x: type[Bound]', 'x: object', 'C', {'str'}),
++    ('x: Type', 'x: object', 'A', {'int'}),
++])
++def test_overload_call_matching(Script, first, second, call, expected):
++    assert _infer_overload(Script, first, second, call) == expected
++
++
++@pytest.mark.parametrize(('first', 'second', 'call', 'setup', 'expected'), [
++    ('x: type[A]', 'x: type[C]', '*[A]', '', {'int'}),
++    ('x: type[A]', 'x: type[C]', '*(C,)', '', {'str'}),
++    ('x: type[A]', 'x: type[C]', '*xs', 'xs = [A]', {'int'}),
++    ('x: type[A]', 'x: type[C]', '**{"x": A}', '', {'int'}),
++    ('x: type[A]', 'x: type[C]', '**xs', 'xs = {"x": C}', {'str'}),
++    ('x: type[A]', 'x: type[C]', '**{"x": A, "x": C}', '', {'str'}),
++    ('x: type[A]', 'x: type[C]', '**{"x": A, **{"x": C}}', '', {'str'}),
++    ('x: type[A]', 'x: type[C]', '**{**{"x": A}, "x": C}', '', {'str'}),
++    ('x: type[A]', 'x: type[C]', '**{"x": C, **xs}',
++     'xs = {"x": A} if condition else {}', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', '**{"x": C, **xs}', 'xs = {}', {'str'}),
++    ('x: type[A]', 'x: type[C]', '**{"x": A}, **{"x": C}', '', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', '*[A if condition else C]', '', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', '*xs',
++     'xs = [A] if condition else []', {'int', 'str'}),
++    ('x: type[A], y: type[C] = C', 'x: type[C]', '*xs, C',
++     'xs = [A] if condition else []', {'int', 'str'}),
++    ('x: type[A | C], y: type[C] = C', 'x: type[C]', '*xs, C',
++     'xs = [A] if condition else []', {'int'}),
++    ('x: type[A], y: type[C]', 'x: type[C]', '*[A, *xs]', 'xs = (C,)', {'int'}),
++    ('x: type[A], y: type[C]', 'x: type[C]', '*(A, *xs)', 'xs = [C]', {'int'}),
++    ('x: type[A]', 'x: type[C]', '*[A, *xs]', 'xs = [C]', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', '*xs', 'xs: list[type[C]]', {'int', 'str'}),
++    ('*xs: type[A]', '*xs: type[C]', '*xs', 'xs: list[type[C]]', {'str'}),
++    ('x: type[A]', '*xs: type[C]', '*xs', 'xs: list[type[C]]', {'str'}),
++    ('x: type[A]', 'x: type[C]', '*xs', 'xs: tuple[type[C], ...]', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', '*xs', 'xs: tuple[type[C]]', {'str'}),
++    ('*xs: type[A]', '*xs: type[C]', '*[C for _ in []]', '', {'int'}),
++    ('x: type[A]', 'x: type[C]', '*[C for _ in []]', '', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', 'A, *[C for _ in []]', '', {'int'}),
++    ('x: type[A]', 'x: type[C]', '**{1: A}', '', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', '*[item for item in [C]]', '', {'str'}),
++    ('x: type[A]', 'x: type[C]', 'A, *[C for _ in [1] if False]', '', {'int'}),
++    ('x: type[A]', 'x: type[C]', '*[item for item in [A, C] if condition]',
++     '', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', '**{key: C for key in ["x"]}', '', {'str'}),
++    ('x: type[A]', 'x: type[C]', '**{key: C for key in []}', '', {'int', 'str'}),
++    ('**xs: type[A]', '**xs: type[C]', '**xs', 'xs: dict[str, type[C]]', {'str'}),
++    ('x: type[A]', 'x: type[C]', '**xs', 'xs: dict[str, type[C]]', {'int', 'str'}),
++    ('x: str', 'x: type[C]', '*{key: C for key in ["x"]}', '', {'int'}),
++    ('x: type[A]', 'x: type[C]', '*xs', 'xs = [A]\nxs.append(C)', {'int', 'str'}),
++    ('*xs: type[A]', '*xs: type[C]', '*[item for item in xs]',
++     'xs: list[type[C]]', {'str'}),
++    ('x: type[A]', 'x: type[C]', '*[item for item in xs]',
++     'xs: list[type[C]]', {'int', 'str'}),
++    ('x: type[A]', 'x: type[C]', '*{C for _ in [1, 2]}', '', {'int', 'str'}),
++    ('x: type[A] = A', 'x: type[C]', '**{"x": A for _ in xs}',
++     'xs: list[int]', {'int'}),
++    ('*xs: type[A]', '*xs: type[C]', '*[C for _ in xs if False]',
++     'xs: list[int]', {'int'}),
++    ('x: type[A] = A', 'x: type[C]', '**{key: A for key in xs}',
++     'xs: list[str]', {'int', 'str'}),
++    ('*xs: Any', 'x: Any', '*None', '', {'int', 'str'}),
++    ('**xs: Any', 'x: Any', '**{[]: A}', '', {'int', 'str'}),
++])
++def test_overload_unpacking(Script, first, second, call, setup, expected):
++    assert _infer_overload(Script, first, second, call, setup) == expected
++
++
++@pytest.mark.parametrize(('annotation', 'argument', 'setup', 'expected'), [
++    ('list[type[A]]', '[A, B]', '', {'int'}),
++    ('list[type[A]]', '[A, C]', '', {'str'}),
++    ('list[type[A]]', '[]', '', {'int'}),
++    ('List[Type[A]]', 'xs', 'xs = [A]', {'int'}),
++    ('list[type[A]]', '[*xs]', 'xs = [A]', {'int'}),
++    ('list[type[A]]', '[*xs]', 'xs = [C]', {'str'}),
++    ('list[type[A]]', '[C for _ in []]', '', {'int'}),
++    ('tuple[type[A], type[C]]', '(A, C)', '', {'int'}),
++    ('tuple[type[A], type[C]]', '(C, A)', '', {'str'}),
++    ('Tuple[Type[A], ...]', '(A, B)', '', {'int'}),
++    ('Tuple[Type[A], ...]', '(A, C)', '', {'str'}),
++    ('dict[int, type[C]]', '{1: A, True: C}', '', {'int'}),
++    ('dict[int, type[C]]', '{1: C, True: A}', '', {'str'}),
++    ('dict[str, type[C]]', '{"k": A, "k": C}', '', {'int'}),
++    ('dict[str, type[C]]', '{"k": A, **xs}', 'xs = {"k": C}', {'int'}),
++    ('dict[str, type[C]]', '{**xs, "k": C}', 'xs = {"k": A}', {'int'}),
++    ('dict[str, type[C]]', '{"k": C, **xs}',
++     'xs = {"k": A} if condition else {}', {'str'}),
++    ('dict[str, type[A | C]]', '{"k": C, **xs}',
++     'xs = {"k": A} if condition else {}', {'int'}),
++    ('list[dict[str, type[C]]]', '[{"k": A, **xs}]', 'xs = {"k": C}', {'int'}),
++    ('dict[int, type[C]]', '{True: A, 1: C}', '', {'int'}),
++    ('dict[int, type[C]]', '{1: A, 1.0: C}', '', {'int'}),
++    ('dict[None, type[C]]', '{None: A, None: C}', '', {'int'}),
++    ('dict[tuple[int], type[C]]', '{(1,): A, (True,): C}', '', {'int'}),
++    ('dict[type[A], type[C]]', '{A: A, A: C}', '', {'int'}),
++    ('list[type[A]]', '[item for item in [A, B]]', '', {'int'}),
++    ('list[type[A]]', '[C for _ in [1] if False]', '', {'int'}),
++    ('dict[str, type[C]]', '{key: C for key in ["k"]}', '', {'int'}),
++    ('dict[str, type[C]]', '{"k": item for item in [A, C]}', '', {'int'}),
++    ('list[type[A]]', 'xs', 'xs = [A]\nxs.append(C)', {'str'}),
++    ('dict[bool, type[C]]', '{True: A, 1: C}', '', {'int'}),
++    ('list[type[A]]', 'xs', 'xs: list[type[B]]', {'str'}),
++    ('list[type[A]]', 'xs', 'xs: list[type[A]]', {'int'}),
++    ('list[type[A]]', '[item for item in [A, *xs]]',
++     'xs: list[type[C]]', {'str'}),
++    ('list[type[A]]', '[item for item in xs]', 'xs: list[type[A]]', {'int'}),
++    ('list[type[T]]', 'xs', 'xs: list[type[A]]', {'int'}),
++])
++def test_overload_literal_contents(Script, annotation, argument, setup, expected):
++    assert _infer_overload(Script, 'x: ' + annotation, 'x: object', argument, setup) == expected
++
++
++@pytest.mark.parametrize(('call', 'expected'), [
++    ('A', ['build_a']),
++    ('C', ['build_c']),
++    ('input=A', ['build_a']),
++    ('A if condition else C', ['build_a', 'build_c']),
++    ('*xs', ['build_a', 'build_c']),
++])
++def test_overload_completions(Script, call, expected):
++    source = _PREAMBLE + dedent('''\
++        class ABuilder:
++            def build_a(self): ...
++
++        class CBuilder:
++            def build_c(self): ...
++
++        @overload
++        def get_obj(input: type[A]) -> ABuilder: ...
++        @overload
++        def get_obj(input: type[C]) -> CBuilder: ...
++
++        xs: list[type[C]]
++        get_obj(%s).build_
++    ''') % call
++    assert [completion.name for completion in Script(source.rstrip()).complete()] == expected
++
++
++@pytest.mark.parametrize(('annotation', 'expected'), [
++    ('Callable[..., int]', {'int'}),
++    ('Callable[..., str]', {'str'}),
++    ('Callable[[int], int]', {'int'}),
++    ('Callable[[str], int]', {'str'}),
++    ('Callable', {'int'}),
++])
++@pytest.mark.parametrize('bound', [False, True])
++def test_overload_callable(Script, annotation, expected, bound):
++    if bound:
++        setup = 'class Owner:\n    def callback(self, value: int) -> int: ...'
++        argument = 'Owner().callback'
++    else:
++        setup = 'def callback(value: int) -> int: ...'
++        argument = 'callback'
++    assert _infer_overload(Script, 'callback: ' + annotation, 'callback: object',
++                           argument, setup) == expected
++
++
++@pytest.mark.parametrize(('receiver', 'decorator', 'parameter'), [
++    ('Factory()', '', 'self, '),
++    ('Factory', '@classmethod\n', 'cls, '),
++    ('Factory', '@staticmethod\n', ''),
++])
++def test_overload_methods(Script, receiver, decorator, parameter):
++    method = dedent('''\
++        @overload
++        %sdef f(%sx: type[A]) -> int: ...
++        @overload
++        %sdef f(%sx: type[C]) -> str: ...
++    ''') % (decorator, parameter, decorator, parameter)
++    source = _PREAMBLE + 'class Factory:\n' + ''.join(
++        '    ' + line + '\n' for line in method.splitlines()
++    )
++    source += receiver + '.f(C)'
++    assert {value.name for value in Script(source).infer()} == {'str'}
++
++
++def test_overload_stub(Script, tmpdir):
++    stub = tmpdir.join('overloaded.pyi')
++    stub.write(_PREAMBLE + dedent('''\
++        @overload
++        def f(x: type[A]) -> int: ...
++        @overload
++        def f(x: type[C]) -> str: ...
++    '''))
++    script = Script('from overloaded import f, C\nf(C)', path=str(tmpdir.join('caller.py')))
++    assert {value.name for value in script.infer()} == {'str'}

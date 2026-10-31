@@ -1,0 +1,1157 @@
+diff --git a/CHANGELOG.rst b/CHANGELOG.rst
+index 32e693a..648422e 100644
+--- a/CHANGELOG.rst
++++ b/CHANGELOG.rst
+@@ -6,6 +6,8 @@ Changelog
+ Unreleased
+ ++++++++++
+ 
++- Select the first matching overload, including class types and literal argument unpacking
++
+ 0.20.1 (2026-10-12)
+ +++++++++++++++++++
+ 
+diff --git a/jedi/inference/gradual/matching.py b/jedi/inference/gradual/matching.py
+new file mode 100644
+index 0000000..f50e2dd
+--- /dev/null
++++ b/jedi/inference/gradual/matching.py
+@@ -0,0 +1,697 @@
++"""Match every possible argument binding before selecting an overload."""
++
++from inspect import Parameter
++
++from jedi.common import monkeypatch
++from jedi.inference.arguments import TreeArguments, ValuesArguments, unpack_arglist
++from jedi.inference.base_value import NO_VALUES, ValueSet, ValueWrapper
++from jedi.inference.compiled import builtin_from_name, create_simple_object
++from jedi.inference.gradual.base import GenericClass
++from jedi.inference.gradual.type_var import TypeVar
++from jedi.inference.gradual.typing import AnyClass, ProxyTypingClassValue, ProxyWithGenerics, Tuple
++from jedi.inference.lazy_value import LazyKnownValue, LazyKnownValues, LazyTreeValue
++from jedi.inference.value import iterable
++from jedi.parser_utils import get_sync_comp_fors
++
++
++_UNKNOWN = object()
++_MAX_ALTERNATIVES = 64
++_LITERAL_TYPES = iterable.SequenceLiteralValue, iterable.ComprehensionMixin
++
++
++def _infer_node(context, node, seen=()):
++    values = context.infer_node(node)
++    if node.type != 'name' or values and all(isinstance(value, _LITERAL_TYPES) for value in values):
++        return values
++    key = context, node
++    if key in seen or len(seen) >= 20:
++        return values
++    names = context.goto(node, position=node.start_pos)
++    if not names:
++        return values
++    literals = NO_VALUES
++    for name in names:
++        tree_name = name.tree_name
++        if tree_name is None:
++            return values
++        definition = tree_name.get_definition()
++        if definition is None or definition.type != 'expr_stmt':
++            return values
++        if next(definition.yield_operators(), None) != '=':
++            return values
++        rhs = definition.get_rhs()
++        inferred = _infer_node(name.parent_context, rhs, seen + (key,))
++        if not inferred or not all(isinstance(value, _LITERAL_TYPES) for value in inferred):
++            return values
++        literals |= inferred
++    return literals
++
++
++class _LazyMatchValue(LazyTreeValue):
++    def __init__(self, matcher, context, node):
++        super().__init__(context, node)
++        self._matcher = matcher
++
++    def infer(self):
++        with monkeypatch(self.context, 'predefined_names', self._predefined_names):
++            values = _infer_node(self.context, self.data)
++            self._matcher._capture_literals(values)
++            return values
++
++
++def _is_class_key(context, node, seen=()):
++    if node.type == 'test' and len(node.children) == 5:
++        return all(_is_class_key(context, branch, seen) for branch in node.children[::4])
++    key = context, node
++    if node.type != 'name' or key in seen or len(seen) >= 20:
++        return False
++    names = context.goto(node, position=node.start_pos)
++    for name in names:
++        if name.tree_name is None:
++            return False
++        definition = name.tree_name.get_definition()
++        if definition is not None and definition.type == 'classdef':
++            continue
++        if definition is None or definition.type != 'expr_stmt' \
++                or next(definition.yield_operators(), None) != '=':
++            return False
++        if not _is_class_key(name.parent_context, definition.get_rhs(), seen + (key,)):
++            return False
++    return bool(names)
++
++
++class _CannotMatch(Exception):
++    pass
++
++
++def _concatenate(alternatives, additions):
++    if not additions or len(alternatives) * len(additions) > _MAX_ALTERNATIVES:
++        raise _CannotMatch
++    return [left + right for left in alternatives for right in additions]
++
++
++def _repeated(values):
++    """Represent an iterable that can supply zero or more arguments."""
++    return LazyKnownValues(values, min=0, max=float('inf'))
++
++
++def _erase_class(value):
++    while isinstance(value, (GenericClass, ValueWrapper)):
++        value = value._wrapped_value
++    return value
++
++
++class _MappingShape:
++    """A possible mapping after evaluating its entries from left to right."""
++
++    def __init__(self, entries=None, unknown_items=(), min_length=None, max_length=None):
++        self.entries = {} if entries is None else entries
++        self.unknown_items = unknown_items
++        self.min_length = len(self.entries) if min_length is None else min_length
++        if max_length is None:
++            max_length = float('inf') if unknown_items else len(self.entries)
++        self.max_length = max_length
++
++    def with_item(self, key, key_values, value):
++        entries = dict(self.entries)
++        max_length = self.max_length
++        if key in entries:
++            key_values = entries[key][0]
++        else:
++            max_length += 1
++        entries[key] = key_values, value
++        return _MappingShape(entries, self.unknown_items,
++                             max(self.min_length, len(entries)), max_length)
++
++    def update(self, other):
++        entries = dict(self.entries)
++        for key_values, values in other.unknown_items:
++            for key, (original_keys, value) in entries.items():
++                entries[key] = original_keys, LazyKnownValues(value.infer() | values)
++        for key, (key_values, value) in other.entries.items():
++            if key in entries:
++                key_values = entries[key][0]
++            entries[key] = key_values, value
++        common_keys = len(self.entries.keys() & other.entries.keys())
++        return _MappingShape(
++            entries, self.unknown_items + other.unknown_items,
++            max(self.min_length, other.min_length, len(entries)),
++            self.max_length + other.max_length - common_keys,
++        )
++
++
++def matches_signature(function_value, arguments):
++    try:
++        return _Matcher().matches_signature(function_value, arguments)
++    except _CannotMatch:
++        return False
++
++
++class _Matcher:
++    def __init__(self):
++        self._sequence_cache = {}
++        self._mapping_cache = {}
++        self._match_cache = {}
++
++    def _capture_literals(self, values):
++        for value in values:
++            try:
++                if isinstance(value, (iterable.DictLiteralValue, iterable.DictComprehension)):
++                    self._mapping_shapes(value)
++                elif isinstance(value, _LITERAL_TYPES):
++                    self._sequence_shapes(value)
++            except _CannotMatch:
++                pass
++
++    def matches_signature(self, function_value, arguments):
++        return self._matches_parameters(function_value.get_param_names(), arguments)
++
++    def _matches_parameters(self, params, arguments):
++        if any(not hasattr(param, 'infer_annotation') for param in params):
++            raise _CannotMatch
++        annotations = {
++            param: param.infer_annotation(execute_annotation=False, ignore_stars=True)
++            for param in params
++        }
++        return all(self._matches_call(params, annotations, positional, keywords)
++                   for positional, keywords in self._argument_alternatives(arguments))
++
++    def _matches_call(self, params, annotations, positional, keywords):
++        positional_params = []
++        keyword_params = {}
++        var_positional = var_keyword = None
++        for param in params:
++            kind = param.get_kind()
++            if kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD):
++                positional_params.append(param)
++            if kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY):
++                keyword_params[param.string_name] = param
++            elif kind == Parameter.VAR_POSITIONAL:
++                var_positional = param
++            elif kind == Parameter.VAR_KEYWORD:
++                var_keyword = param
++
++        def matches(param, values):
++            return param is not None and self.matches_annotation(values, annotations[param])
++
++        positions = {0}
++        positional_count = len(positional_params)
++        for argument in positional:
++            values = argument.infer()
++            next_positions = set()
++            for position in positions:
++                if argument.max > positional_count - position \
++                        and not matches(var_positional, values):
++                    return False
++                last_position = min(positional_count, position + argument.max)
++                if not all(matches(param, values)
++                           for param in positional_params[position:last_position]):
++                    return False
++                first_position = min(positional_count, position + argument.min)
++                next_positions.update(range(first_position, last_position + 1))
++            positions = next_positions
++
++        for position in positions:
++            bound = {param.string_name for param in positional_params[:position]}
++            for key, (key_values, argument) in keywords.entries.items():
++                if not isinstance(key, str):
++                    return False
++                param = keyword_params.get(key, var_keyword)
++                if key in keyword_params and key in bound:
++                    return False
++                if not matches(param, argument.infer()):
++                    return False
++
++            for param in params:
++                if param.get_kind() in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
++                    continue
++                supplied_by_keyword = param.string_name in keyword_params \
++                    and param.string_name in keywords.entries
++                if param.string_name not in bound and not supplied_by_keyword \
++                        and param.default_node is None:
++                    return False
++
++            for key_values, values in keywords.unknown_items:
++                if var_keyword is None or bound.intersection(keyword_params):
++                    return False
++                str_class = builtin_from_name(var_keyword.parent_context.inference_state, 'str')
++                if not self.matches_annotation(key_values, ValueSet([str_class])):
++                    return False
++                if not matches(var_keyword, values) or not all(
++                    matches(param, values) for name, param in keyword_params.items()
++                    if name not in keywords.entries
++                ):
++                    return False
++        return True
++
++    def _argument_alternatives(self, arguments):
++        from jedi.inference.value.instance import InstanceArguments
++
++        if isinstance(arguments, InstanceArguments):
++            return [((LazyKnownValue(arguments.instance),) + positional, keywords)
++                    for positional, keywords
++                    in self._argument_alternatives(arguments._wrapped_arguments)]
++
++        alternatives = [((), _MappingShape())]
++        if not isinstance(arguments, TreeArguments):
++            for key, argument in arguments.unpack():
++                if key is None:
++                    alternatives = [(positional + (argument,), keywords)
++                                    for positional, keywords in alternatives]
++                else:
++                    alternatives = self._add_keywords(
++                        alternatives, [_MappingShape().with_item(key, NO_VALUES, argument)]
++                    )
++            return alternatives
++
++        context = arguments.context
++        for star_count, node in unpack_arglist(arguments.argument_node):
++            if star_count == 1:
++                shapes = self._sequences(_infer_node(context, node))
++                if len(alternatives) * len(shapes) > _MAX_ALTERNATIVES:
++                    raise _CannotMatch
++                alternatives = [(positional + shape, keywords)
++                                for positional, keywords in alternatives for shape in shapes]
++            elif star_count == 2:
++                alternatives = self._add_keywords(
++                    alternatives, self._mappings(_infer_node(context, node))
++                )
++            elif node.type == 'argument' and len(node.children) == 3:
++                key = node.children[0].value
++                argument = _LazyMatchValue(self, context, node.children[2])
++                alternatives = self._add_keywords(
++                    alternatives, [_MappingShape().with_item(key, NO_VALUES, argument)]
++                )
++            else:
++                if node.type == 'argument':
++                    argument, = TreeArguments(context.inference_state, context, node).unpack()
++                    argument = argument[1]
++                else:
++                    argument = _LazyMatchValue(self, context, node)
++                alternatives = [(positional + (argument,), keywords)
++                                for positional, keywords in alternatives]
++        return alternatives
++
++    def _add_keywords(self, alternatives, mappings):
++        if len(alternatives) * len(mappings) > _MAX_ALTERNATIVES:
++            raise _CannotMatch
++        result = []
++        for positional, keywords in alternatives:
++            for mapping in mappings:
++                if keywords.entries.keys() & mapping.entries.keys():
++                    raise _CannotMatch
++                if keywords.unknown_items and (mapping.entries or mapping.unknown_items) \
++                        or mapping.unknown_items and keywords.entries:
++                    raise _CannotMatch
++                result.append((positional, keywords.update(mapping)))
++        return result
++
++    def matches_annotation(self, values, annotations):
++        if not annotations:
++            return True
++        if any(isinstance(annotation, AnyClass) for annotation in annotations):
++            return True
++        return bool(values) and all(
++            any(self._matches_value(value, annotation) for annotation in annotations)
++            for value in values
++        )
++
++    def _matches_value(self, value, annotation):
++        key = value, annotation
++        if key not in self._match_cache:
++            self._match_cache[key] = False
++            try:
++                self._match_cache[key] = self._matches_value_uncached(value, annotation)
++            except _CannotMatch:
++                pass
++        return self._match_cache[key]
++
++    def _matches_value_uncached(self, value, annotation):
++        if isinstance(annotation, AnyClass):
++            return True
++        if isinstance(annotation, TypeVar):
++            classes = annotation._get_classes()
++            return not classes or self.matches_annotation(ValueSet([value]), classes)
++        if isinstance(annotation, ProxyWithGenerics):
++            name = annotation.py__name__()
++            generics = annotation.get_generics()
++            if name == 'Union':
++                return any(self.matches_annotation(ValueSet([value]), generic)
++                           for generic in generics)
++            if name == 'Optional':
++                return bool(generics) and (
++                    value.get_safe_value(default=_UNKNOWN) is None
++                    or self.matches_annotation(ValueSet([value]), generics[0])
++                )
++            if name in ('ClassVar', 'Annotated', 'Final'):
++                return bool(generics) and self.matches_annotation(ValueSet([value]), generics[0])
++            if name == 'Type':
++                return value.is_class() and all(
++                    any(self._matches_class(value, cls) for cls in generic)
++                    for generic in generics
++                )
++            if name == 'Tuple':
++                tuple_class = builtin_from_name(value.inference_state, 'tuple')
++                return self._matches_base(value, tuple_class) and self._matches_tuple(
++                    value, generics, annotation._generics_manager.is_homogenous_tuple()
++                )
++            if name == 'Callable':
++                return self._matches_callable(value, generics)
++
++        if isinstance(annotation, ProxyTypingClassValue):
++            if annotation.py__name__() == 'Type':
++                return value.is_class()
++            if annotation.py__name__() == 'Tuple':
++                return self._matches_base(value, builtin_from_name(value.inference_state, 'tuple'))
++
++        if isinstance(annotation, GenericClass):
++            if not self._matches_base(value, annotation._class_value):
++                return False
++            name = annotation.py__name__()
++            generics = annotation.get_generics()
++            if not generics:
++                return True
++            if name in ('dict', 'Mapping', 'MutableMapping') and len(generics) == 2:
++                return all(
++                    self.matches_annotation(keys, generics[0])
++                    and self.matches_annotation(argument.infer(), generics[1])
++                    for mapping in self._mapping_shapes(value)
++                    for keys, argument in mapping.entries.values()
++                ) and all(
++                    self.matches_annotation(keys, generics[0])
++                    and self.matches_annotation(values, generics[1])
++                    for mapping in self._mapping_shapes(value)
++                    for keys, values in mapping.unknown_items
++                )
++            if name in ('list', 'set', 'frozenset', 'Iterable', 'Iterator', 'Sequence',
++                        'MutableSequence', 'Collection', 'Container', 'Reversible'):
++                return all(self.matches_annotation(argument.infer(), generics[0])
++                           for shape in self._sequence_shapes(value) for argument in shape)
++            if name == 'tuple':
++                return self._matches_tuple(value, generics, False)
++
++        return any(self._matches_class(self._value_class(value), cls)
++                   for cls in annotation.gather_annotation_classes())
++
++    def _matches_class(self, value, annotation):
++        value = self._stub_class(value)
++        if isinstance(annotation, AnyClass):
++            return True
++        if isinstance(annotation, TypeVar):
++            classes = annotation._get_classes()
++            return not classes or any(self._matches_class(value, cls) for cls in classes)
++        if isinstance(annotation, ProxyWithGenerics):
++            name = annotation.py__name__()
++            if name in ('Union', 'Optional'):
++                if name == 'Optional':
++                    none_class = builtin_from_name(value.inference_state, 'None').py__class__()
++                    if self._matches_class(value, none_class):
++                        return True
++                return any(self._matches_class(value, cls)
++                           for generic in annotation.get_generics() for cls in generic)
++        if annotation.get_safe_value(default=_UNKNOWN) is None:
++            annotation = annotation.py__class__()
++        if isinstance(annotation, GenericClass):
++            return value.is_sub_class_of(annotation)
++        return any(_erase_class(base).is_same_class(_erase_class(annotation))
++                   for base in value.py__mro__())
++
++    def _value_class(self, value):
++        if isinstance(value, Tuple):
++            return builtin_from_name(value.inference_state, 'tuple')
++        if isinstance(value, iterable.Sequence):
++            return builtin_from_name(value.inference_state, value.array_type)
++        return self._stub_class(value.py__class__())
++
++    def _stub_class(self, value):
++        if value.is_compiled():
++            from jedi.inference.gradual.conversion import to_stub
++            stubs = to_stub(value)
++            if len(stubs) == 1:
++                return next(iter(stubs))
++        return value
++
++    def _matches_base(self, value, annotation):
++        return any(_erase_class(base).is_same_class(_erase_class(annotation))
++                   for base in self._value_class(value).py__mro__())
++
++    def _matches_tuple(self, value, generics, homogeneous):
++        for shape in self._sequence_shapes(value):
++            if homogeneous:
++                if not all(self.matches_annotation(argument.infer(), generics[0])
++                           for argument in shape):
++                    return False
++            elif len(shape) != len(generics) \
++                    or any(argument.min != 1 or argument.max != 1 for argument in shape) \
++                    or not all(self.matches_annotation(argument.infer(), generic)
++                               for argument, generic in zip(shape, generics)):
++                return False
++        return True
++
++    def _matches_callable(self, value, generics):
++        if not value.py__getattribute__('__call__') or len(generics) != 2:
++            return False
++        parameters, returns = generics
++        parameter_list = next(iter(parameters), None)
++        if isinstance(parameter_list, iterable.SequenceLiteralValue):
++            for shape in self._sequence_shapes(parameter_list):
++                if any(argument.min != 1 or argument.max != 1 for argument in shape):
++                    return False
++                arguments = ValuesArguments([argument.infer().execute_annotation(None)
++                                             for argument in shape])
++                if not any(self._matches_parameters(signature.get_param_names(), arguments)
++                           for signature in value.get_signatures()):
++                    return False
++                if not self.matches_annotation(value.execute(arguments), returns):
++                    return False
++            return True
++        return self.matches_annotation(value.execute_with_values(), returns)
++
++    def _sequences(self, values):
++        if not values:
++            raise _CannotMatch
++        return [shape for value in values for shape in self._sequence_shapes(value)]
++
++    def _sequence_shapes(self, value):
++        if value not in self._sequence_cache:
++            self._sequence_cache[value] = [(_repeated(NO_VALUES),)]
++            self._sequence_cache[value] = self._sequence_shapes_uncached(value)
++        return self._sequence_cache[value]
++
++    def _sequence_shapes_uncached(self, value):
++        if isinstance(value, (iterable.DictLiteralValue, iterable.DictComprehension,
++                              iterable.FakeDict)):
++            shapes = []
++            for mapping in self._mapping_shapes(value):
++                if mapping.unknown_items:
++                    if any(not keys for keys, values in mapping.unknown_items):
++                        raise _CannotMatch
++                    keys = ValueSet.from_sets(keys for keys, argument in mapping.entries.values())
++                    keys |= ValueSet.from_sets(keys for keys, values in mapping.unknown_items)
++                    shape = tuple(LazyKnownValues(keys) for index in range(mapping.min_length))
++                    remaining = mapping.max_length - mapping.min_length
++                    if remaining:
++                        shape += (LazyKnownValues(keys, min=0, max=remaining),)
++                else:
++                    shape = tuple(LazyKnownValues(keys)
++                                  for keys, argument in mapping.entries.values())
++                shapes.append(shape)
++            return shapes
++        if isinstance(value, iterable.SequenceLiteralValue):
++            alternatives = [()]
++            context = value._defining_context
++            for node in value.get_tree_entries(include_unpacking=True):
++                if node.type == 'star_expr':
++                    additions = self._sequences(_infer_node(context, node.children[1]))
++                else:
++                    additions = [(_LazyMatchValue(self, context, node),)]
++                alternatives = _concatenate(alternatives, additions)
++            additions = iterable.check_array_additions(context, value)
++            if additions or value.array_type == 'set' and any(alternatives):
++                values = ValueSet.from_sets(argument.infer()
++                                            for shape in alternatives for argument in shape)
++                values |= ValueSet.from_sets(argument.infer() for argument in additions)
++                return [(_repeated(values),)]
++            return alternatives
++        if isinstance(value, iterable._FakeSequence):
++            return [tuple(value.py__iter__())]
++        if isinstance(value, Tuple):
++            if not value._is_homogenous():
++                return [tuple(value.py__iter__())]
++        if isinstance(value, iterable.ComprehensionMixin):
++            shapes = [tuple(_repeated(values) if repeated else LazyKnownValues(values)
++                            for values, repeated in shape)
++                      for shape in self._comprehension_shapes(value)]
++            if isinstance(value, iterable.SetComprehension):
++                return [(_repeated(ValueSet.from_sets(argument.infer() for argument in shape)),)
++                        if shape else () for shape in shapes]
++            return shapes
++        if hasattr(value, 'get_filters') and not value.py__getattribute__('__iter__'):
++            raise _CannotMatch
++        return [(_repeated(value.merge_types_of_iterate()),)]
++
++    def _comprehension_shapes(self, value):
++        comp_fors = list(get_sync_comp_fors(value._sync_comp_for_node))
++
++        def iterate(index, parent_context):
++            comp_for = comp_fors[index]
++            inputs = _infer_node(parent_context, comp_for.children[3])
++            result = []
++            for shape in self._sequences(inputs):
++                alternatives = [()]
++                for argument in shape:
++                    context = value._get_comp_for_context(parent_context, comp_for)
++                    names = iterable.unpack_tuple_to_dict(
++                        parent_context, argument.infer(), comp_for.children[1]
++                    )
++                    with context.predefine_names(comp_for, names):
++                        optional = False
++                        condition = comp_for.children[-1]
++                        include = True
++                        while condition.type == 'comp_if':
++                            booleans = [item.py__bool__()
++                                        for item in context.infer_node(condition.children[1])]
++                            if booleans and all(boolean is False for boolean in booleans):
++                                include = False
++                                break
++                            optional |= not booleans or any(boolean is not True
++                                                            for boolean in booleans)
++                            condition = condition.children[-1]
++                        if not include:
++                            additions = [()]
++                        elif index + 1 < len(comp_fors):
++                            additions = iterate(index + 1, context)
++                        else:
++                            entry = _infer_node(context, value._entry_node)
++                            self._capture_literals(entry)
++                            if value.array_type == 'dict':
++                                values = _infer_node(context, value._value_node)
++                                self._capture_literals(values)
++                                entry = entry, values
++                            additions = [((entry, False),)]
++                        if optional and any(additions):
++                            additions = [()] + additions
++                    if argument.min != 1 or argument.max != 1:
++                        entries = [entry for addition in additions for entry, repeated in addition]
++                        if not entries:
++                            additions = [()]
++                        else:
++                            if value.array_type == 'dict':
++                                entry = tuple(ValueSet.from_sets(items)
++                                              for items in zip(*entries))
++                            else:
++                                entry = ValueSet.from_sets(entries)
++                            additions = [((entry, True),)]
++                    alternatives = _concatenate(alternatives, additions)
++                result.extend(alternatives)
++                if len(result) > _MAX_ALTERNATIVES:
++                    raise _CannotMatch
++            return result
++
++        return iterate(0, value._defining_context)
++
++    def _mappings(self, values):
++        if not values:
++            raise _CannotMatch
++        return [shape for value in values for shape in self._mapping_shapes(value)]
++
++    def _mapping_shapes(self, value):
++        if value not in self._mapping_cache:
++            self._mapping_cache[value] = [_MappingShape(unknown_items=((NO_VALUES, NO_VALUES),))]
++            self._mapping_cache[value] = self._mapping_shapes_uncached(value)
++        return self._mapping_cache[value]
++
++    def _mapping_shapes_uncached(self, value):
++        if isinstance(value, iterable.DictLiteralValue):
++            alternatives = [_MappingShape()]
++            context = value._defining_context
++            for key_node, value_node in value.get_tree_entries(include_unpacking=True):
++                if key_node is None:
++                    additions = self._mappings(_infer_node(context, value_node))
++                else:
++                    additions = self._mapping_items(
++                        _infer_node(context, key_node), _LazyMatchValue(self, context, value_node),
++                        exact_classes=_is_class_key(context, key_node),
++                    )
++                if len(alternatives) * len(additions) > _MAX_ALTERNATIVES:
++                    raise _CannotMatch
++                alternatives = [left.update(right) for left in alternatives for right in additions]
++            return alternatives
++        if isinstance(value, iterable.FakeDict):
++            entries = {}
++            for key, argument in value.exact_key_items():
++                keys = ValueSet([create_simple_object(value.inference_state, key)])
++                entries[key] = keys, argument
++            return [_MappingShape(entries)]
++        if isinstance(value, iterable.DictComprehension):
++            result = []
++            for shape in self._comprehension_shapes(value):
++                alternatives = [_MappingShape()]
++                for (keys, values), repeated in shape:
++                    if repeated:
++                        additions = [_MappingShape(unknown_items=((keys, values),))]
++                    else:
++                        additions = self._mapping_items(
++                            keys, LazyKnownValues(values),
++                            exact_classes=_is_class_key(value._defining_context, value._entry_node),
++                        )
++                    if len(alternatives) * len(additions) > _MAX_ALTERNATIVES:
++                        raise _CannotMatch
++                    alternatives = [left.update(right)
++                                    for left in alternatives for right in additions]
++                result.extend(alternatives)
++            return result
++        if not value.py__getattribute__('keys') \
++                or not hasattr(value, 'get_annotated_class_object'):
++            raise _CannotMatch
++        cls = value.get_annotated_class_object()
++        if isinstance(cls, GenericClass):
++            generics = cls.get_generics()
++            if len(generics) == 2:
++                keys, values = [generic.execute_annotation(None) for generic in generics]
++                return [_MappingShape(unknown_items=((keys, values),))]
++        raise _CannotMatch
++
++    def _mapping_items(self, keys, argument, exact_classes=False):
++        if not keys:
++            raise _CannotMatch
++        result = []
++        for key in keys:
++            for safe_key in self._safe_keys(key, exact_classes):
++                if safe_key is _UNKNOWN:
++                    unknown_items = ((ValueSet([key]), argument.infer()),)
++                    result.append(_MappingShape(unknown_items=unknown_items,
++                                                min_length=1, max_length=1))
++                else:
++                    try:
++                        hash(safe_key)
++                    except TypeError:
++                        raise _CannotMatch
++                    result.append(_MappingShape().with_item(safe_key, ValueSet([key]), argument))
++        return result
++
++    def _safe_keys(self, value, exact_classes=False):
++        safe = value.get_safe_value(default=_UNKNOWN)
++        if safe is not _UNKNOWN:
++            return [safe]
++        if value.is_class():
++            return [value] if exact_classes else [_UNKNOWN]
++        if isinstance(value, iterable.SequenceLiteralValue):
++            if value.array_type != 'tuple':
++                raise _CannotMatch
++            result = []
++            for shape in self._sequence_shapes(value):
++                alternatives = [()]
++                for argument in shape:
++                    if argument.min != 1 or argument.max != 1:
++                        return [_UNKNOWN]
++                    exact_classes = isinstance(argument, LazyTreeValue) \
++                        and _is_class_key(argument.context, argument.data)
++                    keys = [key for item in argument.infer()
++                            for key in self._safe_keys(item, exact_classes)]
++                    if not keys or _UNKNOWN in keys:
++                        return [_UNKNOWN]
++                    alternatives = _concatenate(alternatives, [(key,) for key in keys])
++                result.extend(alternatives)
++            return result
++        return [_UNKNOWN]
+diff --git a/jedi/inference/signature.py b/jedi/inference/signature.py
+index c968bf2..88cf6d7 100644
+--- a/jedi/inference/signature.py
++++ b/jedi/inference/signature.py
+@@ -64,7 +64,7 @@ class AbstractSignature(_SignatureMixin):
+     def bind(self, value):
+         raise NotImplementedError
+ 
+-    def matches_signature(self, arguments):
++    def matches_signature(self, arguments, *, is_overload=True):
+         return True
+ 
+     def __repr__(self):
+@@ -106,15 +106,18 @@ class TreeSignature(AbstractSignature):
+             return params[1:]
+         return params
+ 
+-    def matches_signature(self, arguments):
+-        from jedi.inference.param import get_executed_param_names_and_issues
+-        executed_param_names, issues = \
+-            get_executed_param_names_and_issues(self._function_value, arguments)
+-        if issues:
+-            return False
+-
+-        matches = all(executed_param_name.matches_signature()
+-                      for executed_param_name in executed_param_names)
++    def matches_signature(self, arguments, *, is_overload=True):
++        if is_overload:
++            from jedi.inference.gradual.matching import matches_signature
++            matches = matches_signature(self._function_value, arguments)
++        else:
++            from jedi.inference.param import get_executed_param_names_and_issues
++            executed_param_names, issues = \
++                get_executed_param_names_and_issues(self._function_value, arguments)
++            if issues:
++                return False
++            matches = all(executed_param_name.matches_signature()
++                          for executed_param_name in executed_param_names)
+         if debug.enable_notice:
+             tree_node = self._function_value.tree_node
+             signature = parser_utils.get_signature(tree_node)
+diff --git a/jedi/inference/value/instance.py b/jedi/inference/value/instance.py
+index 2080b9a..afe2bb8 100644
+--- a/jedi/inference/value/instance.py
++++ b/jedi/inference/value/instance.py
+@@ -327,12 +327,13 @@ class TreeInstance(_BaseTreeInstance):
+             infer_type_vars_for_execution
+ 
+         args = InstanceArguments(self, self._arguments)
+-        for signature in init_or_new_func(self.class_value).get_signatures():
++        signatures = init_or_new_func(self.class_value).get_signatures()
++        for signature in signatures:
+             # Just take the first result, it should always be one, because we
+             # control the typeshed code.
+             funcdef = signature.value.tree_node
+             if funcdef is None or funcdef.type != 'funcdef' \
+-                    or not signature.matches_signature(args):
++                    or not signature.matches_signature(args, is_overload=len(signatures) > 1):
+                 # First check if the signature even matches, if not we don't
+                 # need to infer anything.
+                 continue
+diff --git a/jedi/inference/value/iterable.py b/jedi/inference/value/iterable.py
+index 0bcda9d..aeb1294 100644
+--- a/jedi/inference/value/iterable.py
++++ b/jedi/inference/value/iterable.py
+@@ -380,7 +380,7 @@ class SequenceLiteralValue(Sequence):
+         # This function is not really used often. It's more of a try.
+         return len(self.get_tree_entries())
+ 
+-    def get_tree_entries(self):
++    def get_tree_entries(self, include_unpacking=False):
+         c = self.atom.children
+ 
+         if self.atom.type in self._TUPLE_LIKE:
+@@ -393,7 +393,7 @@ class SequenceLiteralValue(Sequence):
+         if array_node.type == 'testlist_comp':
+             # filter out (for now) pep 448 single-star unpacking
+             return [value for value in array_node.children[::2]
+-                    if value.type != "star_expr"]
++                    if include_unpacking or value.type != "star_expr"]
+         elif array_node.type == 'dictorsetmaker':
+             kv = []
+             iterator = iter(array_node.children)
+@@ -401,7 +401,9 @@ class SequenceLiteralValue(Sequence):
+                 if key == "**":
+                     # dict with pep 448 double-star unpacking
+                     # for now ignoring the values imported by **
+-                    next(iterator)
++                    unpacked = next(iterator)
++                    if include_unpacking:
++                        kv.append((None, unpacked))
+                     next(iterator, None)  # Possible comma.
+                 else:
+                     op = next(iterator, None)
+@@ -409,7 +411,8 @@ class SequenceLiteralValue(Sequence):
+                         if key.type == "star_expr":
+                             # pep 448 single-star unpacking
+                             # for now ignoring values imported by *
+-                            pass
++                            if include_unpacking:
++                                kv.append(key)
+                         else:
+                             kv.append(key)  # A set.
+                     else:
+@@ -421,7 +424,7 @@ class SequenceLiteralValue(Sequence):
+             if array_node.type == "star_expr":
+                 # pep 448 single-star unpacking
+                 # for now ignoring values imported by *
+-                return []
++                return [array_node] if include_unpacking else []
+             else:
+                 return [array_node]
+ 
+diff --git a/test/test_inference/test_overload.py b/test/test_inference/test_overload.py
+new file mode 100644
+index 0000000..8191e0c
+--- /dev/null
++++ b/test/test_inference/test_overload.py
+@@ -0,0 +1,322 @@
++from textwrap import dedent
++
++import pytest
++
++from jedi import Interpreter
++
++
++_PRELUDE = dedent('''\
++    from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
++    from typing import Type, Union
++    from typing import overload
++
++    class A: pass
++    class B(A): pass
++    class C: pass
++    condition: bool
++''')
++
++
++@pytest.mark.parametrize('annotation', ['type', 'Type'])
++@pytest.mark.parametrize('argument, expected', [
++    ('A', 'only_a'),
++    ('B', 'only_a'),
++    ('input=A', 'only_a'),
++    ('*[A]', 'only_a'),
++    ('**{"input": A}', 'only_a'),
++    ('C', 'only_c'),
++    ('input=C', 'only_c'),
++    ('*[C]', 'only_c'),
++    ('**{"input": C}', 'only_c'),
++])
++def test_class_overload_completion(Script, annotation, argument, expected):
++    code = _PRELUDE + dedent('''\
++        class ABuilder:
++            def only_a(self): pass
++        class CBuilder:
++            def only_c(self): pass
++        @overload
++        def get_obj(input: {annotation}[A]) -> ABuilder: ...
++        @overload
++        def get_obj(input: {annotation}[C]) -> CBuilder: ...
++        get_obj({argument}).only_
++    ''').format(annotation=annotation, argument=argument)
++    assert [completion.name for completion in Script(code.rstrip()).complete()] == [expected]
++
++
++@pytest.mark.parametrize('parameters, setup, arguments, matches', [
++    ('x: type[A]', '', 'A', True),
++    ('x: type[A]', '', 'B', True),
++    ('x: type[A]', '', 'C', False),
++    ('x: type[A]', '', 'A()', False),
++    ('x: A', '', 'A()', True),
++    ('x: A', '', 'B()', True),
++    ('x: A', '', 'A', False),
++    ('x: type', '', 'A', True),
++    ('x: object', '', 'A', True),
++    ('x: type[A]', '', 'A if condition else B', True),
++    ('x: type[A]', '', 'A if condition else C', False),
++    ('x: Union[type[A], type[C]]', '', 'A if condition else C', True),
++    ('x: type[Union[A, C]]', '', 'A if condition else C', True),
++    ('x: type[Optional[A]]', '', 'A', True),
++    ('x: type[Optional[A]]', '', 'type(None)', True),
++    ('x: type[Optional[A]]', 'class NoneType: pass', 'NoneType', False),
++    ('x: Optional[type[A]]', '', 'None', True),
++    ('x: Optional[type[A]]', '', 'A', True),
++    ('x: Optional[type[A]]', '', 'C', False),
++    ('x: Any', '', 'C', True),
++    ('x: Any', '', 'unknown', True),
++    ('x: Any', '', '[C for _ in unknown]', True),
++    ('x: object', '', '[C for _ in unknown]', True),
++    ('x: bool', '', 'True', True),
++    ('x: int', '', 'True', True),
++    ('x: None', '', 'None', True),
++    ('x: type[Any]', '', 'C', True),
++    ('x: type[Any]', '', 'C()', False),
++    ('x: type[A]', '', 'x=A', True),
++    ('x: type[A], y: type[C]', '', 'y=C, x=A', True),
++    ('x: type[A]', '', 'A, x=A', False),
++    ('x: type[A]', '', 'y=A', False),
++    ('x: type[A]', '', '', False),
++    ('x: type[A], y: type[C]', '', 'A', False),
++    ('x: type[A], y: type[C] = C', '', 'A', True),
++    ('x: type[A] = A', '', '', True),
++    ('x: type[A], /', '', 'x=A', False),
++    ('x: type[A], /', '', 'A', True),
++    ('*, x: type[A]', '', 'A', False),
++    ('*, x: type[A]', '', 'x=A', True),
++    ('x: type[A], *, y: type[C]', '', 'A, y=C', True),
++    ('x: type[A], *, y: type[C]', '', 'A, C', False),
++    ('*args: type[A]', '', 'A, B', True),
++    ('*args: type[A]', '', 'A, C', False),
++    ('**kwargs: type[A]', '', 'x=A, y=B', True),
++    ('**kwargs: type[A]', '', 'x=A, y=C', False),
++    ('**kwargs: type[A]', 'kwargs: dict[str, type[A]]', '**kwargs', True),
++    ('**kwargs: type[A]', 'kwargs: dict[str, type[C]]', '**kwargs', False),
++    ('x: type[A]', 'kwargs: dict[str, type[A]]', '**kwargs', False),
++    ('x: type[A] = A, **kwargs: type[A]',
++     'kwargs: dict[str, type[A]]', '**kwargs', True),
++    ('x: type[C] = C, **kwargs: type[A]',
++     'kwargs: dict[str, type[A]]', '**kwargs', False),
++    ('x: type[C], **kwargs: type[A]',
++     'kwargs: dict[str, type[A]]', '**{**kwargs, "x": C}', True),
++    ('x: type[C], **kwargs: type[A]',
++     'kwargs: dict[str, type[A]]', '**{"x": C, **kwargs}', False),
++    ('x: Union[type[A], type[C]], **kwargs: type[A]',
++     'kwargs: dict[str, type[A]]', '**{"x": C, **kwargs}', True),
++    ('x: type[A]', '', '*[A]', True),
++    ('x: type[A]', 'xs = [A]', '*xs', True),
++    ('x: type[A]', 'xs: list[type[A]] = [A]', '*xs', True),
++    ('x: type[A]', 'xs: list[type[C]] = [A]', '*xs', True),
++    ('x: type[A]', 'xs: list[type[A]] = [A]; alias = xs', '*alias', True),
++    ('x: type[A]', 'xs = (A,)', '*xs', True),
++    ('x: str, *args: object', 'kwargs: dict[int, type[A]]', '*{**kwargs, "x": A}', False),
++    ('x: str, *args: str', 'kwargs: dict[str, type[A]]', '*{**kwargs, "x": A}', True),
++    ('x: str', 'key: str', '*{key: A}', True),
++    ('x: str, y: str = "y"', 'key: str', '*{"x": C, key: A}', True),
++    ('x: str, y: str', 'key: str', '*{"x": C, key: A}', False),
++    ('x: str', 'key: str', '*{"x": C, key: A}', False),
++    ('x: type[A]', 'key: type[A]', '*{key: C, A: C}', False),
++    ('x: type[A], y: type[A] = A', 'key: type[A]', '*{key: C, A: C}', True),
++    ('x: type[A]', '', '**{"x": A}', True),
++    ('x: type[A]', 'kwargs = {"x": A}', '**kwargs', True),
++    ('x: type[A]', 'kwargs: dict[str, type[A]] = {"x": A}', '**kwargs', True),
++    ('x: type[A]', '', '**{"x": C, "x": A}', True),
++    ('x: type[A]', '', '**{"x": C, **{"x": A}}', True),
++    ('x: type[A]', '', '**{**{"x": C}, "x": A}', True),
++    ('x: type[A]', 'kwargs = {"x": A} if condition else {}', '**kwargs', False),
++    ('x: type[A]', 'kwargs = {"x": A} if condition else {}',
++     '**{"x": C, **kwargs}', False),
++    ('x: type[A]', 'kwargs = {"x": A} if condition else {}',
++     '**{**kwargs, "x": A}', True),
++    ('x: type[A], y: type[C]', 'tail = [C]', '*[A, *tail]', True),
++    ('x: type[A], y: type[C]', 'tail: list[type[C]] = [C]', '*[A, *tail]', True),
++    ('x: type[A]', '', '*[A, *[C for _ in []]]', True),
++    ('x: type[A], y: type[C]', 'tail = (C,)', '*(A, *tail)', True),
++    ('x: type[A], *args: type[C]', 'tail = [C] if condition else []',
++     '*[A, *tail]', True),
++    ('x: type[A], y: type[C]', 'tail = [C] if condition else []',
++     '*[A, *tail]', False),
++    ('x: type[C]', 'xs: list[type[C]]', '*xs', False),
++    ('x: type[C] = C', 'xs: list[type[C]]', '*xs', False),
++    ('*args: type[C]', 'xs: list[type[C]]', '*xs', True),
++    ('*args: Any', 'xs: list[Any]', '*xs', True),
++    ('x: type[C], *args: type[C]', 'xs: list[type[C]]', '*xs', False),
++    ('x: type[C] = C, *args: type[C]', 'xs: list[type[C]]', '*xs', True),
++    ('x: type[C], *args: type[C]', 'xs: list[type[C]]', '*xs, C', True),
++    ('x: type[A], *args: type[C]', 'xs: list[type[C]]', 'A, *xs', True),
++    ('x: type[A], *args: type[C]', 'xs: list[type[C]]', '*xs, A', False),
++    ('x: type[C]', 'xs: tuple[type[C], ...]', '*xs', False),
++    ('x: type[C]', 'xs: tuple[type[C]]', '*xs', True),
++    ('x: type[C]', 'xs = [A] if condition else []', '*xs, C', False),
++    ('x: type[A], y: type[C]', 'xs = [A] if condition else []', '*xs, C', False),
++    ('x: Union[type[A], type[C]], *args: type[C]',
++     'xs = [A] if condition else []', '*xs, C', True),
++    ('', '', '*[C for _ in []]', True),
++    ('x: type[C]', '', '*[C for _ in []]', False),
++    ('x: type[C]', '', '*[C for _ in [1]]', True),
++    ('', '', '*[C for _ in [1] if False]', True),
++    ('', '', '*[C for _ in [1] for inner in []]', True),
++    ('', '', '*[C for _ in [1, 2, 3, 4, 5, 6, 7] if condition if False]', True),
++    ('x: type[A]', '', '*[item for item in [A] if True]', True),
++    ('x: type[C]', '', '*[C for _ in ([1] if condition else [])]', False),
++    ('x: type[C] = C', '', '*[C for _ in ([1] if condition else [])]', True),
++    ('x: type[C]', '', '*[C for _ in [1] if condition]', False),
++    ('x: type[A], y: type[C]', '', '*[item for item in [A, C]]', True),
++    ('first: tuple[type[A]], second: tuple[type[C]]',
++     '', '*[(item,) for item in [A, C]]', True),
++    ('first: tuple[type[A]], second: tuple[type[C]]',
++     '', '*((item,) for item in [A, C])', True),
++    ('first: list[list[type[A]]], second: list[list[type[C]]]',
++     '', '*[[[item]] for item in [A, C]]', True),
++    ('first: dict[str, type[A]], second: dict[str, type[C]]',
++     '', '*[{"key": item} for item in [A, C]]', True),
++    ('x: list[type[A]]', '', '[A, B]', True),
++    ('x: list[type[A]]', '', '[A, C]', False),
++    ('x: list[type[A]]', '', '[]', True),
++    ('x: list[type[A]]', 'xs = [A, B]', 'xs', True),
++    ('x: list[type[A]]', 'xs: list[type[A]] = [A, B]', 'xs', True),
++    ('x: list[type[A]]', '', '[A if condition else C]', False),
++    ('x: list[type[A]]', 'tail = [B]', '[A, *tail]', True),
++    ('x: list[type[A]]', 'tail = [C]', '[A, *tail]', False),
++    ('x: list[type[A]]', '', '[C for _ in []]', True),
++    ('x: list[type[A]]', '', '[C for _ in [1]]', False),
++    ('x: list[type[A]]', '', '[C for _ in [1] for inner in []]', True),
++    ('x: list[Any]', 'xs: list', 'xs', True),
++    ('x: List[Type[A]]', '', '[A, B]', True),
++    ('x: Sequence[type[A]]', '', '[A, B]', True),
++    ('x: Iterable[type[A]]', '', '(A, B)', True),
++    ('x: tuple[type[A], type[C]]', '', '(A, C)', True),
++    ('x: tuple[type[A], type[C]]', '', '(C, A)', False),
++    ('x: tuple[type[A], type[C]]', 'tail = [C]', '(A, *tail)', True),
++    ('x: Tuple[Type[A], ...]', '', '(A, B)', True),
++    ('x: Tuple[Type[A], ...]', '', '()', True),
++    ('x: tuple[()]', '', '()', True),
++    ('x: dict[str, type[A]]', '', '{"x": A, "y": B}', True),
++    ('x: dict[str, type[A]]', '', '{"x": A, "y": C}', False),
++    ('x: dict[str, type[A]]', '', '{}', True),
++    ('x: dict[str, type[A]]', '', '{"x": C, "x": A}', True),
++    ('x: dict[str, type[A]]', '', '{"x": C, **{"x": A}}', True),
++    ('x: dict[str, type[A]]', '', '{**{"x": C}, "x": A}', True),
++    ('x: dict[int, type[C]]', '', '{1: A, True: C}', True),
++    ('x: dict[int, type[C]]', '', '{1: A, 1.0: C}', True),
++    ('x: dict[bool, type[C]]', '', '{True: A, 1: C}', True),
++    ('x: dict[bool, type[C]]', '', '{1: A, True: C}', False),
++    ('x: dict[tuple[int], type[C]]', '', '{(1,): A, (True,): C}', True),
++    ('x: dict[type[A], type[C]]', '', '{A: A, A: C}', True),
++    ('x: dict[type[A], type[C]]', 'key = A', '{key: A, A: C}', True),
++    ('x: dict[type[A], type[C]]', 'key: type[A]', '{key: A, A: C}', False),
++    ('x: dict[str, type[A]]', '', '{"x": item for item in [C, A]}', True),
++    ('x: dict[str, type[A]]', '', '{"x": C for _ in []}', True),
++    ('x: type[A]', '', '**{"x": A for _ in [1]}', True),
++    ('', '', '**{"x": A for _ in []}', True),
++    ('x: dict[str, type[A]]', 'kwargs = {"x": A} if condition else {}',
++     '{"x": C, **kwargs}', False),
++    ('x: dict[str, type[A]]', 'kwargs = {"x": A} if condition else {}',
++     '{**kwargs, "x": A}', True),
++    ('x: Dict[str, Type[A]]', '', '{"x": A}', True),
++    ('x: Mapping[str, type[A]]', '', '{"x": A}', True),
++    ('x: list[list[type[A]]]', '', '[[A], [B]]', True),
++    ('x: list[list[type[A]]]', '', '[[A], [C]]', False),
++    ('x: Callable[[], type[A]]', 'def callback() -> type[A]: ...', 'callback', True),
++    ('x: Callable[[], type[A]]', 'def callback() -> type[C]: ...', 'callback', False),
++    ('x: Callable[[type[A]], type[C]]',
++     'def callback(item: type[A]) -> type[C]: ...', 'callback', True),
++    ('x: Callable[[type[A]], type[C]]',
++     'def callback(item: type[C]) -> type[C]: ...', 'callback', False),
++    ('x: Callable[[type[A]], type[C]]',
++     'def callback() -> type[C]: ...', 'callback', False),
++    ('x: Callable[[type[A]], type[C]]',
++     'def callback(item: type[A], *, required) -> type[C]: ...', 'callback', False),
++])
++def test_overload_matching(Script, parameters, setup, arguments, matches):
++    code = _PRELUDE + dedent('''\
++        @overload
++        def f({parameters}) -> str: ...
++        @overload
++        def f(*args, **kwargs) -> int: ...
++        {setup}
++        f({arguments})
++    ''').format(parameters=parameters, setup=setup, arguments=arguments)
++    assert {value.name for value in Script(code.rstrip()).infer()} == {'str' if matches else 'int'}
++
++
++@pytest.mark.parametrize('arguments', [
++    'C()',
++    'A if condition else C',
++    '*xs',
++    '*([A] if condition else [])',
++])
++def test_overload_no_match(Script, arguments):
++    code = _PRELUDE + dedent('''\
++        @overload
++        def f(x: type[A]) -> str: ...
++        @overload
++        def f(x: type[C]) -> int: ...
++        xs: list[type[C]]
++        f({arguments})
++    ''').format(arguments=arguments)
++    assert {value.name for value in Script(code.rstrip()).infer()} == {'str', 'int'}
++
++
++def test_first_matching_overload(Script):
++    code = _PRELUDE + dedent('''\
++        @overload
++        def f(x: type[A]) -> str: ...
++        @overload
++        def f(x: type[B]) -> int: ...
++        f(B)
++    ''')
++    assert {value.name for value in Script(code.rstrip()).infer()} == {'str'}
++
++
++@pytest.mark.parametrize('decorator, first_param, call', [
++    ('', 'self, ', 'Factory().f(A)'),
++    ('', 'self, ', 'Factory.f(Factory(), A)'),
++    ('@classmethod', 'cls, ', 'Factory.f(A)'),
++    ('@classmethod', 'cls, ', 'Factory().f(A)'),
++    ('@staticmethod', '', 'Factory.f(A)'),
++    ('@staticmethod', '', 'Factory().f(A)'),
++])
++def test_overloaded_method(Script, decorator, first_param, call):
++    code = _PRELUDE + dedent('''\
++        class Factory:
++            @overload
++            {decorator}
++            def f({first_param}x: type[A]) -> str: ...
++            @overload
++            {decorator}
++            def f({first_param}x: type[C]) -> int: ...
++            {decorator}
++            def f({first_param}x): pass
++        {call}
++    ''').format(decorator=decorator, first_param=first_param, call=call)
++    assert {value.name for value in Script(code.rstrip()).infer()} == {'str'}
++
++
++def test_overloaded_constructor(Script):
++    code = _PRELUDE + dedent('''\
++        from typing import Generic, TypeVar
++        T = TypeVar('T')
++        class Box(Generic[T]):
++            @overload
++            def __init__(self, selector: type[A], one: T, two: int): ...
++            @overload
++            def __init__(self, selector: type[C], one: str, two: T): ...
++            def value(self) -> T: ...
++        Box(C, '', 1.0).value()
++    ''')
++    assert {value.name for value in Script(code.rstrip()).infer()} == {'float'}
++
++
++def test_interpreter_mapping():
++    code = dedent('''\
++        from typing import overload
++        @overload
++        def target(x: int) -> str: ...
++        @overload
++        def target(x: str) -> int: ...
++        target(**kwargs)
++    ''')
++    script = Interpreter(code.rstrip(), [{'kwargs': {'x': 1}}])
++    assert {value.name for value in script.infer()} == {'str', 'int'}

@@ -1,0 +1,2003 @@
+diff --git a/jedi/inference/gradual/generics.py b/jedi/inference/gradual/generics.py
+index ddd010a..6f4a4b9 100644
+--- a/jedi/inference/gradual/generics.py
++++ b/jedi/inference/gradual/generics.py
+@@ -104,6 +104,11 @@ class TupleGenericManager(_AbstractGenericManager):
+         return self._tuple
+ 
+     def is_homogenous_tuple(self):
++        if len(self._tuple) == 2:
++            return any(
++                v.is_compiled() and v.py__name__() == 'ellipsis'
++                for v in self._tuple[1]
++            )
+         return False
+ 
+     def __repr__(self):
+diff --git a/jedi/inference/gradual/type_var.py b/jedi/inference/gradual/type_var.py
+index d74c97a..82dfb05 100644
+--- a/jedi/inference/gradual/type_var.py
++++ b/jedi/inference/gradual/type_var.py
+@@ -53,6 +53,7 @@ class TypeVar(BaseTypingValue):
+         self._bound_lazy_value = None
+         self._covariant_lazy_value = None
+         self._contravariant_lazy_value = None
++        self._default_lazy_value = None
+         for key, lazy_value in unpacked_args:
+             if key is None:
+                 self._constraints_lazy_values.append(lazy_value)
+@@ -62,7 +63,9 @@ class TypeVar(BaseTypingValue):
+                 elif key == 'covariant':
+                     self._covariant_lazy_value = lazy_value
+                 elif key == 'contravariant':
+-                    self._contra_variant_lazy_value = lazy_value
++                    self._contravariant_lazy_value = lazy_value
++                elif key == 'default':
++                    self._default_lazy_value = lazy_value
+                 else:
+                     debug.warning('Invalid TypeVar param name %s', key)
+ 
+@@ -84,6 +87,24 @@ class TypeVar(BaseTypingValue):
+         # Everything can match an undefined type var.
+         return True
+ 
++    @property
++    def bound(self):
++        if self._bound_lazy_value is not None:
++            return self._bound_lazy_value.infer()
++        return NO_VALUES
++
++    @property
++    def is_covariant(self):
++        if self._covariant_lazy_value is not None:
++            return any(bool(v.py__bool__()) for v in self._covariant_lazy_value.infer())
++        return False
++
++    @property
++    def is_contravariant(self):
++        if self._contravariant_lazy_value is not None:
++            return any(bool(v.py__bool__()) for v in self._contravariant_lazy_value.infer())
++        return False
++
+     @property
+     def constraints(self):
+         return ValueSet.from_sets(
+diff --git a/jedi/inference/gradual/typing.py b/jedi/inference/gradual/typing.py
+index febb80c..e1a4d06 100644
+--- a/jedi/inference/gradual/typing.py
++++ b/jedi/inference/gradual/typing.py
+@@ -137,7 +137,20 @@ class ProxyWithGenerics(BaseTypingClassWithGenerics):
+         )])
+ 
+     def gather_annotation_classes(self):
+-        return ValueSet.from_sets(self._generics_manager.to_tuple())
++        string_name = self._tree_name.value
++        if string_name == 'Optional':
++            return ValueSet.from_sets(
++                gs.gather_annotation_classes()
++                for gs in self._generics_manager.to_tuple()
++            ) | ValueSet([builtin_from_name(self.inference_state, 'None')])
++        elif string_name in IGNORE_ANNOTATION_PARTS:
++            if len(self._generics_manager):
++                return self._generics_manager[0].gather_annotation_classes()
++            return NO_VALUES
++        return ValueSet.from_sets(
++            gs.gather_annotation_classes()
++            for gs in self._generics_manager.to_tuple()
++        )
+ 
+     def _create_instance_with_generics(self, generics_manager):
+         return ProxyWithGenerics(
+@@ -207,6 +220,9 @@ class _TypingClassMixin(ClassMixin):
+ 
+ 
+ class TypingClassWithGenerics(ProxyWithGenerics, _TypingClassMixin):
++    def gather_annotation_classes(self):
++        return ValueSet([self])
++
+     def infer_type_vars(self, value_set):
+         type_var_dict = {}
+         annotation_generics = self.get_generics()
+diff --git a/jedi/inference/names.py b/jedi/inference/names.py
+index 8060806..ef600bc 100644
+--- a/jedi/inference/names.py
++++ b/jedi/inference/names.py
+@@ -490,7 +490,7 @@ class _ActualTreeParamName(BaseTreeParamName):
+ 
+         # Params starting with __ are an equivalent to positional only
+         # variables in typeshed.
+-        if tree_param.name.value.startswith('__'):
++        if tree_param.name.value.startswith('__') and not tree_param.name.value.endswith('__'):
+             return Parameter.POSITIONAL_ONLY
+ 
+         parent = tree_param.parent
+diff --git a/jedi/inference/param.py b/jedi/inference/param.py
+index b8ec4d3..7544515 100644
+--- a/jedi/inference/param.py
++++ b/jedi/inference/param.py
+@@ -4,8 +4,10 @@ from inspect import Parameter
+ from jedi import debug
+ from jedi.inference.utils import PushBackIterator
+ from jedi.inference import analysis
+-from jedi.inference.lazy_value import LazyKnownValue, \
+-    LazyTreeValue, LazyUnknownValue
++from jedi.inference import compiled
++from jedi.inference.base_value import ValueSet, NO_VALUES
++from jedi.inference.lazy_value import LazyKnownValue, LazyKnownValues, \
++    LazyTreeValue, LazyUnknownValue, get_merged_lazy_value
+ from jedi.inference.value import iterable
+ from jedi.inference.names import ParamName
+ 
+@@ -30,7 +32,7 @@ class ExecutedParamName(ParamName):
+     def matches_signature(self):
+         if self._is_default:
+             return True
+-        argument_values = self.infer().py__class__()
++        argument_values = self.infer()
+         if self.get_kind() in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
+             return True
+         annotations = self.infer_annotation(execute_annotation=False)
+@@ -38,9 +40,12 @@ class ExecutedParamName(ParamName):
+             # If we cannot infer annotations - or there aren't any - pretend
+             # that the signature matches.
+             return True
+-        matches = any(c1.is_sub_class_of(c2)
+-                      for c1 in argument_values
+-                      for c2 in annotations.gather_annotation_classes())
++        matches = _value_set_matches_annotation_set(
++            argument_values,
++            annotations,
++            {},
++            default_param_context=self.function_value.get_default_param_context(),
++        )
+         debug.dbg("param compare %s: %s <=> %s",
+                   matches, argument_values, annotations, color='BLUE')
+         return matches
+@@ -49,6 +54,971 @@ class ExecutedParamName(ParamName):
+         return '<%s: %s>' % (self.__class__.__name__, self.string_name)
+ 
+ 
++class CallRealization:
++    def __init__(self, pos_items=(), kw_dict=None, unknown_kw_entries=(), has_duplicate_kw=False):
++        self.pos_items = tuple(pos_items)
++        self.kw_dict = dict(kw_dict) if kw_dict else {}
++        self.unknown_kw_entries = tuple(unknown_kw_entries)
++        self.has_duplicate_kw = has_duplicate_kw
++
++
++_MAX_CALL_REALIZATIONS = 64
++
++
++def _get_call_realizations(arguments):
++    from jedi.inference.arguments import TreeArguments, ValuesArguments, \
++        TreeArgumentsWrapper, unpack_arglist
++
++    if isinstance(arguments, TreeArgumentsWrapper):
++        inner = _get_call_realizations(arguments._wrapped_arguments)
++        if hasattr(arguments, 'instance'):
++            prefix = (iterable.PosItem(LazyKnownValue(arguments.instance)),)
++        elif hasattr(arguments, '_class'):
++            prefix = (iterable.PosItem(LazyKnownValue(arguments._class)),)
++        else:
++            prefix = ()
++        if not prefix:
++            return inner
++        return [
++            CallRealization(
++                prefix + r.pos_items,
++                r.kw_dict,
++                r.unknown_kw_entries,
++                r.has_duplicate_kw,
++            )
++            for r in inner
++        ]
++
++    if isinstance(arguments, ValuesArguments):
++        pos_items = [
++            iterable.PosItem(LazyKnownValues(values))
++            for values in arguments._values_list
++        ]
++        return [CallRealization(pos_items=pos_items)]
++
++    if not isinstance(arguments, TreeArguments):
++        pos_items = []
++        kw_dict = {}
++        has_dup = False
++        for key, lv in arguments.unpack():
++            if key is None:
++                pos_items.append(iterable.PosItem(lv))
++            else:
++                if key in kw_dict:
++                    has_dup = True
++                kw_dict[key] = lv
++        return [CallRealization(pos_items=pos_items, kw_dict=kw_dict, has_duplicate_kw=has_dup)]
++
++    realizations = [CallRealization()]
++    context = arguments.context
++    seen_kw = False
++    seen_star_star = False
++
++    for star_count, el in unpack_arglist(arguments.argument_node):
++        if star_count == 1:
++            arrays = context.infer_node(el)
++            seq_reals = []
++            if not arrays:
++                seq_reals.append((iterable.StarItem(LazyUnknownValue()),))
++            else:
++                for a in arrays:
++                    seq_reals.extend(iterable.get_sequence_realizations_for_value(a))
++            if not seq_reals:
++                seq_reals = [()]
++            new_reals = []
++            for r in realizations:
++                for sr in seq_reals:
++                    new_reals.append(CallRealization(
++                        r.pos_items + sr,
++                        r.kw_dict,
++                        r.unknown_kw_entries,
++                        r.has_duplicate_kw or seen_star_star,
++                    ))
++                    if len(new_reals) >= _MAX_CALL_REALIZATIONS:
++                        break
++                if len(new_reals) >= _MAX_CALL_REALIZATIONS:
++                    break
++            realizations = new_reals
++        elif star_count == 2:
++            seen_star_star = True
++            arrays = context.infer_node(el)
++            d_reals = []
++            if not arrays:
++                d_reals.append(iterable.DictRealization(
++                    unknown_entries=[(NO_VALUES, LazyUnknownValue())]
++                ))
++            else:
++                for dct in arrays:
++                    d_reals.extend(iterable.get_dict_realizations_for_value(dct))
++            if not d_reals:
++                d_reals = [iterable.DictRealization()]
++            new_reals = []
++            for r in realizations:
++                for dr in d_reals:
++                    new_kw = dict(r.kw_dict)
++                    new_dup = r.has_duplicate_kw
++                    for rk, (k_set, v_lv) in dr.known_entries.items():
++                        if rk[0] != 'safe' or not isinstance(rk[1], str):
++                            new_dup = True
++                        else:
++                            k_str = rk[1]
++                            if k_str in new_kw:
++                                new_dup = True
++                            new_kw[k_str] = v_lv
++                    new_unk = list(r.unknown_kw_entries) + list(dr.unknown_entries)
++                    new_reals.append(CallRealization(
++                        r.pos_items,
++                        new_kw,
++                        new_unk,
++                        new_dup,
++                    ))
++                    if len(new_reals) >= _MAX_CALL_REALIZATIONS:
++                        break
++                if len(new_reals) >= _MAX_CALL_REALIZATIONS:
++                    break
++            realizations = new_reals
++        else:
++            if el.type == 'argument':
++                c = el.children
++                if len(c) == 3:  # Keyword argument
++                    seen_kw = True
++                    k_str = c[0].value
++                    v_lv = LazyTreeValue(context, c[2])
++                    for r in realizations:
++                        if k_str in r.kw_dict:
++                            r.has_duplicate_kw = True
++                        r.kw_dict[k_str] = v_lv
++                    continue
++                else:  # Generator comprehension
++                    sync_comp_for = el.children[1]
++                    if sync_comp_for.type == 'comp_for':
++                        sync_comp_for = sync_comp_for.children[1]
++                    comp = iterable.GeneratorComprehension(
++                        arguments._inference_state,
++                        defining_context=context,
++                        sync_comp_for_node=sync_comp_for,
++                        entry_node=el.children[0],
++                    )
++                    pos_item = iterable.PosItem(LazyKnownValue(comp))
++            else:
++                pos_item = iterable.PosItem(LazyTreeValue(context, el))
++
++            invalid_pos = seen_kw or seen_star_star
++            realizations = [
++                CallRealization(
++                    r.pos_items + (pos_item,),
++                    r.kw_dict,
++                    r.unknown_kw_entries,
++                    r.has_duplicate_kw or invalid_pos,
++                )
++                for r in realizations
++            ]
++
++    return realizations
++
++
++def _expand_pos_items_for_params(pos_items, max_positional_params):
++    sequences = [()]
++    for item in pos_items:
++        if isinstance(item, iterable.PosItem):
++            sequences = [seq + (item.lazy_value,) for seq in sequences]
++        else:
++            new_sequences = []
++            for seq in sequences:
++                max_k = max(1, max_positional_params - len(seq) + 1)
++                for k in range(0, max_k + 1):
++                    new_sequences.append(seq + (item.lazy_value,) * k)
++                    if len(new_sequences) >= _MAX_CALL_REALIZATIONS:
++                        break
++                if len(new_sequences) >= _MAX_CALL_REALIZATIONS:
++                    break
++            sequences = new_sequences
++    return sequences
++
++
++def _bind_single_seq_and_kw(param_names, pos_seq, kw_dict, unknown_kw_entries, has_duplicate_kw):
++    if has_duplicate_kw:
++        return None
++
++    pos_capable = [
++        p for p in param_names
++        if p.get_kind() in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
++    ]
++    var_pos_param = next(
++        (p for p in param_names if p.get_kind() == Parameter.VAR_POSITIONAL),
++        None
++    )
++    var_kw_param = next(
++        (p for p in param_names if p.get_kind() == Parameter.VAR_KEYWORD),
++        None
++    )
++    kw_capable = {
++        p.string_name: p for p in param_names
++        if p.get_kind() in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY)
++    }
++
++    bound = {}
++    var_pos_items = []
++    extra_kw = {}
++
++    for i, lv in enumerate(pos_seq):
++        if i < len(pos_capable):
++            bound[pos_capable[i]] = lv
++        else:
++            if var_pos_param is None:
++                return None
++            var_pos_items.append(lv)
++
++    for k, lv in kw_dict.items():
++        if k in kw_capable:
++            p = kw_capable[k]
++            if p in bound:
++                return None
++            bound[p] = lv
++        else:
++            if var_kw_param is None:
++                return None
++            extra_kw[k] = lv
++
++    if unknown_kw_entries and var_kw_param is None:
++        return None
++
++    for p in param_names:
++        kind = p.get_kind()
++        if kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY):
++            if p not in bound and p.default_node is None:
++                return None
++
++    return bound, var_pos_items, extra_kw, unknown_kw_entries
++
++
++def _is_none_value(v):
++    if v.py__name__() == 'NoneType' and v.parent_context.is_builtins_module():
++        return True
++    if hasattr(v, 'name') and v.name.string_name == 'None' and v.parent_context.is_builtins_module():
++        return True
++    return False
++
++
++def _is_empty_tuple_generic(generic_value_set):
++    if not generic_value_set:
++        return True
++    for v in generic_value_set:
++        if isinstance(v, iterable.Sequence) and v.array_type == 'tuple':
++            reals = v.get_sequence_realizations()
++            if reals == ((),):
++                return True
++    return False
++
++
++def _unwrap_class_value(cls_val):
++    from jedi.inference.gradual.base import GenericClass
++    from jedi.plugins.stdlib import TupleClassWrapper, TypeClassWrapper
++    while isinstance(cls_val, (GenericClass, TupleClassWrapper, TypeClassWrapper)):
++        cls_val = cls_val._wrapped_value
++    return cls_val
++
++
++def _is_nominal_sub_class(sub_cls, super_cls):
++    super_base = _unwrap_class_value(super_cls)
++    if not hasattr(sub_cls, 'py__mro__'):
++        return sub_cls.is_sub_class_of(super_base)
++    for mro_cls in sub_cls.py__mro__():
++        mro_base = _unwrap_class_value(mro_cls)
++        if mro_base.is_same_class(super_base):
++            return True
++    return False
++
++
++def _unwrap_annotations(ann_value_set, default_param_context=None):
++    from jedi.inference.gradual.typing import ProxyWithGenerics, TypingClassWithGenerics, \
++        NewType, TypeAlias
++    from jedi.inference.gradual.type_var import TypeVar
++
++    result = []
++    for ann in ann_value_set:
++        if isinstance(ann, TypeVar):
++            result.append(ann)
++        elif isinstance(ann, TypeAlias):
++            result.extend(ann.gather_annotation_classes())
++        elif isinstance(ann, NewType):
++            result.extend(_unwrap_annotations(ann._type_value_set, default_param_context))
++        elif isinstance(ann, ProxyWithGenerics) and not isinstance(ann, TypingClassWithGenerics):
++            inner_name = ann._tree_name.value
++            if inner_name == 'Optional':
++                for gs in ann._generics_manager.to_tuple():
++                    result.extend(_unwrap_annotations(gs, default_param_context))
++                result.append(compiled.builtin_from_name(ann.inference_state, 'None'))
++            elif inner_name in ('ClassVar', 'Annotated', 'Final'):
++                if len(ann._generics_manager):
++                    result.extend(_unwrap_annotations(ann._generics_manager[0], default_param_context))
++            else:
++                for gs in ann._generics_manager.to_tuple():
++                    result.extend(_unwrap_annotations(gs, default_param_context))
++        else:
++            result.append(ann)
++    return result
++
++
++def _contains_type_var_or_any(ann_value_set):
++    from jedi.inference.gradual.typing import AnyClass
++    from jedi.inference.gradual.type_var import TypeVar
++    from jedi.inference.gradual.base import DefineGenericBaseClass
++
++    for a in _unwrap_annotations(ann_value_set):
++        if isinstance(a, (TypeVar, AnyClass)):
++            return True
++        if isinstance(a, DefineGenericBaseClass):
++            for g in a.get_generics():
++                if _contains_type_var_or_any(g):
++                    return True
++    return False
++
++
++def _is_protocol_class(cls):
++    from jedi.inference.gradual.typing import Protocol
++    from jedi.inference.gradual.base import GenericClass
++
++    base_cls = cls._class_value if isinstance(cls, GenericClass) else cls
++    if not hasattr(base_cls, 'py__bases__'):
++        return False
++    for lazy_base in base_cls.py__bases__():
++        for b in lazy_base.infer():
++            if isinstance(b, Protocol) or b.py__name__() == 'Protocol':
++                return True
++    return False
++
++
++def _value_satisfies_protocol(val, protocol_cls):
++    from jedi.inference.value.klass import ClassFilter
++    from jedi.inference.gradual.base import GenericClass
++
++    base_cls = protocol_cls._class_value if isinstance(protocol_cls, GenericClass) else protocol_cls
++    if not hasattr(base_cls, 'py__mro__'):
++        return False
++
++    ignored_names = {
++        '__init__', '__new__', '__doc__', '__module__', '__slots__',
++        '_is_protocol', '_is_runtime_protocol', '__non_callable_proto_members__',
++        '__protocol_attrs__', '__parameters__', '__orig_bases__', '__annotations__',
++        '__subclasshook__', '__init_subclass__',
++    }
++    required_names = set()
++    for mro_cls in base_cls.py__mro__():
++        mro_base = mro_cls._class_value if isinstance(mro_cls, GenericClass) else mro_cls
++        if mro_base.py__name__() in ('object', 'Protocol', 'Generic'):
++            continue
++        if not mro_base.is_compiled() and hasattr(mro_base, 'as_context'):
++            f = ClassFilter(mro_base, node_context=mro_base.as_context(), is_instance=True)
++            for name_def in f.values():
++                if name_def.string_name not in ignored_names:
++                    required_names.add(name_def.string_name)
++
++    if not required_names:
++        return True
++
++    for req_name in required_names:
++        if not val.py__getattribute__(req_name):
++            return False
++    return True
++
++
++def _class_matches_type_target(cls_val, target, type_var_state, depth, default_param_context=None):
++    from jedi.inference.gradual.typing import AnyClass
++    from jedi.inference.gradual.type_var import TypeVar, TypeWrapper
++
++    if isinstance(target, AnyClass):
++        return True
++    if target.py__name__() == 'object' and target.parent_context.is_builtins_module():
++        return True
++    if isinstance(target, TypeWrapper):
++        target = target._original_value
++    if isinstance(target, TypeVar):
++        if target.constraints:
++            allowed = type_var_state.get(target, set(target.constraints))
++            matching = {
++                c for c in allowed
++                if any(
++                    _class_matches_type_target(cls_val, sub_c, {}, depth + 1, default_param_context)
++                    for sub_c in _unwrap_annotations(ValueSet([c]), default_param_context)
++                )
++            }
++            if not matching:
++                return False
++            type_var_state[target] = matching
++            return True
++        if target.bound:
++            return any(
++                _class_matches_type_target(cls_val, b, type_var_state, depth + 1, default_param_context)
++                for b in _unwrap_annotations(target.bound, default_param_context)
++            )
++        return True
++    if target.is_class() or target.is_class_mixin():
++        if _is_nominal_sub_class(cls_val, target):
++            return True
++        if _is_protocol_class(target):
++            instances = cls_val.execute_annotation(None)
++            if instances and all(_value_satisfies_protocol(inst, target) for inst in instances):
++                return True
++    return False
++
++
++def _value_set_matches_annotation_set(arg_value_set, ann_value_set, type_var_state,
++                                      depth=0, default_param_context=None):
++    from jedi.inference.gradual.typing import AnyClass
++    from jedi.inference.gradual.type_var import TypeVar
++
++    if depth > 15:
++        return True
++    if not ann_value_set or not arg_value_set:
++        return True
++
++    ann_list = _unwrap_annotations(ann_value_set, default_param_context)
++    if not ann_list:
++        return True
++
++    for ann in ann_list:
++        if isinstance(ann, AnyClass):
++            return True
++
++    # If the annotation is a single constrained TypeVar, all possible values in
++    # arg_value_set must satisfy the SAME constraint of that TypeVar.
++    if len(ann_list) == 1 and isinstance(ann_list[0], TypeVar) and ann_list[0].constraints:
++        tv = ann_list[0]
++        allowed = type_var_state.get(tv, set(tv.constraints))
++        matching = {
++            c for c in allowed
++            if _value_set_matches_annotation_set(
++                arg_value_set, ValueSet([c]), {}, depth + 1, default_param_context
++            )
++        }
++        if not matching:
++            return False
++        type_var_state[tv] = matching
++        return True
++
++    for val in arg_value_set:
++        matched_any = False
++        for ann in ann_list:
++            sub_state = dict(type_var_state)
++            if _single_value_matches_annotation(val, ann, sub_state, depth + 1, default_param_context):
++                type_var_state.update(sub_state)
++                matched_any = True
++                break
++        if not matched_any:
++            return False
++    return True
++
++
++def _single_value_matches_annotation(val, ann, type_var_state, depth=0, default_param_context=None):
++    from jedi.inference.gradual.typing import AnyClass, SelfClass, Tuple, Callable, \
++        TypingClassWithGenerics, BaseTypingValue, TypedDictClass, TypedDict
++    from jedi.inference.gradual.type_var import TypeVar, TypeWrapper
++    from jedi.inference.gradual.base import DefineGenericBaseClass, GenericClass
++    from jedi.plugins.stdlib import TupleClassWrapper, TypeClassWrapper
++
++    if depth > 15:
++        return True
++
++    # Unwrap TypeClassWrapper / TupleClassWrapper if present
++    if isinstance(ann, (TupleClassWrapper, TypeClassWrapper)):
++        ann = ann._wrapped_value
++
++    if isinstance(ann, AnyClass):
++        return True
++    if isinstance(ann, SelfClass):
++        return False
++
++    if ann.py__name__() == 'object' and ann.parent_context.is_builtins_module():
++        return True
++
++    # Handle _DynamicArrayAdditions (used internally by Jedi for list/set creation)
++    if not hasattr(val, 'is_instance'):
++        val_cls = val.py__class__()
++        ann_base = _unwrap_class_value(ann)
++        if not _is_nominal_sub_class(val_cls, ann_base):
++            return False
++        if isinstance(ann, DefineGenericBaseClass):
++            ann_generics = ann.get_generics()
++            if ann_generics and not _contains_type_var_or_any(ann_generics[0]):
++                elem_vals = ValueSet.from_sets(lv.infer() for lv in val.py__iter__())
++                if elem_vals and not _value_set_matches_annotation_set(
++                    elem_vals, ann_generics[0], type_var_state, depth + 1, default_param_context
++                ):
++                    return False
++        return True
++
++    if isinstance(ann, TypeVar):
++        if ann.constraints:
++            allowed = type_var_state.get(ann, set(ann.constraints))
++            matching = {
++                c for c in allowed
++                if _value_set_matches_annotation_set(
++                    ValueSet([val]), ValueSet([c]), {}, depth + 1, default_param_context
++                )
++            }
++            if not matching:
++                return False
++            type_var_state[ann] = matching
++            return True
++        if ann.bound:
++            return _value_set_matches_annotation_set(
++                ValueSet([val]), ann.bound, type_var_state, depth + 1, default_param_context
++            )
++        return True
++
++    # Handle TypeWrapper in annotation (from _values_to_annotation_types)
++    if isinstance(ann, TypeWrapper):
++        orig = ann._original_value
++        if orig.is_class():
++            if isinstance(val, TypeWrapper):
++                val = val._original_value
++            if val.is_class():
++                return _is_nominal_sub_class(val, orig)
++            return False
++        ann = ann._wrapped_value
++
++    # Unwrap TypeWrapper in value
++    if isinstance(val, TypeWrapper):
++        val = val._original_value
++
++    # Invalid annotation that is an instance (e.g., `def f(x: 1)`), except None/Tuple/Callable
++    if ann.is_instance() and not isinstance(ann, (Tuple, Callable)) and not _is_none_value(ann):
++        return False
++
++    # Handle None
++    if _is_none_value(ann):
++        return _is_none_value(val)
++    if _is_none_value(val):
++        return False
++
++    # Handle type[X], Type[X], type, Type
++    ann_name = ann.py__name__()
++    is_type_ann = (
++        (isinstance(ann, TypingClassWithGenerics) and ann_name == 'Type')
++        or (ann_name == 'Type' and isinstance(ann, BaseTypingValue))
++        or (ann_name == 'type' and ann.parent_context.is_builtins_module())
++    )
++    if is_type_ann:
++        ann_generics = ann.get_generics() if isinstance(ann, DefineGenericBaseClass) else ()
++        if val.is_class():
++            if not ann_generics:
++                return True
++            targets = _unwrap_annotations(ann_generics[0], default_param_context)
++            if not targets:
++                return True
++            for target in targets:
++                sub_state = dict(type_var_state)
++                if _class_matches_type_target(val, target, sub_state, depth + 1, default_param_context):
++                    type_var_state.update(sub_state)
++                    return True
++            return False
++        elif val.is_instance():
++            builtin_type = compiled.builtin_from_name(val.inference_state, 'type')
++            if _is_nominal_sub_class(val.py__class__(), builtin_type):
++                if not ann_generics:
++                    return True
++                targets = _unwrap_annotations(ann_generics[0], default_param_context)
++                if not targets:
++                    return True
++                return any(
++                    isinstance(t, (AnyClass, TypeVar))
++                    or (t.py__name__() == 'object' and t.parent_context.is_builtins_module())
++                    for t in targets
++                )
++        return False
++
++    # Handle Callable
++    is_callable_ann = (
++        isinstance(ann, Callable)
++        or (isinstance(ann, TypingClassWithGenerics) and ann_name == 'Callable')
++        or (ann_name == 'Callable' and (
++            isinstance(ann, BaseTypingValue)
++            or ann.parent_context.py__name__() in ('typing', 'collections.abc')
++        ))
++    )
++    if is_callable_ann:
++        is_val_callable = (
++            val.is_function() or val.is_class() or val.is_bound_method()
++            or (val.is_instance() and bool(val.py__getattribute__('__call__')))
++        )
++        if not is_val_callable:
++            return False
++        if isinstance(ann, (DefineGenericBaseClass, Callable)):
++            ann_generics = (
++                ann.get_generics() if isinstance(ann, DefineGenericBaseClass)
++                else ann._generics_manager.to_tuple()
++            )
++            if len(ann_generics) == 2:
++                val_ret = val.execute_annotation(None)
++                if val_ret and not _value_set_matches_annotation_set(
++                    val_ret, ann_generics[1], type_var_state, depth + 1, default_param_context
++                ):
++                    return False
++        return True
++
++    # If val is a class (e.g. `Foo`) and ann is NOT type/Type/Callable/object/Any/TypeVar:
++    if val.is_class():
++        ann_base = _unwrap_class_value(ann)
++        # A class object only matches a non-type class annotation if the annotation is its metaclass
++        for meta in val.get_metaclasses():
++            if _is_nominal_sub_class(meta, ann_base):
++                return True
++        return False
++
++    # Handle Tuple / tuple[...]
++    is_tuple_ann = (
++        isinstance(ann, Tuple)
++        or (isinstance(ann, TypingClassWithGenerics) and ann_name in ('Tuple', 'tuple'))
++        or (ann_name in ('Tuple', 'tuple') and (
++            isinstance(ann, BaseTypingValue)
++            or ann.parent_context.is_builtins_module()
++            or (isinstance(ann, GenericClass) and ann._class_value.parent_context.is_builtins_module())
++        ))
++    )
++    if is_tuple_ann:
++        builtin_tuple = compiled.builtin_from_name(val.inference_state, 'tuple')
++        is_val_tuple = (
++            (isinstance(val, iterable.Sequence) and val.array_type == 'tuple')
++            or isinstance(val, Tuple)
++            or (val.is_instance() and _is_nominal_sub_class(val.py__class__(), builtin_tuple))
++        )
++        if not is_val_tuple:
++            return False
++
++        if not isinstance(ann, (DefineGenericBaseClass, Tuple)):
++            return True
++
++        ann_generics = ann.get_generics() if isinstance(ann, DefineGenericBaseClass) else ann._generics_manager.to_tuple()
++        if not ann_generics:
++            return True
++
++        is_homogenous = (
++            ann._is_homogenous() if isinstance(ann, Tuple)
++            else ann._generics_manager.is_homogenous_tuple()
++        )
++
++        # Check for empty tuple annotation: tuple[()]
++        if not is_homogenous and len(ann_generics) == 1 and _is_empty_tuple_generic(ann_generics[0]):
++            if hasattr(val, 'get_sequence_realizations'):
++                return all(len(r) == 0 for r in val.get_sequence_realizations())
++            if isinstance(val, Tuple):
++                return (
++                    not val._is_homogenous()
++                    and len(val._generics_manager) == 1
++                    and _is_empty_tuple_generic(val._generics_manager[0])
++                )
++            return False
++
++        if is_homogenous:
++            elem_ann = ann_generics[0]
++            if hasattr(val, 'get_sequence_realizations'):
++                for seq_r in val.get_sequence_realizations():
++                    for item in seq_r:
++                        if not _value_set_matches_annotation_set(
++                            item.infer(), elem_ann, type_var_state, depth + 1, default_param_context
++                        ):
++                            return False
++                return True
++            if isinstance(val, Tuple):
++                if val._is_homogenous():
++                    return _value_set_matches_annotation_set(
++                        val._generics_manager[0].execute_annotation(None),
++                        elem_ann, type_var_state, depth + 1, default_param_context
++                    )
++                for vg in val._generics_manager.to_tuple():
++                    if _is_empty_tuple_generic(vg):
++                        continue
++                    if not _value_set_matches_annotation_set(
++                        vg.execute_annotation(None),
++                        elem_ann, type_var_state, depth + 1, default_param_context
++                    ):
++                        return False
++                return True
++            elem_vals = val.merge_types_of_iterate()
++            if not elem_vals:
++                return _contains_type_var_or_any(elem_ann)
++            return _value_set_matches_annotation_set(
++                elem_vals, elem_ann, type_var_state, depth + 1, default_param_context
++            )
++        else:
++            # Fixed-length tuple: tuple[T1, T2, ...]
++            if hasattr(val, 'get_sequence_realizations'):
++                for seq_r in val.get_sequence_realizations():
++                    if any(isinstance(item, iterable.StarItem) for item in seq_r):
++                        return False
++                    if len(seq_r) != len(ann_generics):
++                        return False
++                    for item, g_ann in zip(seq_r, ann_generics):
++                        if not _value_set_matches_annotation_set(
++                            item.infer(), g_ann, type_var_state, depth + 1, default_param_context
++                        ):
++                            return False
++                return True
++            if isinstance(val, Tuple):
++                if val._is_homogenous():
++                    return False
++                val_gs = val._generics_manager.to_tuple()
++                if len(val_gs) == 1 and _is_empty_tuple_generic(val_gs[0]):
++                    val_gs = ()
++                if len(val_gs) != len(ann_generics):
++                    return False
++                for vg, ag in zip(val_gs, ann_generics):
++                    if not _value_set_matches_annotation_set(
++                        vg.execute_annotation(None), ag, type_var_state, depth + 1, default_param_context
++                    ):
++                        return False
++                return True
++            return False
++
++    # Handle TypedDict
++    if isinstance(ann, TypedDictClass) or (ann.is_class() and ann.is_typeddict()):
++        td_cls = ann
++        if isinstance(val, TypedDict):
++            return _is_nominal_sub_class(val._definition_class, td_cls)
++        if hasattr(val, 'get_dict_realizations'):
++            # Check required keys of TypedDict against dict realizations
++            req_fields = {}
++            for f in td_cls.get_filters(is_instance=True):
++                for name_def in f.values():
++                    req_fields[name_def.string_name] = name_def.infer()
++            for dr in val.get_dict_realizations():
++                if dr.unknown_entries:
++                    return False
++                exact_str_map = {
++                    rk[1]: v_lv for rk, (k_set, v_lv) in dr.known_entries.items()
++                    if rk[0] == 'safe' and isinstance(rk[1], str)
++                }
++                if len(exact_str_map) != len(dr.known_entries):
++                    return False
++                for k_str, v_lv in exact_str_map.items():
++                    if k_str not in req_fields:
++                        return False
++                    if not _value_set_matches_annotation_set(
++                        v_lv.infer(), req_fields[k_str], type_var_state, depth + 1, default_param_context
++                    ):
++                        return False
++                for req_k in req_fields:
++                    if req_k not in exact_str_map:
++                        return False
++            return True
++        return False
++
++    # Handle slice / iterable.Slice
++    if isinstance(val, iterable.Slice) and ann_name == 'slice':
++        if isinstance(ann, DefineGenericBaseClass):
++            ann_generics = ann.get_generics()
++            if ann_generics:
++                none_val = ValueSet([compiled.builtin_from_name(val.inference_state, 'None')])
++                parts = [
++                    val._context.infer_node(p) if p is not None else none_val
++                    for p in (val._start, val._stop, val._step)
++                ]
++                if len(ann_generics) == 1:
++                    target_anns = [ann_generics[0]] * 3
++                else:
++                    target_anns = list(ann_generics[:3])
++                for part_vals, target_ann in zip(parts, target_anns):
++                    if not _value_set_matches_annotation_set(
++                        part_vals, target_ann, type_var_state, depth + 1, default_param_context
++                    ):
++                        return False
++        return True
++
++    # Nominal or Protocol class check (unwrap GenericClass so nominal MRO check works)
++    val_cls = val.py__class__()
++    ann_base = _unwrap_class_value(ann)
++    if not _is_nominal_sub_class(val_cls, ann_base):
++        if _is_protocol_class(ann_base):
++            if not _value_satisfies_protocol(val, ann_base):
++                return False
++        else:
++            return False
++
++    # If annotation has generic parameters, check them!
++    if isinstance(ann, DefineGenericBaseClass):
++        ann_generics = ann.get_generics()
++        if not ann_generics:
++            return True
++
++        # 1. Dict literal / comprehension realizations
++        if hasattr(val, 'get_dict_realizations'):
++            d_reals = val.get_dict_realizations()
++            for dr in d_reals:
++                for rk, (k_set, v_lv) in dr.known_entries.items():
++                    if not _value_set_matches_annotation_set(
++                        k_set, ann_generics[0], type_var_state, depth + 1, default_param_context
++                    ):
++                        return False
++                    if len(ann_generics) >= 2:
++                        if not _value_set_matches_annotation_set(
++                            v_lv.infer(), ann_generics[1], type_var_state, depth + 1, default_param_context
++                        ):
++                            return False
++                for k_set, v_lv in dr.unknown_entries:
++                    if k_set and not _value_set_matches_annotation_set(
++                        k_set, ann_generics[0], type_var_state, depth + 1, default_param_context
++                    ):
++                        return False
++                    if len(ann_generics) >= 2:
++                        if not _value_set_matches_annotation_set(
++                            v_lv.infer(), ann_generics[1], type_var_state, depth + 1, default_param_context
++                        ):
++                            return False
++            return True
++
++        # 2. Sequence / comprehension realizations (list, set, tuple, generator)
++        if hasattr(val, 'get_sequence_realizations'):
++            s_reals = val.get_sequence_realizations()
++            elem_ann = ann_generics[0]
++            for seq_r in s_reals:
++                for item in seq_r:
++                    if not _value_set_matches_annotation_set(
++                        item.infer(), elem_ann, type_var_state, depth + 1, default_param_context
++                    ):
++                        return False
++            return True
++
++        # 3. Non-literal instances with generic class annotations
++        if hasattr(val, 'get_annotated_class_object'):
++            annot_cls = val.get_annotated_class_object()
++            if hasattr(annot_cls, 'py__mro__'):
++                ann_base = _unwrap_class_value(ann)
++                ann_type_vars = ann_base.list_type_vars() if hasattr(ann_base, 'list_type_vars') else []
++                for parent_cls in annot_cls.py__mro__():
++                    if _unwrap_class_value(parent_cls).is_same_class(ann_base):
++                        if not isinstance(parent_cls, DefineGenericBaseClass):
++                            return all(_contains_type_var_or_any(ag) for ag in ann_generics)
++                        parent_generics = parent_cls.get_generics()
++                        if not parent_generics:
++                            return all(_contains_type_var_or_any(ag) for ag in ann_generics)
++                        for idx, (vg, ag) in enumerate(zip(parent_generics, ann_generics)):
++                            if not vg:
++                                if isinstance(val, iterable.GeneratorBase):
++                                    continue
++                                if not _contains_type_var_or_any(ag):
++                                    return False
++                                continue
++                            tv = ann_type_vars[idx] if idx < len(ann_type_vars) else None
++                            is_cov = tv.is_covariant if tv is not None else False
++                            is_contra = tv.is_contravariant if tv is not None else False
++
++                            vg_executed = vg.execute_annotation(None)
++                            if is_contra:
++                                if _contains_type_var_or_any(ag):
++                                    if not _value_set_matches_annotation_set(
++                                        vg_executed, ag, type_var_state, depth + 1, default_param_context
++                                    ):
++                                        return False
++                                else:
++                                    ag_executed = ag.execute_annotation(None)
++                                    if not _value_set_matches_annotation_set(
++                                        ag_executed, vg, type_var_state, depth + 1, default_param_context
++                                    ):
++                                        return False
++                            elif is_cov:
++                                if not _value_set_matches_annotation_set(
++                                    vg_executed, ag, type_var_state, depth + 1, default_param_context
++                                ):
++                                    return False
++                            else:
++                                # Invariant
++                                if not _value_set_matches_annotation_set(
++                                    vg_executed, ag, type_var_state, depth + 1, default_param_context
++                                ):
++                                    return False
++                                if not _contains_type_var_or_any(ag) and not _contains_type_var_or_any(vg):
++                                    ag_executed = ag.execute_annotation(None)
++                                    if not _value_set_matches_annotation_set(
++                                        ag_executed, vg, {}, depth + 1, default_param_context
++                                    ):
++                                        return False
++                        return True
++
++    return True
++
++
++def matches_call_signature(function_value, arguments):
++    from jedi.inference.gradual.base import DefineGenericBaseClass
++    from jedi.inference.gradual.typing import SelfClass
++
++    param_names = function_value.get_param_names()
++    realizations = _get_call_realizations(arguments)
++    if not realizations:
++        return False
++
++    pos_capable_count = sum(
++        1 for p in param_names
++        if p.get_kind() in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
++    )
++    default_param_context = function_value.get_default_param_context()
++    is_init = function_value.py__name__() == '__init__'
++    builtin_str = ValueSet([compiled.builtin_from_name(function_value.inference_state, 'str')])
++
++    for r in realizations:
++        pos_sequences = _expand_pos_items_for_params(r.pos_items, pos_capable_count)
++        for pos_seq in pos_sequences:
++            binding = _bind_single_seq_and_kw(
++                param_names, pos_seq, r.kw_dict, r.unknown_kw_entries, r.has_duplicate_kw
++            )
++            if binding is None:
++                return False
++            bound, var_pos_items, extra_kw, unk_kw = binding
++
++            for k_set, _ in unk_kw:
++                if k_set and not _value_set_matches_annotation_set(
++                    k_set, builtin_str, {}, default_param_context=default_param_context
++                ):
++                    return False
++
++            type_var_state = {}
++            for idx, p in enumerate(param_names):
++                ann_set = p.infer_annotation(execute_annotation=False, ignore_stars=True)
++                if not ann_set:
++                    continue
++                kind = p.get_kind()
++                if kind == Parameter.VAR_POSITIONAL:
++                    for lv in var_pos_items:
++                        if not _value_set_matches_annotation_set(
++                            lv.infer(), ann_set, type_var_state,
++                            default_param_context=default_param_context
++                        ):
++                            return False
++                elif kind == Parameter.VAR_KEYWORD:
++                    for lv in extra_kw.values():
++                        if not _value_set_matches_annotation_set(
++                            lv.infer(), ann_set, type_var_state,
++                            default_param_context=default_param_context
++                        ):
++                            return False
++                    for _, lv in unk_kw:
++                        if not _value_set_matches_annotation_set(
++                            lv.infer(), ann_set, type_var_state,
++                            default_param_context=default_param_context
++                        ):
++                            return False
++                else:
++                    if p in bound:
++                        if idx == 0 and any(isinstance(a, SelfClass) for a in ann_set):
++                            continue
++                        arg_vals = bound[p].infer()
++                        if is_init and idx == 0:
++                            # In __init__, `self` is the unparameterized instance being
++                            # constructed (e.g., `self: dict[str, _VT]` in builtins.pyi).
++                            if all(
++                                v.is_instance() and not isinstance(v.class_value, DefineGenericBaseClass)
++                                for v in arg_vals
++                            ):
++                                continue
++                        if not _value_set_matches_annotation_set(
++                            arg_vals, ann_set, type_var_state,
++                            default_param_context=default_param_context
++                        ):
++                            return False
++
++    return True
++
++
+ def get_executed_param_names_and_issues(function_value, arguments):
+     """
+     Return a tuple of:
+@@ -221,6 +1191,46 @@ def get_executed_param_names_and_issues(function_value, arguments):
+     if remaining_arguments:
+         first_key, lazy_value = remaining_arguments[0]
+         too_many_args(lazy_value)
++
++    # Update result_params using realizations if there are multiple realizations
++    # (e.g. `xs = [A] if c else []; f(*xs, C)` or `{"k": C, **d}`).
++    realizations = _get_call_realizations(arguments)
++    if len(realizations) > 1 or any(
++        any(isinstance(item, iterable.StarItem) for item in r.pos_items)
++        for r in realizations
++    ):
++        param_names = function_value.get_param_names()
++        pos_capable_count = sum(
++            1 for p in param_names
++            if p.get_kind() in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
++        )
++        per_param_lvs = defaultdict(list)
++        for r in realizations:
++            pos_sequences = _expand_pos_items_for_params(r.pos_items, pos_capable_count)
++            for pos_seq in pos_sequences:
++                binding = _bind_single_seq_and_kw(
++                    param_names, pos_seq, r.kw_dict, r.unknown_kw_entries, r.has_duplicate_kw
++                )
++                if binding is None:
++                    continue
++                bound, var_pos_items, extra_kw, _ = binding
++                for idx, p in enumerate(param_names):
++                    kind = p.get_kind()
++                    if kind == Parameter.VAR_POSITIONAL:
++                        seq = iterable.FakeTuple(function_value.inference_state, var_pos_items)
++                        per_param_lvs[idx].append(LazyKnownValue(seq))
++                    elif kind == Parameter.VAR_KEYWORD:
++                        dct = iterable.FakeDict(function_value.inference_state, extra_kw)
++                        per_param_lvs[idx].append(LazyKnownValue(dct))
++                    elif p in bound:
++                        per_param_lvs[idx].append(bound[p])
++                    elif p.default_node is not None:
++                        per_param_lvs[idx].append(LazyTreeValue(default_param_context, p.default_node))
++        if per_param_lvs:
++            for idx, exec_param in enumerate(result_params):
++                if idx in per_param_lvs and per_param_lvs[idx]:
++                    exec_param._lazy_value = get_merged_lazy_value(per_param_lvs[idx])
++
+     return result_params, issues
+ 
+ 
+@@ -255,3 +1265,4 @@ def _error_argument_count(funcdef, actual_count):
+         before = 'from %s to ' % (len(params) - default_arguments)
+     return ('TypeError: %s() takes %s%s arguments (%s given).'
+             % (getattr(funcdef, "name", "<lambda>"), before, len(params), actual_count))
++
+diff --git a/jedi/inference/signature.py b/jedi/inference/signature.py
+index c968bf2..8490d7f 100644
+--- a/jedi/inference/signature.py
++++ b/jedi/inference/signature.py
+@@ -107,14 +107,8 @@ class TreeSignature(AbstractSignature):
+         return params
+ 
+     def matches_signature(self, arguments):
+-        from jedi.inference.param import get_executed_param_names_and_issues
+-        executed_param_names, issues = \
+-            get_executed_param_names_and_issues(self._function_value, arguments)
+-        if issues:
+-            return False
+-
+-        matches = all(executed_param_name.matches_signature()
+-                      for executed_param_name in executed_param_names)
++        from jedi.inference.param import matches_call_signature
++        matches = matches_call_signature(self._function_value, arguments)
+         if debug.enable_notice:
+             tree_node = self._function_value.tree_node
+             signature = parser_utils.get_signature(tree_node)
+diff --git a/jedi/inference/syntax_tree.py b/jedi/inference/syntax_tree.py
+index ff5b4fc..c772759 100644
+--- a/jedi/inference/syntax_tree.py
++++ b/jedi/inference/syntax_tree.py
+@@ -30,6 +30,7 @@ from jedi.inference.names import TreeNameDefinition
+ from jedi.inference.context import CompForContext
+ from jedi.inference.value.decorator import Decoratee
+ from jedi.plugins import plugin_manager
++from jedi.inference.gradual.base import BaseTypingValue, DefineGenericBaseClass
+ from jedi.inference.gradual.typing import ProxyTypingValue, IGNORE_ANNOTATION_PARTS
+ from jedi.inference.gradual.type_var import TypeVar
+ 
+@@ -531,7 +532,8 @@ def _infer_comparison(context, left_values, operator, right_values):
+         result = (left_values or NO_VALUES) | (right_values or NO_VALUES)
+         return _literals_to_types(state, result)
+     elif operator_str == "|" and all(
+-        value.is_class() or value.is_compiled() or isinstance(value, TypeVar)
++        value.is_class() or value.is_compiled()
++        or isinstance(value, (TypeVar, BaseTypingValue, DefineGenericBaseClass))
+         for value in itertools.chain(left_values, right_values)
+     ):
+         # ^^^ A naive hack for PEP 604
+diff --git a/jedi/inference/value/instance.py b/jedi/inference/value/instance.py
+index 2080b9a..e0ca268 100644
+--- a/jedi/inference/value/instance.py
++++ b/jedi/inference/value/instance.py
+@@ -325,9 +325,11 @@ class TreeInstance(_BaseTreeInstance):
+     def _get_annotated_class_object(self):
+         from jedi.inference.gradual.annotation import py__annotations__, \
+             infer_type_vars_for_execution
++        from jedi.inference.param import get_executed_param_names_and_issues
+ 
+         args = InstanceArguments(self, self._arguments)
+-        for signature in init_or_new_func(self.class_value).get_signatures():
++        signatures = list(init_or_new_func(self.class_value).get_signatures())
++        for signature in signatures:
+             # Just take the first result, it should always be one, because we
+             # control the typeshed code.
+             funcdef = signature.value.tree_node
+@@ -345,6 +347,22 @@ class TreeInstance(_BaseTreeInstance):
+                 )
+                 debug.dbg('Inferred instance value as %s', defined, color='BLUE')
+                 return defined
++
++        if len(signatures) == 1:
++            signature = signatures[0]
++            funcdef = signature.value.tree_node
++            if funcdef is not None and funcdef.type == 'funcdef':
++                _, issues = get_executed_param_names_and_issues(signature.value, args)
++                if not issues:
++                    bound_method = BoundMethod(self, self.class_value.as_context(), signature.value)
++                    all_annotations = py__annotations__(funcdef)
++                    type_var_dict = infer_type_vars_for_execution(bound_method, args, all_annotations)
++                    if type_var_dict:
++                        defined, = self.class_value.define_generics(
++                            infer_type_vars_for_execution(signature.value, args, all_annotations),
++                        )
++                        debug.dbg('Inferred instance value as %s', defined, color='BLUE')
++                        return defined
+         return None
+ 
+     def get_annotated_class_object(self):
+diff --git a/jedi/inference/value/iterable.py b/jedi/inference/value/iterable.py
+index 0bcda9d..dcf3839 100644
+--- a/jedi/inference/value/iterable.py
++++ b/jedi/inference/value/iterable.py
+@@ -2,12 +2,13 @@
+ Contains all classes and functions to deal with lists, dicts, generators and
+ iterators in general.
+ """
++from itertools import zip_longest
+ from typing import Any
+ 
+ from jedi.inference import compiled
+ from jedi.inference import analysis
+ from jedi.inference.lazy_value import LazyKnownValue, LazyKnownValues, \
+-    LazyTreeValue
++    LazyTreeValue, get_merged_lazy_value
+ from jedi.inference.helpers import get_int_or_none, is_string, \
+     reraise_getitem_errors, SimpleGetItemNotFound
+ from jedi.inference.utils import safe_property, to_list
+@@ -132,6 +133,300 @@ def comprehension_from_atom(inference_state, value, atom):
+     )
+ 
+ 
++class PosItem:
++    def __init__(self, lazy_value):
++        self.lazy_value = lazy_value
++
++    def infer(self):
++        return self.lazy_value.infer()
++
++    def __repr__(self):
++        return 'PosItem(%r)' % (self.lazy_value,)
++
++
++class StarItem:
++    def __init__(self, lazy_value):
++        self.lazy_value = lazy_value
++
++    def infer(self):
++        return self.lazy_value.infer()
++
++    def __repr__(self):
++        return 'StarItem(%r)' % (self.lazy_value,)
++
++
++class DictRealization:
++    def __init__(self, known_entries=None, unknown_entries=None):
++        # known_entries: dict[runtime_key, tuple[ValueSet, LazyValue]]
++        self.known_entries = dict(known_entries) if known_entries else {}
++        # unknown_entries: list[tuple[ValueSet, LazyValue]]
++        self.unknown_entries = list(unknown_entries) if unknown_entries else []
++
++    def copy(self):
++        return DictRealization(self.known_entries, self.unknown_entries)
++
++    def __repr__(self):
++        return 'DictRealization(known=%r, unknown=%r)' % (
++            self.known_entries, self.unknown_entries
++        )
++
++
++_MAX_REALIZATIONS = 32
++
++
++def _cap_sequence_realizations(realizations):
++    if len(realizations) <= _MAX_REALIZATIONS:
++        return realizations
++    all_lvs = [
++        item.lazy_value
++        for r in realizations
++        for item in r
++    ]
++    merged = get_merged_lazy_value(all_lvs) if all_lvs else LazyKnownValues(NO_VALUES)
++    return [(StarItem(merged),)]
++
++
++def _cap_dict_realizations(realizations):
++    if len(realizations) <= _MAX_REALIZATIONS:
++        return realizations
++    merged = DictRealization()
++    all_known_keys = set()
++    for r in realizations:
++        all_known_keys.update(r.known_entries.keys())
++        merged.unknown_entries.extend(r.unknown_entries)
++    for rk in all_known_keys:
++        if all(rk in r.known_entries for r in realizations):
++            k_sets = ValueSet.from_sets(r.known_entries[rk][0] for r in realizations)
++            lvs = [r.known_entries[rk][1] for r in realizations]
++            merged.known_entries[rk] = (k_sets, get_merged_lazy_value(lvs))
++        else:
++            k_sets = ValueSet.from_sets(
++                r.known_entries[rk][0] for r in realizations if rk in r.known_entries
++            )
++            lvs = [
++                r.known_entries[rk][1] for r in realizations if rk in r.known_entries
++            ]
++            merged.unknown_entries.append((k_sets, get_merged_lazy_value(lvs)))
++    return [merged]
++
++
++def _get_runtime_dict_key(k, depth=0):
++    if depth > 5:
++        return None
++    safe_val = k.get_safe_value(default=sentinel)
++    if safe_val is not sentinel:
++        try:
++            hash(safe_val)
++        except TypeError:
++            return None
++        return ('safe', safe_val)
++    if isinstance(k, SequenceLiteralValue) and k.array_type == 'tuple':
++        realizations = k.get_sequence_realizations()
++        if len(realizations) == 1:
++            r = realizations[0]
++            sub_keys = []
++            for item in r:
++                if isinstance(item, StarItem):
++                    return None
++                vals = item.infer()
++                if len(vals) != 1:
++                    return None
++                sk = _get_runtime_dict_key(next(iter(vals)), depth + 1)
++                if sk is None:
++                    return None
++                sub_keys.append(sk)
++            return ('tuple', tuple(sub_keys))
++        return None
++    if k.is_class() or k.is_function() or k.is_module() or k.is_compiled():
++        try:
++            hash(k)
++        except TypeError:
++            return None
++        return ('value', k)
++    return None
++
++
++def _keys_could_be_equal(k_set1, k_set2):
++    if not k_set1 or not k_set2:
++        return True
++    classes1 = k_set1.py__class__()
++    classes2 = k_set2.py__class__()
++    for c1 in classes1:
++        for c2 in classes2:
++            if c1.is_sub_class_of(c2) or c2.is_sub_class_of(c1):
++                return True
++    return False
++
++
++def _add_entry_to_dict_realizations(realizations, key_set, val_lv):
++    if not key_set:
++        new_reals = []
++        for r in realizations:
++            nr = r.copy()
++            nr.unknown_entries.append((NO_VALUES, val_lv))
++            new_reals.append(nr)
++        return new_reals
++
++    new_realizations = []
++    for r in realizations:
++        for k in key_set:
++            nr = r.copy()
++            rk = _get_runtime_dict_key(k)
++            if rk is not None:
++                if rk in nr.known_entries:
++                    orig_k_set, _ = nr.known_entries[rk]
++                    nr.known_entries[rk] = (orig_k_set, val_lv)
++                else:
++                    nr.known_entries[rk] = (ValueSet([k]), val_lv)
++            else:
++                k_vs = ValueSet([k])
++                nr.unknown_entries.append((k_vs, val_lv))
++                for erk, (ek_set, elv) in list(nr.known_entries.items()):
++                    if _keys_could_be_equal(k_vs, ek_set):
++                        nr.known_entries[erk] = (
++                            ek_set,
++                            get_merged_lazy_value([elv, val_lv]),
++                        )
++            new_realizations.append(nr)
++    return _cap_dict_realizations(new_realizations)
++
++
++def _merge_dict_realization(r, sub_r):
++    nr = r.copy()
++    for uk_set, ulv in sub_r.unknown_entries:
++        nr.unknown_entries.append((uk_set, ulv))
++        for erk, (ek_set, elv) in list(nr.known_entries.items()):
++            if _keys_could_be_equal(uk_set, ek_set):
++                nr.known_entries[erk] = (
++                    ek_set,
++                    get_merged_lazy_value([elv, ulv]),
++                )
++    for rk, (k_set, lv) in sub_r.known_entries.items():
++        if rk in nr.known_entries:
++            orig_k_set, _ = nr.known_entries[rk]
++            nr.known_entries[rk] = (orig_k_set, lv)
++        else:
++            nr.known_entries[rk] = (k_set, lv)
++    return nr
++
++
++def _dict_realizations_to_sequence_realizations(dict_reals):
++    seq_reals = []
++    for dr in dict_reals:
++        items = []
++        for _rk, (k_set, _lv) in dr.known_entries.items():
++            items.append(PosItem(LazyKnownValues(k_set)))
++        for uk_set, _ulv in dr.unknown_entries:
++            items.append(StarItem(LazyKnownValues(uk_set)))
++        seq_reals.append(tuple(items))
++    return tuple(seq_reals) if seq_reals else ((),)
++
++
++def _deduplicate_set_realization(r):
++    seen_keys = set()
++    result = []
++    for item in r:
++        if isinstance(item, PosItem):
++            vals = item.infer()
++            if len(vals) == 1:
++                rk = _get_runtime_dict_key(next(iter(vals)))
++                if rk is not None:
++                    if rk in seen_keys:
++                        continue
++                    seen_keys.add(rk)
++        result.append(item)
++    return tuple(result)
++
++
++def get_sequence_realizations_for_value(v, depth=0):
++    if depth > 8:
++        return ((StarItem(LazyKnownValues(v.merge_types_of_iterate())),),)
++    if hasattr(v, 'get_sequence_realizations'):
++        return v.get_sequence_realizations()
++    from jedi.inference.value.dynamic_arrays import ListModification, DictModification
++    if isinstance(v, ListModification):
++        base_reals = get_sequence_realizations_for_value(v._wrapped_value, depth + 1)
++        add_item = PosItem(LazyKnownValues(v._assigned_values))
++        return tuple(r + (add_item,) for r in base_reals)
++    if isinstance(v, DictModification):
++        dict_reals = get_dict_realizations_for_value(v, depth + 1)
++        return _dict_realizations_to_sequence_realizations(dict_reals)
++    from jedi.inference.gradual.typing import Tuple as TypingTuple
++    if isinstance(v, TypingTuple):
++        if v._is_homogenous():
++            elem_vals = v._generics_manager.get_index_and_execute(0)
++            return ((StarItem(LazyKnownValues(elem_vals)),),)
++        else:
++            items = tuple(
++                PosItem(LazyKnownValues(gs.execute_annotation(None)))
++                for gs in v._generics_manager.to_tuple()
++            )
++            return (items,)
++    elem_vals = v.merge_types_of_iterate()
++    return ((StarItem(LazyKnownValues(elem_vals)),),)
++
++
++def get_dict_realizations_for_value(v, depth=0):
++    if depth > 8:
++        return (DictRealization(unknown_entries=[(v.merge_types_of_iterate(), LazyKnownValues(NO_VALUES))]),)
++    if hasattr(v, 'get_dict_realizations'):
++        return v.get_dict_realizations()
++    from jedi.inference.value.dynamic_arrays import DictModification
++    if isinstance(v, DictModification):
++        base_reals = list(get_dict_realizations_for_value(v._wrapped_value, depth + 1))
++        key_set = v._contextualized_key.infer()
++        val_lv = LazyKnownValues(v._assigned_values)
++        return tuple(_add_entry_to_dict_realizations(base_reals, key_set, val_lv))
++    from jedi.inference.gradual.typing import TypedDict
++    if isinstance(v, TypedDict):
++        r = DictRealization()
++        for k in v.get_key_values():
++            rk = _get_runtime_dict_key(k)
++            k_str = k.get_safe_value(default=None)
++            if rk is not None and isinstance(k_str, str):
++                val_set = v.py__simple_getitem__(k_str)
++                r.known_entries[rk] = (ValueSet([k]), LazyKnownValues(val_set))
++        return (r,)
++    k_set = v.merge_types_of_iterate()
++    v_set = NO_VALUES
++    if k_set:
++        try:
++            v_set = v.py__getitem__(k_set, contextualized_node=None)
++        except Exception:
++            v_set = NO_VALUES
++    if not v_set:
++        values_method = v.py__getattribute__('values')
++        if values_method:
++            v_set = values_method.execute_with_values().merge_types_of_iterate()
++    return (DictRealization(unknown_entries=[(k_set, LazyKnownValues(v_set))]),)
++
++
++def _get_comp_ifs_for_comp_for(comp_for):
++    if len(comp_for.children) < 5:
++        return []
++    ifs = []
++    cur = comp_for.children[4]
++    while cur.type == 'comp_if':
++        ifs.append(cur.children[1])
++        if len(cur.children) < 3:
++            break
++        cur = cur.children[2]
++    return ifs
++
++
++def _values_to_annotation_types(value_set):
++    from jedi.inference.gradual.type_var import TypeWrapper
++
++    def iterate():
++        for v in value_set:
++            cls = v.py__class__()
++            if v.is_function() or v.is_class():
++                cls = TypeWrapper(cls, v)
++            yield cls
++
++    return ValueSet(iterate())
++
++
+ class ComprehensionMixin:
+     _defining_context: Any
+     _entry_node: Any
+@@ -178,6 +473,88 @@ class ComprehensionMixin:
+         comp_fors = tuple(get_sync_comp_fors(self._sync_comp_for_node))
+         yield from self._nested(comp_fors)
+ 
++    def _nested_realizations(self, comp_fors, parent_context=None):
++        comp_for = comp_fors[0]
++        is_async = comp_for.parent.type == 'comp_for'
++        input_node = comp_for.children[3]
++        parent_context = parent_context or self._defining_context
++        input_types = parent_context.infer_node(input_node)
++        exprlist = comp_for.children[1]
++        comp_ifs = _get_comp_ifs_for_comp_for(comp_for)
++
++        if not input_types:
++            return [()]
++
++        if is_async:
++            cn = ContextualizedNode(parent_context, input_node)
++            elem_vals = iterate_values(input_types, cn, is_async=True)
++            inp_reals = [(StarItem(LazyKnownValues(elem_vals)),)]
++        else:
++            inp_reals = []
++            for inp_val in input_types:
++                inp_reals.extend(get_sequence_realizations_for_value(inp_val))
++            if not inp_reals:
++                inp_reals = [()]
++
++        all_results = []
++        for inp_r in inp_reals:
++            cur_reals = [()]
++            for item in inp_r:
++                is_star = isinstance(item, StarItem)
++                types = item.infer()
++                dct = unpack_tuple_to_dict(parent_context, types, exprlist)
++                context = self._get_comp_for_context(parent_context, comp_for)
++                with context.predefine_names(comp_for, dct):
++                    skip = False
++                    maybe_skip = False
++                    for if_node in comp_ifs:
++                        cond_vals = context.infer_node(if_node)
++                        bools = [v.py__bool__() for v in cond_vals]
++                        if bools and all(b is False for b in bools):
++                            skip = True
++                            break
++                        if not bools or not all(b is True for b in bools):
++                            maybe_skip = True
++                    if skip:
++                        continue
++                    if len(comp_fors) > 1:
++                        sub_reals = self._nested_realizations(comp_fors[1:], context)
++                    else:
++                        if self.array_type == 'dict':
++                            k_set = context.infer_node(self._entry_node)
++                            v_lv = LazyTreeValue(context, self._value_node)
++                            sub_reals = [((k_set, v_lv, is_star),)]
++                        else:
++                            e_lv = LazyTreeValue(context, self._entry_node)
++                            if is_star:
++                                sub_reals = [(StarItem(e_lv),)]
++                            else:
++                                sub_reals = [(PosItem(e_lv),)]
++                    if is_star and self.array_type != 'dict':
++                        converted = []
++                        for sr in sub_reals:
++                            converted.append(tuple(StarItem(x.lazy_value) for x in sr))
++                        sub_reals = converted
++                    elif is_star and self.array_type == 'dict':
++                        converted = []
++                        for sr in sub_reals:
++                            converted.append(tuple((ks, vlv, True) for ks, vlv, _ in sr))
++                        sub_reals = converted
++                    elif maybe_skip and () not in sub_reals:
++                        sub_reals = [()] + sub_reals
++                    cur_reals = [
++                        r + sr
++                        for r in cur_reals
++                        for sr in sub_reals
++                    ]
++                    if len(cur_reals) > _MAX_REALIZATIONS:
++                        cur_reals = cur_reals[:_MAX_REALIZATIONS]
++            all_results.extend(cur_reals)
++            if len(all_results) > _MAX_REALIZATIONS:
++                all_results = all_results[:_MAX_REALIZATIONS]
++                break
++        return all_results or [()]
++
+     def py__iter__(self, contextualized_node=None):
+         for set_ in self._iterate():
+             yield LazyKnownValues(set_)
+@@ -190,7 +567,7 @@ class _DictMixin:
+     get_mapping_item_values: Any
+ 
+     def _get_generics(self):
+-        return tuple(c_set.py__class__() for c_set in self.get_mapping_item_values())
++        return tuple(_values_to_annotation_types(c_set) for c_set in self.get_mapping_item_values())
+ 
+ 
+ class Sequence(LazyAttributeOverwrite, IterableMixin):
+@@ -201,7 +578,7 @@ class Sequence(LazyAttributeOverwrite, IterableMixin):
+         return compiled.CompiledValueName(self, self.array_type)
+ 
+     def _get_generics(self):
+-        return (self.merge_types_of_iterate().py__class__(),)
++        return (_values_to_annotation_types(self.merge_types_of_iterate()),)
+ 
+     @inference_state_method_cache(default=())
+     def _cached_generics(self):
+@@ -238,6 +615,14 @@ class _BaseComprehension(ComprehensionMixin):
+         self._sync_comp_for_node = sync_comp_for_node
+         self._entry_node = entry_node
+ 
++    @inference_state_method_cache(default=())
++    def get_sequence_realizations(self):
++        comp_fors = tuple(get_sync_comp_fors(self._sync_comp_for_node))
++        reals = self._nested_realizations(comp_fors)
++        if self.array_type == 'set':
++            reals = [_deduplicate_set_realization(r) for r in reals]
++        return tuple(_cap_sequence_realizations(reals))
++
+ 
+ class ListComprehension(_BaseComprehension, Sequence):
+     array_type = 'list'
+@@ -284,6 +669,32 @@ class DictComprehension(ComprehensionMixin, Sequence, _DictKeyMixin):
+         self._entry_node = key_node
+         self._value_node = value_node
+ 
++    @inference_state_method_cache(default=())
++    def get_dict_realizations(self):
++        comp_fors = tuple(get_sync_comp_fors(self._sync_comp_for_node))
++        raw_reals = self._nested_realizations(comp_fors)
++        dict_reals = []
++        for raw_r in raw_reals:
++            cur_reals = [DictRealization()]
++            for k_set, v_lv, is_optional in raw_r:
++                if is_optional:
++                    for dr in cur_reals:
++                        dr.unknown_entries.append((k_set, v_lv))
++                        for erk, (ek_set, elv) in list(dr.known_entries.items()):
++                            if _keys_could_be_equal(k_set, ek_set):
++                                dr.known_entries[erk] = (
++                                    ek_set,
++                                    get_merged_lazy_value([elv, v_lv]),
++                                )
++                else:
++                    cur_reals = _add_entry_to_dict_realizations(cur_reals, k_set, v_lv)
++            dict_reals.extend(cur_reals)
++        return tuple(_cap_dict_realizations(dict_reals))
++
++    @inference_state_method_cache(default=())
++    def get_sequence_realizations(self):
++        return _dict_realizations_to_sequence_realizations(self.get_dict_realizations())
++
+     def py__iter__(self, contextualized_node=None):
+         for keys, values in self._iterate():
+             yield LazyKnownValues(keys)
+@@ -348,7 +759,7 @@ class SequenceLiteralValue(Sequence):
+ 
+     def _get_generics(self):
+         if self.array_type == 'tuple':
+-            return tuple(x.infer().py__class__() for x in self.py__iter__())
++            return tuple(_values_to_annotation_types(x.infer()) for x in self.py__iter__())
+         return super()._get_generics()
+ 
+     def py__simple_getitem__(self, index):
+@@ -380,6 +791,74 @@ class SequenceLiteralValue(Sequence):
+         # This function is not really used often. It's more of a try.
+         return len(self.get_tree_entries())
+ 
++    @inference_state_method_cache(default=())
++    def get_sequence_realizations(self):
++        realizations = [()]
++        for node in self._get_raw_tree_entries():
++            if node == ':' or node.type == 'subscript':
++                item = PosItem(LazyKnownValue(Slice(self._defining_context, None, None, None)))
++                realizations = [r + (item,) for r in realizations]
++            elif node.type == 'star_expr':
++                arrays = self._defining_context.infer_node(node.children[1])
++                if not arrays:
++                    item = StarItem(LazyKnownValues(NO_VALUES))
++                    realizations = [r + (item,) for r in realizations]
++                else:
++                    sub_reals = []
++                    for a in arrays:
++                        sub_reals.extend(get_sequence_realizations_for_value(a))
++                    if not sub_reals:
++                        sub_reals = [()]
++                    new_realizations = [
++                        r + sub_r
++                        for r in realizations
++                        for sub_r in sub_reals
++                    ]
++                    realizations = _cap_sequence_realizations(new_realizations)
++            else:
++                item = PosItem(LazyTreeValue(self._defining_context, node))
++                realizations = [r + (item,) for r in realizations]
++
++        additions = check_array_additions(self._defining_context, self)
++        if additions:
++            merged_add = get_merged_lazy_value(list(additions))
++            realizations = [r + (StarItem(merged_add),) for r in realizations]
++
++        if self.array_type == 'set':
++            realizations = [_deduplicate_set_realization(r) for r in realizations]
++        return tuple(realizations)
++
++    def _get_raw_tree_entries(self):
++        c = self.atom.children
++
++        if self.atom.type in self._TUPLE_LIKE:
++            return c[::2]
++
++        array_node = c[1]
++        if array_node in (']', '}', ')'):
++            return []  # Direct closing bracket, doesn't contain items.
++
++        if array_node.type == 'testlist_comp':
++            return array_node.children[::2]
++        elif array_node.type == 'dictorsetmaker':
++            kv = []
++            iterator = iter(array_node.children)
++            for key in iterator:
++                if key == "**":
++                    kv.append((None, next(iterator)))
++                    next(iterator, None)  # Possible comma.
++                else:
++                    op = next(iterator, None)
++                    if op is None or op == ',':
++                        kv.append(key)  # A set.
++                    else:
++                        assert op == ':'  # A dict.
++                        kv.append((key, next(iterator)))
++                        next(iterator, None)  # Possible comma.
++            return kv
++        else:
++            return [array_node]
++
+     def get_tree_entries(self):
+         c = self.atom.children
+ 
+@@ -439,6 +918,36 @@ class DictLiteralValue(_DictMixin, SequenceLiteralValue, _DictKeyMixin):
+         self._defining_context = defining_context
+         self.atom = atom
+ 
++    @inference_state_method_cache(default=())
++    def get_dict_realizations(self):
++        realizations = [DictRealization()]
++        for key_node, value_node in self._get_raw_tree_entries():
++            if key_node is None:
++                dicts = self._defining_context.infer_node(value_node)
++                if not dicts:
++                    for r in realizations:
++                        r.unknown_entries.append((NO_VALUES, LazyKnownValues(NO_VALUES)))
++                else:
++                    sub_reals = []
++                    for d in dicts:
++                        sub_reals.extend(get_dict_realizations_for_value(d))
++                    if not sub_reals:
++                        sub_reals = [DictRealization()]
++                    new_realizations = []
++                    for r in realizations:
++                        for sub_r in sub_reals:
++                            new_realizations.append(_merge_dict_realization(r, sub_r))
++                    realizations = _cap_dict_realizations(new_realizations)
++            else:
++                key_set = self._defining_context.infer_node(key_node)
++                val_lv = LazyTreeValue(self._defining_context, value_node)
++                realizations = _add_entry_to_dict_realizations(realizations, key_set, val_lv)
++        return tuple(realizations)
++
++    @inference_state_method_cache(default=())
++    def get_sequence_realizations(self):
++        return _dict_realizations_to_sequence_realizations(self.get_dict_realizations())
++
+     def py__simple_getitem__(self, index):
+         """Here the index is an int/str. Raises IndexError/KeyError."""
+         compiled_value_index = compiled.create_simple_object(self.inference_state, index)
+@@ -511,6 +1020,9 @@ class _FakeSequence(Sequence):
+         super().__init__(inference_state)
+         self._lazy_value_list = lazy_value_list
+ 
++    def get_sequence_realizations(self):
++        return (tuple(PosItem(lv) for lv in self._lazy_value_list),)
++
+     def py__simple_getitem__(self, index):
+         if isinstance(index, slice):
+             return ValueSet([self])
+@@ -544,6 +1056,16 @@ class FakeDict(_DictMixin, Sequence, _DictKeyMixin):
+         super().__init__(inference_state)
+         self._dct = dct
+ 
++    def get_dict_realizations(self):
++        r = DictRealization()
++        for key, lv in self._dct.items():
++            k_obj = compiled.create_simple_object(self.inference_state, key)
++            r.known_entries[('safe', key)] = (ValueSet([k_obj]), lv)
++        return (r,)
++
++    def get_sequence_realizations(self):
++        return _dict_realizations_to_sequence_realizations(self.get_dict_realizations())
++
+     def py__iter__(self, contextualized_node=None):
+         for key in self._dct:
+             yield LazyKnownValue(compiled.create_simple_object(self.inference_state, key))
+@@ -579,6 +1101,18 @@ class MergedArray(Sequence):
+         self.array_type = arrays[-1].array_type
+         self._arrays = arrays
+ 
++    @inference_state_method_cache(default=())
++    def get_sequence_realizations(self):
++        realizations = [()]
++        for array in self._arrays:
++            sub_reals = get_sequence_realizations_for_value(array)
++            realizations = _cap_sequence_realizations([
++                r + sr
++                for r in realizations
++                for sr in sub_reals
++            ])
++        return tuple(realizations)
++
+     def py__iter__(self, contextualized_node=None):
+         for array in self._arrays:
+             yield from array.py__iter__()
+diff --git a/test/completion/pep0484_overload.py b/test/completion/pep0484_overload.py
+index 45edeb5..b1c0d7c 100644
+--- a/test/completion/pep0484_overload.py
++++ b/test/completion/pep0484_overload.py
+@@ -111,3 +111,94 @@ def typing_direct(x: str) -> str: ...
+ typing_direct(1)
+ #? str()
+ typing_direct("")
++
++# -------------------------
++# Advanced Overload Resolution
++# -------------------------
++
++class Foo: ...
++class Bar: ...
++class FooBuilder:
++    def build_foo(self) -> int: ...
++class BarBuilder:
++    def build_bar(self) -> str: ...
++
++@overload
++def get_obj(input: type[Foo]) -> FooBuilder: ...
++@overload
++def get_obj(input: type[Bar]) -> BarBuilder: ...
++def get_obj(input): ...
++
++#? ['build_foo']
++get_obj(Foo).build_
++#? ['build_bar']
++get_obj(Bar).build_
++
++class A: ...
++class C: ...
++
++def check_overload(c: bool, xs_c: list[type[C]]):
++    @overload
++    def f1(x: type[A]) -> int: ...
++    @overload
++    def f1(x: type[C]) -> str: ...
++    def f1(x): ...
++
++    #? int() str()
++    f1(A if c else C)
++    #? int() str()
++    f1(*xs_c)
++
++    @overload
++    def f_dict(d: dict[int, type[C]]) -> int: ...
++    @overload
++    def f_dict(d: object) -> str: ...
++    def f_dict(d): ...
++
++    #? int()
++    f_dict({1: A, True: C})
++
++    d = {"k": A} if c else {}
++
++    @overload
++    def f_kw1(k: type[C]) -> int: ...
++    @overload
++    def f_kw1(k: type[A] | type[C]) -> str: ...
++    def f_kw1(**kw): ...
++
++    #? str()
++    f_kw1(**{"k": C, **d})
++    #? int()
++    f_kw1(**{**d, "k": C})
++
++    @overload
++    def f_comp(x: list[type[A]]) -> int: ...
++    @overload
++    def f_comp(x: object) -> str: ...
++    def f_comp(x): ...
++
++    #? int()
++    f_comp([C for _ in []])
++
++    xs = [A] if c else []
++
++    @overload
++    def f_var(x: type[C], y: type[C] = C) -> int: ...
++    @overload
++    def f_var(x: type[A] | type[C], y: type[C] = C) -> str: ...
++    def f_var(*args): ...
++
++    #? str()
++    f_var(*xs, C)
++
++    b = [C]
++
++    @overload
++    def f_nested(x: type[A], y: type[C]) -> int: ...
++    @overload
++    def f_nested(x: object, y: object) -> str: ...
++    def f_nested(x, y): ...
++
++    #? int()
++    f_nested(*[A, *b])
++

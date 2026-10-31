@@ -1,0 +1,21 @@
+PASS  docker build
+      tests/base/run1 exit=0
+      tests/new/run1 exit=1
+      solution/base/run1 exit=1
+      solution/new/run1 exit=0
+--- verify contract
+PASS  base without solution: no failures among 3981 tests (0 failing, 26 skipped)
+PASS  base junit: 0 duplicate names, 0 with conflicting results (before_p2p_not_passing)
+PASS  new without solution: no new test passes (0 pass; they do not capture the missing behavior)
+PASS  new junit (no solution): 0 duplicate names, 0 with conflicting results (before_p2p_not_passing)
+FAIL  base with solution: 1 failing, 26 skipped
+PASS  solution does not add skipped base tests (0 newly skipped)
+PASS  base junit (solution): 0 duplicate names, 0 with conflicting results (before_p2p_not_passing)
+PASS  new with solution: 0 not passing (failing or skipped)
+PASS  base and new test sets disjoint (0 shared)
+--- flakiness (3 repeats)
+PASS  tests/base: 0 flaky of 3981 tests
+PASS  tests/new: 0 flaky of 73 tests
+PASS  solution/base: 0 flaky of 3981 tests
+PASS  solution/new: 0 flaky of 73 tests
+Artifacts: /home/tes/Desktop/ADK/olympus-project/jedi-overload-arguments/qc-v11/checks/verify-2026-10-31-1106
