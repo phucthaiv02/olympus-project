@@ -1,0 +1,199 @@
+........................................................................ [  1%]
+........................................................................ [  3%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+..............s.........F....F.......................................... [ 16%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+..................................................................ssssss [ 25%]
+sssssss.....................ss.......................................... [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 30%]
+.....................................................Fs................. [ 32%]
+...............xxxx..................................................... [ 34%]
+.............................x.......................................... [ 36%]
+........................................................................ [ 37%]
+...................................................................ss... [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 43%]
+........................................................................ [ 45%]
+........................................................................ [ 47%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 66%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 72%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 83%]
+........................................................................ [ 85%]
+........................................................................ [ 86%]
+.....................F.................................................. [ 88%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+.....................                                                    [100%]
+=================================== FAILURES ===================================
+______________________ test_create_environment_executable ______________________
+
+    def test_create_environment_executable():
+        environment = create_environment(sys.executable)
+>       assert environment.executable == sys.executable
+E       AssertionError: assert '/home/tes/De...nv/bin/python' == '/home/tes/De...nv/bin/python'
+E         
+E         Skipping 60 identical leading characters in diff, use -v to show
+E         - s/work-v2/jedi/../venv/bin/python
+E         ?          --------
+E         + s/work-v2/venv/bin/python
+
+test/test_api/test_environment.py:117: AssertionError
+______________________________ test_changing_venv ______________________________
+
+venv_path = '/tmp/pytest-of-tes/pytest-4/venv_path0/venv'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7dd25c6b3c20>
+
+    def test_changing_venv(venv_path, monkeypatch):
+        monkeypatch.setitem(os.environ, 'VIRTUAL_ENV', venv_path)
+        get_cached_default_environment()
+        monkeypatch.setitem(os.environ, 'VIRTUAL_ENV', sys.executable)
+>       assert get_cached_default_environment().executable == sys.executable
+E       AssertionError: assert '/home/tes/De...nv/bin/python' == '/home/tes/De...nv/bin/python'
+E         
+E         Skipping 60 identical leading characters in diff, use -v to show
+E         - s/work-v2/jedi/../venv/bin/python
+E         ?          --------
+E         + s/work-v2/venv/bin/python
+
+test/test_api/test_environment.py:154: AssertionError
+_______________________ test_module_exists_only_as_stub ________________________
+
+Script = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.3 in /usr>)
+
+    def test_module_exists_only_as_stub(Script):
+        try:
+            import six  # type: ignore[import-untyped]  # noqa: F401
+        except ImportError:
+            pass
+        else:
+            pytest.skip('six is already installed, it should only exist as a stub for this test')
+        six_path = os.path.join(typeshed.TYPESHED_PATH, 'stubs', 'six')
+        assert os.path.isdir(six_path)
+>       assert not Script('import six').infer()
+E       AssertionError: assert not [<Name full_name='six', description='module six'>]
+E        +  where [<Name full_name='six', description='module six'>] = infer()
+E        +    where infer = <Script: None <Environment: 3.12.3 in /usr>>.infer
+E        +      where <Script: None <Environment: 3.12.3 in /usr>> = functools.partial(<class 'jedi.api.Script'>, environment=<Environment: 3.12.3 in /usr>)('import six')
+
+test/test_inference/test_gradual/test_typeshed.py:215: AssertionError
+_________________________ test_completion[sys_path:13] _________________________
+
+case = <IntegrationTestCase: /home/tes/Desktop/ADK/olympus-project/jedi-overload-arguments/work-v2/jedi/test/completion/sys_path.py:13 'import inference'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7dd2423e97f0>
+environment = <Environment: 3.12.3 in /usr>, has_django = True
+
+    def test_completion(case, monkeypatch, environment, has_django):
+        skip_reason = case.get_skip_reason(environment)
+        if skip_reason is not None:
+            pytest.skip(skip_reason)
+    
+        if (not has_django) and case.path.endswith('django.py'):
+            pytest.skip('Needs django to be installed to run this test.')
+    
+        if case.path.endswith("pytest.py"):
+            # to test finding pytest fixtures from external plugins
+            # add a stub pytest plugin to the project sys_path...
+            pytest_plugin_dir = str(helpers.get_example_dir("pytest_plugin_package"))
+            case._project.added_sys_path = [pytest_plugin_dir]
+    
+            # ... and mock the entry points to include it
+            # see https://docs.pytest.org/en/stable/how-to/writing_plugins.html#setuptools-entry-points
+            def mock_entry_points(*, group=None):
+                import importlib.metadata
+                entries = [importlib.metadata.EntryPoint(
+                    name=None,
+                    value="pytest_plugin.plugin",
+                    group="pytest11",
+                )]
+    
+                if sys.version_info >= (3, 10):
+                    assert group == "pytest11"
+                    return entries
+                else:
+                    assert group is None
+                    return {"pytest11": entries}
+    
+            monkeypatch.setattr("importlib.metadata.entry_points", mock_entry_points)
+    
+        repo_root = helpers.root_dir
+        monkeypatch.chdir(os.path.join(repo_root, 'jedi'))
+>       case.run(assert_case_equal, environment)
+
+/home/tes/Desktop/ADK/olympus-project/jedi-overload-arguments/work-v2/jedi/test/test_integration.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/home/tes/Desktop/ADK/olympus-project/jedi-overload-arguments/work-v2/jedi/test/run.py:216: in run
+    return testers[self.test_type](compare_cb, environment)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/tes/Desktop/ADK/olympus-project/jedi-overload-arguments/work-v2/jedi/test/run.py:226: in run_completion
+    return compare_cb(self, comp_str, set(literal_eval(self.correct)))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+case = <IntegrationTestCase: /home/tes/Desktop/ADK/olympus-project/jedi-overload-arguments/work-v2/jedi/test/completion/sys_path.py:13 'import inference'>
+actual = {'inference', 'inference_sdk'}, desired = {'inference'}
+
+    def assert_case_equal(case, actual, desired):
+        """
+        Assert ``actual == desired`` with formatted message.
+    
+        This is not needed for typical pytest use case, but as we need
+        ``--assert=plain`` (see ../pytest.ini) to workaround some issue
+        due to pytest magic, let's format the message by hand.
+        """
+>       assert actual == desired, """
+    Test %r failed.
+    actual  =
+    %s
+    desired =
+    %s
+    """ % (case, indent_block(str(actual)), indent_block(str(desired)))
+E       AssertionError: 
+E         Test <IntegrationTestCase: /home/tes/Desktop/ADK/olympus-project/jedi-overload-arguments/work-v2/jedi/test/completion/sys_path.py:13 'import inference'> failed.
+E         actual  =
+E             {'inference_sdk', 'inference'}
+E         desired =
+E             {'inference'}
+E         
+E       assert {'inference', 'inference_sdk'} == {'inference'}
+E         
+E         Extra items in the left set:
+E         'inference_sdk'
+E         Use -v to get more diff
+
+/home/tes/Desktop/ADK/olympus-project/jedi-overload-arguments/work-v2/jedi/test/test_integration.py:19: AssertionError
+=========================== short test summary info ============================
+FAILED test/test_api/test_environment.py::test_create_environment_executable
+FAILED test/test_api/test_environment.py::test_changing_venv - AssertionError...
+FAILED test/test_inference/test_gradual/test_typeshed.py::test_module_exists_only_as_stub
+FAILED test/test_integration.py::test_completion[sys_path:13] - AssertionError: 
+4 failed, 3953 passed, 19 skipped, 63 deselected, 5 xfailed in 95.91s (0:01:35)
