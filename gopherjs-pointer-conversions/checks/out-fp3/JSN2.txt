@@ -1,0 +1,35 @@
+FAIL K1 [2]*js.Object as [2]P read panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL K2 [2]P write keeps raw panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL K3 [2]P as [2]*js.Object panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL K4 struct view field panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL K5 js.Undefined as P
+FAIL K6 primitive as P panic: JavaScript error: Cannot create property '$proxies' on number '1'
+ok K7 fmt of *js.Object unchanged
+FAIL K8 reflect Elem Field of P panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL K9 reflect Elem Field of *js.Object panic: reflect.Value.Interface: cannot return value obtained from unexported field or method
+FAIL K10 NewAt js.Object panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL K11 reflect Convert P -> *js.Object panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL K12 reflect Set *js.Object from P
+FAIL K13 DeepEqual panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+FAIL K14 nil P via unsafe zero
+FAIL K15 slice of *js.Object as []P via unsafe.Slice panic: JavaScript error: Cannot read properties of undefined (reading 'fields')
+/app/tJSN2/main.go.1713290532:2115
+        throw err;
+        ^
+
+TypeError: Cannot read properties of undefined (reading 'fields')
+    at $convertPointer (/app/tJSN2/prelude.js:637:52)
+    at Object.main.main (/app/tJSN2/main.go:102:3)
+    at Object.$init (/app/tJSN2/main.go:28:7)
+    at fun (/app/tJSN2/goroutines.js:140:40)
+    at $goroutine (/app/tJSN2/goroutines.js:138:21)
+    at $runScheduled (/app/tJSN2/goroutines.js:184:13)
+    at $schedule (/app/tJSN2/goroutines.js:208:9)
+    at queueEntry (/app/tJSN2/goroutines.js:281:9)
+    at $send (/app/tJSN2/goroutines.js:240:9)
+    at fsCall·func1 (/app/tJSN2/main.go.1713290532:14392:11)
+    at syscall/js.FuncOf.func1 (/syscall/js/gopherjs__js.go:78:5)
+    at <anonymous> (/app/tJSN2/prelude.js:78:72)
+    at FSReqCallback.wrapper [as oncomplete] (node:fs:810:5)
+
+Node.js v24.15.0

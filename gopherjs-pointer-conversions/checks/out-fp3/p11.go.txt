@@ -1,0 +1,10 @@
+1 true true
+2 true true
+3 true main.P
+4 true *int
+5 true main.MyInt true
+6 true
+7 true true
+8 true true
+9 main.MyInt true
+10 int 3

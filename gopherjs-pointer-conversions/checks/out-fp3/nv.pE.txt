@@ -1,0 +1,24 @@
+FAIL P1 elem0 array ptr == &a (typed)
+FAIL P2 elem0 array ptr == &a (string)
+FAIL P3 elem0 array ptr == &a (int64)
+FAIL P4 unsafe(&a) == unsafe(&a[0]) via array ptr
+ok P5 known-type order: (*[2]int64)(&a) twice
+ok P6 round trip after named record
+ok P7 round trip after reflect Pointer named
+FAIL P8 overlap copy through offset ptr int64
+ok P9 overlap copy through view
+FAIL P10 overlap copy view vs orig
+FAIL P11 *[2]int elem of 2D -> *[2][2]int
+FAIL P12 *S -> *[1]S panic: JavaScript error: Cannot read properties of undefined (reading 'Y')
+FAIL P13 *[2]int -> *[1][2]int
+FAIL P14 typed subarray cached elem ptr then wider conv
+ok P15 typed subarray cached elem ptr then unsafe.Slice
+FAIL P16 map value type via unsafe
+ok P17 generic &*p
+ok P18 promoted field via embedded ptr
+ok P19 promoted field via embedded ptr unsafe
+ok P20 reflect Field Addr reserved name
+ok P21 *[]int -> *[]MyInt then subslice data ptr
+FAIL P22 view slice cap0 SliceData
+ok P23 reflect Slice3 cap0 Pointer
+ok P24 struct view S2 field addr eq

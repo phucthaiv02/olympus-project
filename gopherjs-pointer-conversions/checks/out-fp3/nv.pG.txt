@@ -1,0 +1,14 @@
+ok R1 implicit var PA = &a[1]
+ok R2 arg PA from &a[1]
+ok R3 (*AI)(&a[1])
+ok R4 (*AI)(&s[i]) slice
+ok R5 fmt.Sprint(&a[1])
+ok R6 json.Marshal(&s[1])
+ok R7 reflect Elem of &a[1]
+ok R8 json.Unmarshal into &s[1]
+ok R9 (*AI)(&st.Arr)
+ok R10 (*AI)(&sts[1].Arr)
+ok R11 3D (*[2][2]int)(&a[1])
+ok R12 reflect Convert &a[1] to *AI
+ok R13 Swapper on [][2]int then &s[i]
+ok R14 (*[2]MyInt)(unsafe) of 2D typed elem twice equal

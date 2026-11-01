@@ -1,0 +1,27 @@
+ok   A1 unsafe cross type %T
+ok   A2 unsafe cross type assert
+ok   A3 unsafe cross type same as explicit
+ok   A4 unsafe cross type twice equal
+ok   A5 unsafe cross write
+ok   A6 unsafe int64 pointee type
+ok   A7 unsafe complex pointee type
+ok   A8 unsafe **T pointee type
+ok   A9 int64 as uint64
+ok   B1 slice elem round trip
+ok   B2 slice elem write
+ok   B3 array elem round trip
+ok   B4 slice elem via var
+ok   B5 struct slice elem
+ok   B6 byte slice elem
+ok   B7 eval once
+ok   B8 new round trip
+ok   B9 new struct
+ok   C1 reflect type
+ok   C2 reflect identity
+ok   C3 reflect twice
+ok   C4 reflect nil
+ok   C5 reflect struct alias
+ok   C6 reflect int64
+ok   C7 reflect round trip
+ok   C8 reflect array ptr nil
+ok   C9 reflect ptrptr

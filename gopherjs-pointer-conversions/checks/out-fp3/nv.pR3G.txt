@@ -1,0 +1,7 @@
+ok G1 reflect Elem of *js.Object
+  -> [object Object]
+ok G2 fmt %v of *js.Object
+ok G3 W field via reflect
+ok G4 H field js obj via reflect
+FAIL G5 H field Addr
+ok G6 slice of *js.Object Index

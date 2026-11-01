@@ -1,0 +1,18 @@
+1 true true
+2 true
+3 true main.MyInt64 true
+4 5 int64
+5 [0 7] int64 main.MyInt64
+6 true true
+7 true
+8 true *main.MyInt64 main.MyInt64
+9 true int64 4
+10 true
+11 true true
+12 9 int64
+13 5 main.MyInt64
+14 11 int64 true
+15 main.MyInt64 true
+16 77 int64
+17 true
+18 true

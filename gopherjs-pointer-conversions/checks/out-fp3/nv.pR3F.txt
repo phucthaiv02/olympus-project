@@ -1,0 +1,8 @@
+FAIL F1 *int -> *[1]int slice write panic: runtime error: index out of range
+FAIL F2 *int -> *[1]int deref assign panic: JavaScript error: dst.set is not a function
+FAIL F3 *int -> *[1]int copy
+FAIL F4 *int -> *[1]int reflect Index set
+FAIL F5 &s.X -> *[2]int field elems
+FAIL F6 unsafe.Slice(&n,1) baseline panic: runtime error: unsafe.Slice: pointer does not address a slice or array element (missing index)
+FAIL F7 *int -> *[1]int &a[0] == &n
+FAIL F8 *int -> *[1]int reflect Elem Index Addr
