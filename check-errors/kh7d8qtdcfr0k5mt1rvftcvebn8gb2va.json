@@ -1,0 +1,1078 @@
+{
+  "prechecks": [],
+  "dynamicChecks": {
+    "_autoReviewSkipReverted": false,
+    "_descriptionQualityContested": false,
+    "_problemLastDraftEditedAt": 1792916415564,
+    "_solutionQualityContestNote": null,
+    "_solutionQualityContested": false,
+    "_verifierIncompletenessOriginalTestPatch": "diff --git a/test.sh b/test.sh\nnew file mode 100755\nindex 00000000..3ec5b315\n--- /dev/null\n+++ b/test.sh\n@@ -0,0 +1,62 @@\n+#!/usr/bin/env bash\n+# Usage:\n+#   ./test.sh [--output_path <junit.xml>] <base|new>\n+#\n+#   base  run the existing test suite.\n+#   new   run the tests for choosing overloads from the call arguments.\n+set -uo pipefail\n+\n+OUTPUT_PATH=\"\"\n+if [ \"${1:-}\" = \"--output_path\" ]; then\n+  if [ -z \"${2:-}\" ]; then\n+    echo \"--output_path requires a value\" >&2\n+    exit 2\n+  fi\n+  case \"$2\" in\n+    /*) OUTPUT_PATH=\"$2\" ;;\n+    *) OUTPUT_PATH=\"$PWD/$2\" ;;\n+  esac\n+  shift 2\n+fi\n+\n+MODE=\"${1:-new}\"\n+\n+cd /app || exit 1\n+\n+NEW_TESTS=\"test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py\"\n+\n+PYTEST_ARGS=(-p no:cacheprovider -v)\n+if [ -n \"$OUTPUT_PATH\" ]; then\n+  if ! mkdir -p \"$(dirname \"$OUTPUT_PATH\")\"; then\n+    echo \"failed to create the directory for $OUTPUT_PATH\" >&2\n+    exit 1\n+  fi\n+  PYTEST_ARGS+=(--junitxml=\"$OUTPUT_PATH\")\n+fi\n+\n+case \"$MODE\" in\n+  base)\n+    # The file path completion tests list the repository root, which also\n+    # holds this script, and expanding \"~\" depends on the user's home folder.\n+    python -m pytest \"${PYTEST_ARGS[@]}\" --ignore=\"$NEW_TESTS\" \\\n+      --deselect test/test_api/test_completion.py::test_file_path_completions \\\n+      --deselect test/test_api/test_completion.py::test_complete_expanduser \\\n+      jedi test\n+    STATUS=$?\n+    ;;\n+  new)\n+    python -m pytest \"${PYTEST_ARGS[@]}\" \"$NEW_TESTS\"\n+    STATUS=$?\n+    ;;\n+  *)\n+    echo \"unknown mode: $MODE (expected base or new)\" >&2\n+    exit 2\n+    ;;\n+esac\n+\n+if [ -n \"$OUTPUT_PATH\" ] && [ ! -s \"$OUTPUT_PATH\" ]; then\n+  echo \"failed to write JUnit report to $OUTPUT_PATH\" >&2\n+  exit 1\n+fi\n+\n+exit \"$STATUS\"\ndiff --git a/test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py b/test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py\nnew file mode 100644\nindex 00000000..271fbea7\n--- /dev/null\n+++ b/test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py\n@@ -0,0 +1,419 @@\n+\"\"\"\n+Choosing the overload of a function from the arguments of a call.\n+\"\"\"\n+\n+from textwrap import dedent\n+\n+import pytest\n+\n+HEADER = \"\"\"\\\n+from typing import overload, Any, Type, TypeVar, Union\n+\n+class A: pass\n+class B(A): pass\n+class C: pass\n+class RA: pass\n+class RB: pass\n+class RC: pass\n+\"\"\"\n+\n+\n+def overloads(*annotations):\n+    code = ''\n+    for annotation, result in zip(annotations, ('RA', 'RB', 'RC')):\n+        code += '@overload\\ndef f(x: %s) -> %s: ...\\n' % (annotation, result)\n+    return code + 'def f(x): ...\\n'\n+\n+\n+def infer_result(Script, code):\n+    code = HEADER + dedent(code).strip('\\n')\n+    lines = code.splitlines()\n+    return sorted(d.name for d in Script(code).infer(len(lines), len(lines[-1])))\n+\n+\n+def check(Script, annotations, call, expected, prefix=''):\n+    code = prefix + overloads(*annotations) + call\n+    assert infer_result(Script, code) == expected, (annotations, call)\n+\n+\n+def test_issue_example(Script):\n+    code = dedent('''\\\n+        from typing import overload\n+\n+        class Foo: pass\n+\n+        class FooBuilder:\n+            def func_foo(self): pass\n+\n+        class Bar: pass\n+\n+        class BarBuilder:\n+            def func_bar(self): pass\n+\n+        @overload\n+        def get_obj(input: type[Foo]) -> FooBuilder: ...\n+        @overload\n+        def get_obj(input: type[Bar]) -> BarBuilder: ...\n+        def get_obj(input: type): pass\n+\n+        builder = get_obj(Foo)\n+        builder.''')\n+    names = [c.name for c in Script(code).complete()]\n+    assert 'func_foo' in names\n+    assert 'func_bar' not in names\n+\n+    code = code.replace('get_obj(Foo)', 'get_obj(Bar)')\n+    names = [c.name for c in Script(code).complete()]\n+    assert 'func_bar' in names\n+    assert 'func_foo' not in names\n+\n+\n+@pytest.mark.parametrize('first', ['type[A]', 'Type[A]'])\n+@pytest.mark.parametrize(\n+    'call, expected', [\n+        ('f(A)', ['RA']),\n+        ('f(B)', ['RA']),\n+        ('f(C)', ['RB']),\n+    ]\n+)\n+def test_type_of_class(Script, first, call, expected):\n+    check(Script, [first, 'type[C]'], call, expected)\n+\n+\n+def test_type_rejects_instances(Script):\n+    check(Script, ['type[A]', 'A'], 'f(A())', ['RB'])\n+    check(Script, ['Type[A]', 'A'], 'f(B())', ['RB'])\n+    check(Script, ['A', 'type[A]'], 'f(A)', ['RB'])\n+    factory = 'class Factory:\\n    def __call__(self) -> A: ...\\n'\n+    check(Script, ['type[A]', 'Factory'], 'f(Factory())', ['RB'], prefix=factory)\n+\n+\n+@pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])\n+def test_any_class(Script, annotation):\n+    for cls in ['A', 'B', 'C', 'int', 'str']:\n+        check(Script, ['int', annotation], 'f(%s)' % cls, ['RB'])\n+    for instance, cls in [('3', 'int'), ('C()', 'C'), ('\"s\"', 'str')]:\n+        check(Script, [annotation, cls], 'f(%s)' % instance, ['RB'])\n+\n+\n+@pytest.mark.parametrize('annotation', ['type[Union[A, C]]', 'Type[A | C]', 'type[A] | type[C]'])\n+def test_type_of_union(Script, annotation):\n+    check(Script, ['int', annotation], 'f(C)', ['RB'])\n+    check(Script, ['int', annotation], 'f(B)', ['RB'])\n+\n+\n+def test_type_of_type_var(Script):\n+    bound = 'T = TypeVar(\"T\", bound=A)\\n'\n+    check(Script, ['type[T]', 'int'], 'f(C)', ['RA', 'RB'], prefix=bound)\n+    check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RB'], prefix=bound)\n+    check(Script, ['type[T]', 'type[C]'], 'f(B)', ['RA'], prefix=bound)\n+    check(Script, ['type[T]', 'type[C]'], 'f(A)', ['RA'], prefix=bound)\n+    check(Script, ['type[T]', 'A'], 'f(B())', ['RB'], prefix=bound)\n+    constrained = 'T = TypeVar(\"T\", A, int)\\n'\n+    check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RB'], prefix=constrained)\n+    check(Script, ['type[T]', 'type[C]'], 'f(int)', ['RA'], prefix=constrained)\n+    check(Script, ['type[T]', 'type[C]'], 'f(B)', ['RA'], prefix=constrained)\n+    check(Script, ['type[T]', 'type[str]'], 'f(str)', ['RB'], prefix=constrained)\n+    check(Script, ['type[T]', 'int'], 'f(3)', ['RB'], prefix=constrained)\n+    unbound = 'T = TypeVar(\"T\")\\n'\n+    check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RA'], prefix=unbound)\n+    check(Script, ['type[T]', 'type[C]'], 'f(int)', ['RA'], prefix=unbound)\n+    check(Script, ['type[T]', 'int'], 'f(3)', ['RB'], prefix=unbound)\n+\n+\n+def test_type_from_annotated_names(Script):\n+    check(Script, ['type[A]', 'type[C]'], 'f(t)', ['RB'], prefix='t: type[C]\\n')\n+    code = overloads('type[A]', 'type[C]') + dedent('''\\\n+        def g(k: type[C]):\n+            f(k)''')\n+    assert infer_result(Script, code) == ['RB']\n+\n+\n+def test_first_matching_overload_wins(Script):\n+    check(Script, ['type[A]', 'type[B]'], 'f(B)', ['RA'])\n+    check(Script, ['type[B]', 'type[A]'], 'f(B)', ['RA'])\n+    check(Script, ['type[B]', 'type[A]'], 'f(A)', ['RB'])\n+    check(Script, ['type', 'type[A]'], 'f(A)', ['RA'])\n+    check(Script, ['type[A]', 'type[B]', 'type[C]'], 'f(C)', ['RC'])\n+\n+\n+def test_type_keyword_argument(Script):\n+    check(Script, ['int', 'type[C]'], 'f(x=C)', ['RB'])\n+    check(Script, ['type[A]', 'type[B]'], 'f(x=B)', ['RA'])\n+    check(Script, ['type[C]', 'int'], 'f(x=3)', ['RB'])\n+\n+\n+TWO_PARAMETERS = '''\\\n+@overload\n+def g(x: type[A], y: type[C]) -> RA: ...\n+@overload\n+def g(x: type[A], y: type[A]) -> RB: ...\n+def g(x, y): ...\n+'''\n+\n+\n+def test_every_argument_has_to_fit(Script):\n+    for call, expected in [\n+        ('g(A, C)', ['RA']),\n+        ('g(B, C)', ['RA']),\n+        ('g(A, A)', ['RB']),\n+        ('g(A, y=B)', ['RB']),\n+        ('g(y=C, x=B)', ['RA']),\n+        ('g(x=A, y=A)', ['RB']),\n+        ('g(C, A)', ['RA', 'RB']),\n+        ('g(A, A())', ['RA', 'RB']),\n+    ]:\n+        assert infer_result(Script, TWO_PARAMETERS + call) == expected, call\n+\n+\n+def variadic(first, second, signature, third=None):\n+    code = ''\n+    for annotation, result in [(first, 'RA'), (second, 'RB'), (third, 'RC')]:\n+        if annotation is not None:\n+            code += '@overload\\ndef f(%s) -> %s: ...\\n' % (signature % annotation, result)\n+    return code + 'def f(*args, **kwargs): ...\\n'\n+\n+\n+@pytest.mark.parametrize('signature', ['*x: %s', 'y: int, *x: %s'])\n+def test_var_positional(Script, signature):\n+    prefix = '1, ' if signature.startswith('y') else ''\n+    for arguments, expected in [\n+        ('C, C', ['RB']),\n+        ('A, B', ['RA']),\n+        ('A, C', ['RA', 'RB']),\n+        ('C, A', ['RA', 'RB']),\n+        ('', ['RA']),\n+    ]:\n+        call = 'f(%s)' % (prefix + arguments).rstrip(', ')\n+        code = variadic('type[A]', 'type[C]', signature) + call\n+        assert infer_result(Script, code) == expected, (signature, call)\n+\n+\n+def test_var_positional_unpacked(Script):\n+    code = variadic('type[A]', 'type[C]', '*x: %s')\n+    assert infer_result(Script, code + 'ks = (C, C)\\nf(*ks)') == ['RB']\n+    assert infer_result(Script, code + 'ks = [A, B]\\nf(*ks)') == ['RA']\n+\n+\n+@pytest.mark.parametrize('signature', ['**x: %s', 'y: int, **x: %s'])\n+def test_var_keyword(Script, signature):\n+    prefix = 'y=1, ' if signature.startswith('y') else ''\n+    for arguments, expected in [\n+        ('p=C, q=C', ['RB']),\n+        ('p=A, q=B', ['RA']),\n+        ('p=A, q=C', ['RA', 'RB']),\n+        ('', ['RA']),\n+    ]:\n+        call = 'f(%s)' % (prefix + arguments).rstrip(', ')\n+        code = variadic('type[A]', 'type[C]', signature) + call\n+        assert infer_result(Script, code) == expected, (signature, call)\n+\n+\n+def test_var_keyword_unpacked(Script):\n+    code = variadic('type[A]', 'type[C]', '**x: %s')\n+    assert infer_result(Script, code + \"f(**{'p': C})\") == ['RB']\n+\n+\n+def test_variadic_parameters_with_other_annotations(Script):\n+    prefix = 'T = TypeVar(\"T\", bound=A)\\n'\n+    code = prefix + variadic('type[T]', 'type[Union[A, C]]', '*x: %s')\n+    assert infer_result(Script, code + 'f(A, B)') == ['RA']\n+    assert infer_result(Script, code + 'f(A, C)') == ['RB']\n+    assert infer_result(Script, code + 'f(C, int)') == ['RA', 'RB']\n+    code = variadic('type', 'int', '*x: %s')\n+    assert infer_result(Script, code + 'f(A, int, str)') == ['RA']\n+    assert infer_result(Script, code + 'f(A, 1)') == ['RA', 'RB']\n+    assert infer_result(Script, code + 'f(1, 2)') == ['RB']\n+\n+\n+def test_variadic_parameters_together(Script):\n+    code = dedent('''\\\n+        @overload\n+        def f(y: int, *x: type[A], z: int = 0, **k: type[A]) -> RA: ...\n+        @overload\n+        def f(y: int, *x: type[C], z: int = 0, **k: type[C]) -> RB: ...\n+        def f(*args, **kwargs): ...\n+        ''')\n+    for call, expected in [\n+        ('f(1, A, B, p=A)', ['RA']),\n+        ('f(1, C, z=2, p=C)', ['RB']),\n+        ('f(1, A, p=C)', ['RA', 'RB']),\n+        ('f(1, p=C)', ['RB']),\n+        ('f(1, C)', ['RB']),\n+        ('f(1, z=2)', ['RA']),\n+    ]:\n+        assert infer_result(Script, code + call) == expected, call\n+\n+\n+def test_no_matching_overload(Script):\n+    check(Script, ['type[A]', 'int'], 'f(C)', ['RA', 'RB'])\n+    check(Script, ['type[A]', 'int'], 'f(A)', ['RA'])\n+    code = variadic('type[A]', 'type[C]', '*x: %s')\n+    assert infer_result(Script, code + 'f(A, C, int)') == ['RA', 'RB']\n+\n+\n+def test_dict_unpacking(Script):\n+    code = variadic('type[A]', 'type[C]', '**x: %s')\n+    for call, expected in [\n+        ('f(**dict(p=C))', ['RB']),\n+        ('f(**dict(p=A))', ['RA']),\n+        ('d = dict(p=C)\\nf(**d)', ['RB']),\n+        ('f(**dict(p=A, q=C))', ['RA', 'RB']),\n+    ]:\n+        assert infer_result(Script, code + call) == expected, call\n+\n+\n+def test_optional_accepts_none(Script):\n+    prefix = 'from typing import Optional\\n'\n+    check(Script, ['Optional[int]', 'str'], 'f(None)', ['RA'], prefix)\n+    check(Script, ['Optional[int]', 'str'], 'f(1)', ['RA'], prefix)\n+    check(Script, ['Optional[int]', 'str'], 'f(\"\")', ['RB'], prefix)\n+\n+\n+def test_dict_positional_argument(Script):\n+    code = variadic('type[A]', 'type[C]', '**x: %s')\n+    for call, expected in [\n+        ('f(**dict([(\"p\", C)]))', ['RB']),\n+        ('f(**dict({\"p\": C}))', ['RB']),\n+        ('f(**dict([(\"p\", A)], q=C))', ['RA', 'RB']),\n+        # A keyword argument replaces the entry of the mapping.\n+        ('f(**dict({\"p\": A}, p=C))', ['RB']),\n+        ('d = dict(p=C)\\nf(**dict(d))', ['RB']),\n+        ('d = dict(ab=C)\\nf(**dict(d))', ['RB']),\n+        ('f(**dict(**dict(p=C)))', ['RB']),\n+    ]:\n+        assert infer_result(Script, code + call) == expected, call\n+    # The mapping and the keyword argument fill the same parameter only once.\n+    check(Script, ['type[A]', 'type[C]'], 'f(**dict({\"x\": A}, x=C))', ['RB'])\n+\n+\n+def test_dict_unpacking_in_method(Script):\n+    code = dedent('''\\\n+        class K:\n+            @overload\n+            def f(self, **x: type[A]) -> RA: ...\n+            @overload\n+            def f(self, **x: type[C]) -> RB: ...\n+            def f(self, **x): ...\n+        ''')\n+    assert infer_result(Script, code + 'K().f(**dict(p=C))') == ['RB']\n+    assert infer_result(Script, code + 'K().f(**dict([(\"p\", A)]))') == ['RA']\n+\n+\n+def test_union_argument(Script):\n+    prefix = dedent('''\\\n+        def g(x: Union[A, C]):\n+            return x\n+        ''')\n+    # Every type the argument may have has to be accepted.\n+    check(Script, ['A', 'C'], 'f(g(A()))', ['RA', 'RB'], prefix)\n+    check(Script, ['Union[A, C]', 'int'], 'f(g(A()))', ['RA'], prefix)\n+    check(Script, ['B', 'Union[A, C]'], 'f(g(A()))', ['RB'], prefix)\n+\n+\n+@pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])\n+def test_any_class_defined_later(Script, annotation):\n+    prefix = 'class D(C): pass\\n'\n+    check(Script, ['int', annotation], 'f(D)', ['RB'], prefix)\n+    check(Script, [annotation, 'D'], 'f(D())', ['RB'], prefix)\n+\n+\n+def test_optional_of_class(Script):\n+    prefix = 'from typing import Optional\\n'\n+    check(Script, ['Optional[A]', 'C'], 'f(B())', ['RA'], prefix)\n+    check(Script, ['Optional[A]', 'C'], 'f(None)', ['RA'], prefix)\n+    check(Script, ['Optional[A]', 'C'], 'f(C())', ['RB'], prefix)\n+\n+\n+def test_every_collected_argument_is_checked(Script):\n+    code = variadic('type[A]', 'type', '*x: %s')\n+    assert infer_result(Script, code + 'f(A, B, C)') == ['RB']\n+    assert infer_result(Script, code + 'f(A, B, B)') == ['RA']\n+    code = variadic('type[A]', 'type', '**x: %s')\n+    assert infer_result(Script, code + 'f(p=A, q=B, r=C)') == ['RB']\n+    assert infer_result(Script, code + 'f(p=A, q=B, r=B)') == ['RA']\n+\n+\n+def test_dict_unpacking_in_classmethod(Script):\n+    code = dedent('''\\\n+        class K:\n+            @overload\n+            @classmethod\n+            def f(cls, **x: type[A]) -> RA: ...\n+            @overload\n+            @classmethod\n+            def f(cls, **x: type[C]) -> RB: ...\n+            @classmethod\n+            def f(cls, **x): ...\n+        ''')\n+    assert infer_result(Script, code + 'K.f(**dict(p=C))') == ['RB']\n+    assert infer_result(Script, code + 'K().f(**dict(p=A))') == ['RA']\n+\n+\n+def test_dict_unpacking_in_partial(Script):\n+    code = 'import functools\\n' + variadic('type[A]', 'type[C]', '**x: %s')\n+    assert infer_result(Script, code + 'functools.partial(f)(**dict(p=C))') == ['RB']\n+    assert infer_result(Script, code + 'functools.partial(f, q=A)(**dict(p=A))') == ['RA']\n+    assert infer_result(Script, code + 'functools.partial(f, q=A)(**dict(p=C))') == ['RA', 'RB']\n+\n+\n+CONTAINERS = 'import random\\nfrom typing import Iterable, List, Mapping, Sequence\\n'\n+\n+\n+@pytest.mark.parametrize('first, second, call', [\n+    ('list[type[A]]', 'list[type[C]]', 'f([C])'),\n+    ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\\nf(x)'),\n+    ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),\n+    ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),\n+    ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({\"k\": C})'),\n+    ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f(dict(k=C))'),\n+    ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({\"k\": [C]})'),\n+])\n+def test_elements_of_containers(Script, first, second, call):\n+    check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)\n+    if not call.startswith('x ='):\n+        # Classes are accepted with their subclasses.\n+        check(Script, [first, second, 'object'], call.replace('C', 'B'), ['RA'],\n+              prefix=CONTAINERS)\n+\n+\n+def test_every_element_has_to_fit(Script):\n+    annotations = ['list[type[A]]', 'list[type[C]]', 'object']\n+    for call in [\n+        'f([A, C])',\n+        'f([C()])',\n+        'f((C,))',\n+        'f([C] if random.random() else [A])',\n+        'f([C if random.random() else A])',\n+    ]:\n+        check(Script, annotations, call, ['RC'], prefix=CONTAINERS)\n+\n+\n+@pytest.mark.parametrize('first, second, call, expected', [\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),\n+    ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),\n+    ('tuple[int, ...]', 'tuple[str, ...]', 'f((\"a\", \"b\"))', ['RB']),\n+    ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),\n+    ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),\n+    ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),\n+])\n+def test_tuples_of_any_length(Script, first, second, call, expected):\n+    prefix = CONTAINERS + 'from typing import Tuple\\n'\n+    check(Script, [first, second, 'object'], call, expected, prefix=prefix)\n+\n+\n+def test_items_of_mappings_and_other_containers(Script):\n+    def check_items(first, second, call, expected=['RB'], prefix=''):\n+        check(Script, [first, second, 'object'], call, expected, prefix=CONTAINERS + prefix)\n+\n+    check_items('dict[type[A], int]', 'dict[type[C], int]', 'f({C: 1})')\n+    check_items('dict[str, type[A]]', 'dict[int, type[A]]', 'f({1: A})')\n+    check_items('dict[str, type[A]]', 'dict[str, type[C]]', 'f({\"k\": C, **{\"m\": C}})')\n+    check_items('Sequence[type[A]]', 'Sequence[type[C]]', 'f(g())',\n+                prefix='def g() -> tuple[type[C], ...]: ...\\n')\n+    check_items('list[type[T]]', 'list[type[C]]', 'f([C])',\n+                prefix='T = TypeVar(\"T\", bound=A)\\n')\n",
+    "_verifierIncompletenessProposedTestPatch": "diff --git a/test.sh b/test.sh\nnew file mode 100755\nindex 0000000..3ec5b31\n--- /dev/null\n+++ b/test.sh\n@@ -0,0 +1,62 @@\n+#!/usr/bin/env bash\n+# Usage:\n+#   ./test.sh [--output_path <junit.xml>] <base|new>\n+#\n+#   base  run the existing test suite.\n+#   new   run the tests for choosing overloads from the call arguments.\n+set -uo pipefail\n+\n+OUTPUT_PATH=\"\"\n+if [ \"${1:-}\" = \"--output_path\" ]; then\n+  if [ -z \"${2:-}\" ]; then\n+    echo \"--output_path requires a value\" >&2\n+    exit 2\n+  fi\n+  case \"$2\" in\n+    /*) OUTPUT_PATH=\"$2\" ;;\n+    *) OUTPUT_PATH=\"$PWD/$2\" ;;\n+  esac\n+  shift 2\n+fi\n+\n+MODE=\"${1:-new}\"\n+\n+cd /app || exit 1\n+\n+NEW_TESTS=\"test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py\"\n+\n+PYTEST_ARGS=(-p no:cacheprovider -v)\n+if [ -n \"$OUTPUT_PATH\" ]; then\n+  if ! mkdir -p \"$(dirname \"$OUTPUT_PATH\")\"; then\n+    echo \"failed to create the directory for $OUTPUT_PATH\" >&2\n+    exit 1\n+  fi\n+  PYTEST_ARGS+=(--junitxml=\"$OUTPUT_PATH\")\n+fi\n+\n+case \"$MODE\" in\n+  base)\n+    # The file path completion tests list the repository root, which also\n+    # holds this script, and expanding \"~\" depends on the user's home folder.\n+    python -m pytest \"${PYTEST_ARGS[@]}\" --ignore=\"$NEW_TESTS\" \\\n+      --deselect test/test_api/test_completion.py::test_file_path_completions \\\n+      --deselect test/test_api/test_completion.py::test_complete_expanduser \\\n+      jedi test\n+    STATUS=$?\n+    ;;\n+  new)\n+    python -m pytest \"${PYTEST_ARGS[@]}\" \"$NEW_TESTS\"\n+    STATUS=$?\n+    ;;\n+  *)\n+    echo \"unknown mode: $MODE (expected base or new)\" >&2\n+    exit 2\n+    ;;\n+esac\n+\n+if [ -n \"$OUTPUT_PATH\" ] && [ ! -s \"$OUTPUT_PATH\" ]; then\n+  echo \"failed to write JUnit report to $OUTPUT_PATH\" >&2\n+  exit 1\n+fi\n+\n+exit \"$STATUS\"\ndiff --git a/test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py b/test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py\nnew file mode 100644\nindex 0000000..68b1ed7\n--- /dev/null\n+++ b/test/test_inference/test_gradual/test_overload_arguments_9c3e7a.py\n@@ -0,0 +1,473 @@\n+\"\"\"\n+Choosing the overload of a function from the arguments of a call.\n+\"\"\"\n+\n+from textwrap import dedent\n+\n+import pytest\n+\n+HEADER = \"\"\"\\\n+from typing import overload, Any, Type, TypeVar, Union\n+\n+class A: pass\n+class B(A): pass\n+class C: pass\n+class RA: pass\n+class RB: pass\n+class RC: pass\n+\"\"\"\n+\n+\n+def overloads(*annotations):\n+    code = ''\n+    for annotation, result in zip(annotations, ('RA', 'RB', 'RC')):\n+        code += '@overload\\ndef f(x: %s) -> %s: ...\\n' % (annotation, result)\n+    return code + 'def f(x): ...\\n'\n+\n+\n+def infer_result(Script, code):\n+    code = HEADER + dedent(code).strip('\\n')\n+    lines = code.splitlines()\n+    return sorted(d.name for d in Script(code).infer(len(lines), len(lines[-1])))\n+\n+\n+def check(Script, annotations, call, expected, prefix=''):\n+    code = prefix + overloads(*annotations) + call\n+    assert infer_result(Script, code) == expected, (annotations, call)\n+\n+\n+def test_issue_example(Script):\n+    code = dedent('''\\\n+        from typing import overload\n+\n+        class Foo: pass\n+\n+        class FooBuilder:\n+            def func_foo(self): pass\n+\n+        class Bar: pass\n+\n+        class BarBuilder:\n+            def func_bar(self): pass\n+\n+        @overload\n+        def get_obj(input: type[Foo]) -> FooBuilder: ...\n+        @overload\n+        def get_obj(input: type[Bar]) -> BarBuilder: ...\n+        def get_obj(input: type): pass\n+\n+        builder = get_obj(Foo)\n+        builder.''')\n+    names = [c.name for c in Script(code).complete()]\n+    assert 'func_foo' in names\n+    assert 'func_bar' not in names\n+\n+    code = code.replace('get_obj(Foo)', 'get_obj(Bar)')\n+    names = [c.name for c in Script(code).complete()]\n+    assert 'func_bar' in names\n+    assert 'func_foo' not in names\n+\n+\n+@pytest.mark.parametrize('first', ['type[A]', 'Type[A]'])\n+@pytest.mark.parametrize(\n+    'call, expected', [\n+        ('f(A)', ['RA']),\n+        ('f(B)', ['RA']),\n+        ('f(C)', ['RB']),\n+    ]\n+)\n+def test_type_of_class(Script, first, call, expected):\n+    check(Script, [first, 'type[C]'], call, expected)\n+\n+\n+def test_type_rejects_instances(Script):\n+    check(Script, ['type[A]', 'A'], 'f(A())', ['RB'])\n+    check(Script, ['Type[A]', 'A'], 'f(B())', ['RB'])\n+    check(Script, ['A', 'type[A]'], 'f(A)', ['RB'])\n+    factory = 'class Factory:\\n    def __call__(self) -> A: ...\\n'\n+    check(Script, ['type[A]', 'Factory'], 'f(Factory())', ['RB'], prefix=factory)\n+\n+\n+@pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])\n+def test_any_class(Script, annotation):\n+    for cls in ['A', 'B', 'C', 'int', 'str']:\n+        check(Script, ['int', annotation], 'f(%s)' % cls, ['RB'])\n+    for instance, cls in [('3', 'int'), ('C()', 'C'), ('\"s\"', 'str')]:\n+        check(Script, [annotation, cls], 'f(%s)' % instance, ['RB'])\n+\n+\n+@pytest.mark.parametrize('annotation', ['type[Union[A, C]]', 'Type[A | C]', 'type[A] | type[C]'])\n+def test_type_of_union(Script, annotation):\n+    check(Script, ['int', annotation], 'f(C)', ['RB'])\n+    check(Script, ['int', annotation], 'f(B)', ['RB'])\n+\n+\n+def test_type_of_type_var(Script):\n+    bound = 'T = TypeVar(\"T\", bound=A)\\n'\n+    check(Script, ['type[T]', 'int'], 'f(C)', ['RA', 'RB'], prefix=bound)\n+    check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RB'], prefix=bound)\n+    check(Script, ['type[T]', 'type[C]'], 'f(B)', ['RA'], prefix=bound)\n+    check(Script, ['type[T]', 'type[C]'], 'f(A)', ['RA'], prefix=bound)\n+    check(Script, ['type[T]', 'A'], 'f(B())', ['RB'], prefix=bound)\n+    constrained = 'T = TypeVar(\"T\", A, int)\\n'\n+    check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RB'], prefix=constrained)\n+    check(Script, ['type[T]', 'type[C]'], 'f(int)', ['RA'], prefix=constrained)\n+    check(Script, ['type[T]', 'type[C]'], 'f(B)', ['RA'], prefix=constrained)\n+    check(Script, ['type[T]', 'type[str]'], 'f(str)', ['RB'], prefix=constrained)\n+    check(Script, ['type[T]', 'int'], 'f(3)', ['RB'], prefix=constrained)\n+    unbound = 'T = TypeVar(\"T\")\\n'\n+    check(Script, ['type[T]', 'type[C]'], 'f(C)', ['RA'], prefix=unbound)\n+    check(Script, ['type[T]', 'type[C]'], 'f(int)', ['RA'], prefix=unbound)\n+    check(Script, ['type[T]', 'int'], 'f(3)', ['RB'], prefix=unbound)\n+\n+\n+def test_type_from_annotated_names(Script):\n+    check(Script, ['type[A]', 'type[C]'], 'f(t)', ['RB'], prefix='t: type[C]\\n')\n+    code = overloads('type[A]', 'type[C]') + dedent('''\\\n+        def g(k: type[C]):\n+            f(k)''')\n+    assert infer_result(Script, code) == ['RB']\n+\n+\n+def test_first_matching_overload_wins(Script):\n+    check(Script, ['type[A]', 'type[B]'], 'f(B)', ['RA'])\n+    check(Script, ['type[B]', 'type[A]'], 'f(B)', ['RA'])\n+    check(Script, ['type[B]', 'type[A]'], 'f(A)', ['RB'])\n+    check(Script, ['type', 'type[A]'], 'f(A)', ['RA'])\n+    check(Script, ['type[A]', 'type[B]', 'type[C]'], 'f(C)', ['RC'])\n+\n+\n+def test_type_keyword_argument(Script):\n+    check(Script, ['int', 'type[C]'], 'f(x=C)', ['RB'])\n+    check(Script, ['type[A]', 'type[B]'], 'f(x=B)', ['RA'])\n+    check(Script, ['type[C]', 'int'], 'f(x=3)', ['RB'])\n+\n+\n+TWO_PARAMETERS = '''\\\n+@overload\n+def g(x: type[A], y: type[C]) -> RA: ...\n+@overload\n+def g(x: type[A], y: type[A]) -> RB: ...\n+def g(x, y): ...\n+'''\n+\n+\n+def test_every_argument_has_to_fit(Script):\n+    for call, expected in [\n+        ('g(A, C)', ['RA']),\n+        ('g(B, C)', ['RA']),\n+        ('g(A, A)', ['RB']),\n+        ('g(A, y=B)', ['RB']),\n+        ('g(y=C, x=B)', ['RA']),\n+        ('g(x=A, y=A)', ['RB']),\n+        ('g(C, A)', ['RA', 'RB']),\n+        ('g(A, A())', ['RA', 'RB']),\n+    ]:\n+        assert infer_result(Script, TWO_PARAMETERS + call) == expected, call\n+\n+\n+def variadic(first, second, signature, third=None):\n+    code = ''\n+    for annotation, result in [(first, 'RA'), (second, 'RB'), (third, 'RC')]:\n+        if annotation is not None:\n+            code += '@overload\\ndef f(%s) -> %s: ...\\n' % (signature % annotation, result)\n+    return code + 'def f(*args, **kwargs): ...\\n'\n+\n+\n+@pytest.mark.parametrize('signature', ['*x: %s', 'y: int, *x: %s'])\n+def test_var_positional(Script, signature):\n+    prefix = '1, ' if signature.startswith('y') else ''\n+    for arguments, expected in [\n+        ('C, C', ['RB']),\n+        ('A, B', ['RA']),\n+        ('A, C', ['RA', 'RB']),\n+        ('C, A', ['RA', 'RB']),\n+        ('', ['RA']),\n+    ]:\n+        call = 'f(%s)' % (prefix + arguments).rstrip(', ')\n+        code = variadic('type[A]', 'type[C]', signature) + call\n+        assert infer_result(Script, code) == expected, (signature, call)\n+\n+\n+def test_var_positional_unpacked(Script):\n+    code = variadic('type[A]', 'type[C]', '*x: %s')\n+    assert infer_result(Script, code + 'ks = (C, C)\\nf(*ks)') == ['RB']\n+    assert infer_result(Script, code + 'ks = [A, B]\\nf(*ks)') == ['RA']\n+\n+\n+@pytest.mark.parametrize('signature', ['**x: %s', 'y: int, **x: %s'])\n+def test_var_keyword(Script, signature):\n+    prefix = 'y=1, ' if signature.startswith('y') else ''\n+    for arguments, expected in [\n+        ('p=C, q=C', ['RB']),\n+        ('p=A, q=B', ['RA']),\n+        ('p=A, q=C', ['RA', 'RB']),\n+        ('', ['RA']),\n+    ]:\n+        call = 'f(%s)' % (prefix + arguments).rstrip(', ')\n+        code = variadic('type[A]', 'type[C]', signature) + call\n+        assert infer_result(Script, code) == expected, (signature, call)\n+\n+\n+def test_var_keyword_unpacked(Script):\n+    code = variadic('type[A]', 'type[C]', '**x: %s')\n+    assert infer_result(Script, code + \"f(**{'p': C})\") == ['RB']\n+\n+\n+def test_variadic_parameters_with_other_annotations(Script):\n+    prefix = 'T = TypeVar(\"T\", bound=A)\\n'\n+    code = prefix + variadic('type[T]', 'type[Union[A, C]]', '*x: %s')\n+    assert infer_result(Script, code + 'f(A, B)') == ['RA']\n+    assert infer_result(Script, code + 'f(A, C)') == ['RB']\n+    assert infer_result(Script, code + 'f(C, int)') == ['RA', 'RB']\n+    code = variadic('type', 'int', '*x: %s')\n+    assert infer_result(Script, code + 'f(A, int, str)') == ['RA']\n+    assert infer_result(Script, code + 'f(A, 1)') == ['RA', 'RB']\n+    assert infer_result(Script, code + 'f(1, 2)') == ['RB']\n+\n+\n+def test_variadic_parameters_together(Script):\n+    code = dedent('''\\\n+        @overload\n+        def f(y: int, *x: type[A], z: int = 0, **k: type[A]) -> RA: ...\n+        @overload\n+        def f(y: int, *x: type[C], z: int = 0, **k: type[C]) -> RB: ...\n+        def f(*args, **kwargs): ...\n+        ''')\n+    for call, expected in [\n+        ('f(1, A, B, p=A)', ['RA']),\n+        ('f(1, C, z=2, p=C)', ['RB']),\n+        ('f(1, A, p=C)', ['RA', 'RB']),\n+        ('f(1, p=C)', ['RB']),\n+        ('f(1, C)', ['RB']),\n+        ('f(1, z=2)', ['RA']),\n+    ]:\n+        assert infer_result(Script, code + call) == expected, call\n+\n+\n+def test_no_matching_overload(Script):\n+    check(Script, ['type[A]', 'int'], 'f(C)', ['RA', 'RB'])\n+    check(Script, ['type[A]', 'int'], 'f(A)', ['RA'])\n+    code = variadic('type[A]', 'type[C]', '*x: %s')\n+    assert infer_result(Script, code + 'f(A, C, int)') == ['RA', 'RB']\n+\n+\n+def test_dict_unpacking(Script):\n+    code = variadic('type[A]', 'type[C]', '**x: %s')\n+    for call, expected in [\n+        ('f(**dict(p=C))', ['RB']),\n+        ('f(**dict(p=A))', ['RA']),\n+        ('d = dict(p=C)\\nf(**d)', ['RB']),\n+        ('f(**dict(p=A, q=C))', ['RA', 'RB']),\n+    ]:\n+        assert infer_result(Script, code + call) == expected, call\n+\n+\n+def test_optional_accepts_none(Script):\n+    prefix = 'from typing import Optional\\n'\n+    check(Script, ['Optional[int]', 'str'], 'f(None)', ['RA'], prefix)\n+    check(Script, ['Optional[int]', 'str'], 'f(1)', ['RA'], prefix)\n+    check(Script, ['Optional[int]', 'str'], 'f(\"\")', ['RB'], prefix)\n+\n+\n+def test_dict_positional_argument(Script):\n+    code = variadic('type[A]', 'type[C]', '**x: %s')\n+    for call, expected in [\n+        ('f(**dict([(\"p\", C)]))', ['RB']),\n+        ('f(**dict({\"p\": C}))', ['RB']),\n+        ('f(**dict([(\"p\", A)], q=C))', ['RA', 'RB']),\n+        # A keyword argument replaces the entry of the mapping.\n+        ('f(**dict({\"p\": A}, p=C))', ['RB']),\n+        ('d = dict(p=C)\\nf(**dict(d))', ['RB']),\n+        ('d = dict(ab=C)\\nf(**dict(d))', ['RB']),\n+        ('f(**dict(**dict(p=C)))', ['RB']),\n+    ]:\n+        assert infer_result(Script, code + call) == expected, call\n+    # The mapping and the keyword argument fill the same parameter only once.\n+    check(Script, ['type[A]', 'type[C]'], 'f(**dict({\"x\": A}, x=C))', ['RB'])\n+\n+\n+def test_dict_unpacking_in_method(Script):\n+    code = dedent('''\\\n+        class K:\n+            @overload\n+            def f(self, **x: type[A]) -> RA: ...\n+            @overload\n+            def f(self, **x: type[C]) -> RB: ...\n+            def f(self, **x): ...\n+        ''')\n+    assert infer_result(Script, code + 'K().f(**dict(p=C))') == ['RB']\n+    assert infer_result(Script, code + 'K().f(**dict([(\"p\", A)]))') == ['RA']\n+\n+\n+def test_union_argument(Script):\n+    prefix = dedent('''\\\n+        def g(x: Union[A, C]):\n+            return x\n+        ''')\n+    # Every type the argument may have has to be accepted.\n+    check(Script, ['A', 'C'], 'f(g(A()))', ['RA', 'RB'], prefix)\n+    check(Script, ['Union[A, C]', 'int'], 'f(g(A()))', ['RA'], prefix)\n+    check(Script, ['B', 'Union[A, C]'], 'f(g(A()))', ['RB'], prefix)\n+\n+\n+@pytest.mark.parametrize('annotation', ['type', 'Type', 'type[Any]', 'Type[Any]'])\n+def test_any_class_defined_later(Script, annotation):\n+    prefix = 'class D(C): pass\\n'\n+    check(Script, ['int', annotation], 'f(D)', ['RB'], prefix)\n+    check(Script, [annotation, 'D'], 'f(D())', ['RB'], prefix)\n+\n+\n+def test_optional_of_class(Script):\n+    prefix = 'from typing import Optional\\n'\n+    check(Script, ['Optional[A]', 'C'], 'f(B())', ['RA'], prefix)\n+    check(Script, ['Optional[A]', 'C'], 'f(None)', ['RA'], prefix)\n+    check(Script, ['Optional[A]', 'C'], 'f(C())', ['RB'], prefix)\n+\n+\n+def test_every_collected_argument_is_checked(Script):\n+    code = variadic('type[A]', 'type', '*x: %s')\n+    assert infer_result(Script, code + 'f(A, B, C)') == ['RB']\n+    assert infer_result(Script, code + 'f(A, B, B)') == ['RA']\n+    code = variadic('type[A]', 'type', '**x: %s')\n+    assert infer_result(Script, code + 'f(p=A, q=B, r=C)') == ['RB']\n+    assert infer_result(Script, code + 'f(p=A, q=B, r=B)') == ['RA']\n+\n+\n+def test_dict_unpacking_in_classmethod(Script):\n+    code = dedent('''\\\n+        class K:\n+            @overload\n+            @classmethod\n+            def f(cls, **x: type[A]) -> RA: ...\n+            @overload\n+            @classmethod\n+            def f(cls, **x: type[C]) -> RB: ...\n+            @classmethod\n+            def f(cls, **x): ...\n+        ''')\n+    assert infer_result(Script, code + 'K.f(**dict(p=C))') == ['RB']\n+    assert infer_result(Script, code + 'K().f(**dict(p=A))') == ['RA']\n+\n+\n+def test_dict_unpacking_in_partial(Script):\n+    code = 'import functools\\n' + variadic('type[A]', 'type[C]', '**x: %s')\n+    assert infer_result(Script, code + 'functools.partial(f)(**dict(p=C))') == ['RB']\n+    assert infer_result(Script, code + 'functools.partial(f, q=A)(**dict(p=A))') == ['RA']\n+    assert infer_result(Script, code + 'functools.partial(f, q=A)(**dict(p=C))') == ['RA', 'RB']\n+\n+\n+CONTAINERS = 'import random\\nfrom typing import Iterable, List, Mapping, Sequence\\n'\n+\n+\n+@pytest.mark.parametrize('first, second, call', [\n+    ('list[type[A]]', 'list[type[C]]', 'f([C])'),\n+    ('List[Type[A]]', 'List[Type[C]]', 'x = [C, C]\\nf(x)'),\n+    ('Sequence[type[A]]', 'Sequence[type[C]]', 'f((C, C))'),\n+    ('Iterable[type[A]]', 'Iterable[type[C]]', 'f({C})'),\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C))'),\n+    ('dict[str, type[A]]', 'dict[str, type[C]]', 'f({\"k\": C})'),\n+    ('Mapping[str, type[A]]', 'Mapping[str, type[C]]', 'f(dict(k=C))'),\n+    ('dict[str, list[type[A]]]', 'dict[str, list[type[C]]]', 'f({\"k\": [C]})'),\n+])\n+def test_elements_of_containers(Script, first, second, call):\n+    check(Script, [first, second, 'object'], call, ['RB'], prefix=CONTAINERS)\n+    if not call.startswith('x ='):\n+        # Classes are accepted with their subclasses.\n+        check(Script, [first, second, 'object'], call.replace('C', 'B'), ['RA'],\n+              prefix=CONTAINERS)\n+\n+\n+def test_every_element_has_to_fit(Script):\n+    annotations = ['list[type[A]]', 'list[type[C]]', 'object']\n+    for call in [\n+        'f([A, C])',\n+        'f([C()])',\n+        'f((C,))',\n+        'f([C] if random.random() else [A])',\n+        'f([C if random.random() else A])',\n+    ]:\n+        check(Script, annotations, call, ['RC'], prefix=CONTAINERS)\n+\n+\n+@pytest.mark.parametrize('first, second, call, expected', [\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C,))', ['RB']),\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((C, C, C))', ['RB']),\n+    ('Tuple[Type[A], ...]', 'Tuple[Type[C], ...]', 'f((C,))', ['RB']),\n+    ('tuple[int, ...]', 'tuple[str, ...]', 'f((\"a\", \"b\"))', ['RB']),\n+    ('tuple[int, ...]', 'tuple[str, ...]', 'f((1, 2, 3))', ['RA']),\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((B, A))', ['RA']),\n+    ('tuple[type[A], ...]', 'tuple[type[C], ...]', 'f((A, C))', ['RC']),\n+    ('tuple[type[A], type[A]]', 'tuple[type[C], ...]', 'f((C, C))', ['RB']),\n+    ('tuple[type[C], ...]', 'object', 'f(())', ['RA']),\n+])\n+def test_tuples_of_any_length(Script, first, second, call, expected):\n+    prefix = CONTAINERS + 'from typing import Tuple\\n'\n+    check(Script, [first, second, 'object'], call, expected, prefix=prefix)\n+\n+\n+def test_items_of_mappings_and_other_containers(Script):\n+    def check_items(first, second, call, expected=['RB'], prefix=''):\n+        check(Script, [first, second, 'object'], call, expected, prefix=CONTAINERS + prefix)\n+\n+    check_items('dict[type[A], int]', 'dict[type[C], int]', 'f({C: 1})')\n+    check_items('dict[str, type[A]]', 'dict[int, type[A]]', 'f({1: A})')\n+    check_items('dict[str, type[A]]', 'dict[str, type[C]]', 'f({\"k\": C, **{\"m\": C}})')\n+    check_items('Sequence[type[A]]', 'Sequence[type[C]]', 'f(g())',\n+                prefix='def g() -> tuple[type[C], ...]: ...\\n')\n+    check_items('list[type[T]]', 'list[type[C]]', 'f([C])',\n+                prefix='T = TypeVar(\"T\", bound=A)\\n')\n+\n+\n+def test_protocol_annotations_are_structural(Script):\n+    prefix = dedent('''\\\n+        from typing import Protocol\n+        class Runner(Protocol):\n+            def run(self) -> int: ...\n+        class Good:\n+            def run(self) -> int: return 1\n+        class Bad: pass\n+        ''')\n+    check(Script, ['Runner', 'object'], 'f(Good())', ['RA'], prefix=prefix)\n+    check(Script, ['Runner', 'object'], 'f(Bad())', ['RB'], prefix=prefix)\n+\n+\n+def test_dict_call_accepts_all_pair_iterables(Script):\n+    code = variadic('type[A]', 'type[C]', '**x: %s')\n+    assert infer_result(Script, code + 'f(**dict([[\"p\", C], [\"q\", C]]))') == ['RB']\n+    assert infer_result(\n+        Script, code + 'f(**dict((k, C) for k in (\"p\", \"q\")))'\n+    ) == ['RB']\n+\n+\n+def test_fixed_tuple_slots_and_length(Script):\n+    check(\n+        Script,\n+        ['tuple[type[A], type[C]]', 'tuple[type[C], type[A]]'],\n+        'f((C, A))',\n+        ['RB'],\n+    )\n+    check(\n+        Script,\n+        ['tuple[type[A], type[C]]', 'object'],\n+        'f((A, C, C))',\n+        ['RB'],\n+    )\n+\n+\n+def test_var_keyword_parameter_name_is_collected(Script):\n+    code = variadic('type[A]', 'type[C]', '**x: %s')\n+    assert infer_result(Script, code + 'f(x=C)') == ['RB']\n+\n+\n+def test_partial_call_keyword_overrides_bound_keyword(Script):\n+    code = dedent('''\\\n+        import functools\n+        @overload\n+        def f(*, x: type[A]) -> RA: ...\n+        @overload\n+        def f(*, x: type[C]) -> RB: ...\n+        def f(**kwargs): ...\n+        ''')\n+    assert infer_result(Script, code + 'functools.partial(f, x=A)(x=C)') == ['RB']\n+    assert infer_result(Script, code + 'functools.partial(f, x=A)(**dict(x=C))') == ['RB']\n",
+    "_verifierIncompletenessRunsEnabled": true,
+    "_verifyFairnessContestNote": null,
+    "_verifyFairnessContested": false,
+    "autoReview": {
+      "artifactPath": "orchestrator/kd79hq6rg7v8z28q3rftrks3p58grh2m/synthesis/1792816516788",
+      "autoReviewLane": "olympus",
+      "completedAt": 1792816640198,
+      "createdAt": 1792816516788,
+      "currentStep": "Completed",
+      "jobId": "nx784chr08y4aqz58tb7ca8dnd8gwgqy",
+      "modalFunctionCallId": "fc-01M5P3242XM2JAXWAX9YVGX4BB",
+      "output": {
+        "authorGuidance": "Add a regression for a dictionary comprehension that is statically empty, such as passing `{\"k\": C for _ in []}` to overloads distinguished by dictionary value type. Assert that the empty dictionary vacuously matches the first compatible overload. Without that case, an implementation can pass the entire supplied suite while incorrectly retaining the comprehension body as a real entry.\n\nThe agent runs show that the task is appropriately hard rather than broken. Near-complete implementations most often missed quoted TypeVar forward references, conditional same-key replacement through `**`, or abstract container annotations such as `Sequence`, `Iterable`, and `Mapping`. Those behaviors are already described, so no broader specification rewrite is needed.\n\nKeep the current behavior-oriented description, public inference/completion assertions, and production solution structure. The implementation integrates strict overload matching while preserving lenient generic inference, and the reported baseline and new-test results are strong.",
+        "completed": true,
+        "description": {
+          "band": 3,
+          "confidence": "high",
+          "reasoning": "The description is complete, behavior-focused, self-contained, and non-prescriptive. Its detailed semantics are contract-bearing rather than implementation leakage: they correspond to the broad acceptance surface for type/Type, TypeVars, Optional/Union, containers, variadics, unpacking, mapping replacement, tuple cardinality, first-match selection, and fallback behavior. The existing public overload path confirms the repository fit: jedi/inference/value/function.py:407-411 iterates signatures and returns when `signature.matches_signature(arguments)` succeeds. No kept description issue lowers this field."
+        },
+        "effectiveScope": {
+          "reasoning": "The solution adds substantial production behavior, not configuration or superficial glue: strict signature matching, annotation compatibility across several typing forms, nested star expansion, precise mapping/key replacement modeling, tuple/container semantics, TypeVar resolution, and propagation through method/partial argument wrappers. This clears the lane on substance; Olympus v2 states no effective-LOC floor.",
+          "verdict": "meets_bar"
+        },
+        "executionTimeSeconds": 109.62475,
+        "issues": [
+          {
+            "category": "T3/T4",
+            "claim": "The suite never verifies that a dictionary comprehension proven empty has no entries, allowing an incorrect mapping matcher to pass all hidden tests.",
+            "evidence": {
+              "artifactFile": "agent_solution.patch",
+              "kind": "artifact_line",
+              "line": 617,
+              "quote": "next(iterator, None)  # Possible comma.",
+              "runId": "rd77myzchrqrsy5nz0gpkvqg8d8gvt8q"
+            },
+            "expected": "Add a public-surface inference test for an overload call using a provably empty dictionary comprehension and assert that the first compatible overload is selected because there are no key/value entries to reject it.",
+            "failingCase": "With `f({\"k\": C for _ in []})`, the accepted implementation records the syntactic `\"k\": C` body and consumes the following `comp_for` node as a possible comma, selecting the C-valued overload instead of treating the built dictionary as empty and selecting the first compatible overload.",
+            "loadBearingCheck": "The cited traversal step is load-bearing because it advances past the comprehension node while retaining the preceding syntactic key/value body as an entry. The run artifact reports that this implementation passed all 63 supplied cases, and the shared test patch contains no comprehension assertion. By contrast, the reference patch's `is_empty_comprehension` recognizes iteration over an empty literal and `_mapping_pairs` returns `{}` for it.",
+            "promiseCitation": "“With annotation containers like `list[X]` or `dict[K, V]`, every element of the argument must be accepted by the corresponding annotation” and “the first overload where every invocation argument ... matches the annotation will be used.”",
+            "provenanceCheck": "This is a test-coverage finding rather than a submission-solution defect. The demanded behavior comes directly from the prompt's built-container semantics, and the searched test patch has no `comprehension` or `for _ in []` case.",
+            "reachabilityCheck": "The proposed case uses the same `Script(...).infer` public surface and overload helper as the existing container tests. The expression reaches mapping element matching through an ordinary annotated `dict` argument; no private-only or dead path is involved.",
+            "severity": "High",
+            "whyItMatters": "An implementation can satisfy every supplied assertion yet select the wrong overload for a normal dictionary-comprehension expression. The existing mapping tests do not indirectly cover this path, while the reference solution contains dedicated empty-comprehension handling.",
+            "wrongImpl": "The passing run treats each `dictorsetmaker` body as a concrete key/value entry and consumes the next child as a possible comma. For an empty comprehension, that child is `comp_for`, so the implementation models an entry that the built dictionary never contains while still passing all existing supplied tests."
+          }
+        ],
+        "otherNotes": "Agent runs indicate a legitimately difficult task: only one of 12 working runs passed, while several near-misses reached 61/63 or 62/63. Their recurring misses—forward-referenced TypeVar bounds, conditional same-key `**` replacement, and abstract Sequence/Iterable/Mapping handling—are all stated or inferable from the task and therefore indicate fair edge-case difficulty rather than hidden requirements. The available artifacts do not expose codename allocation or an auditable Nova sequence-length aggregate, so those lane-level rollout properties could not be independently checked here.",
+        "otherNotesTags": [
+          "difficulty"
+        ],
+        "outcome": "revision_requested",
+        "solution": {
+          "band": 3,
+          "confidence": "high",
+          "reasoning": "No verified solution defect remains. The patch supplies substantive, coherent production logic across overload matching, annotation acceptance, variadic and unpacked argument collection, mapping entry/replacement semantics, tuple/container handling, TypeVar resolution, and wrapper propagation. It preserves a separate lenient path for class-generic inference and falls back to combined overload results when strict matching finds none. Reported verification covers 3,955 baseline tests and all 63 new tests, with no grounded regression, irrelevant change, or API instability."
+        },
+        "summary": "The description and production solution are strong and well-scoped, but the tests have one verified material coverage gap: a provably empty dictionary comprehension is not exercised, and a concrete wrong implementation passed all supplied cases because of that omission. This High T3/T4 finding requires revision.",
+        "tests": {
+          "band": 1,
+          "confidence": "high",
+          "reasoning": "The suite and harness otherwise exercise observable Jedi behavior broadly and deterministically, and the reported dynamic checks show the base suite passes, every new case fails on base, and all new cases pass on the reference solution. However, the kept High T3/T4 coverage issue controls this band. The strongest disproof would be that another mapping assertion indirectly exercises a provably empty comprehension, but searches of the full test patch found no comprehension case; the mapping tests cover literals, unpacking, conditional mappings, keys/values, and replacement only. A concrete implementation reportedly passes all 63 supplied cases while treating the syntactic body of `{\"k\": C for _ in []}` as an entry. The demanded check is within the stated every-element and first-match contract, and the reference patch explicitly detects empty comprehensions and returns no mapping pairs, so it would pass the regression."
+        }
+      },
+      "progress": 100,
+      "stale": true,
+      "status": "completed"
+    },
+    "descriptionQuality": {
+      "artifactPath": "20261025/6x8gyet8_evaluate_101234",
+      "completedAt": 1792923226950,
+      "createdAt": 1792923154521,
+      "currentStep": "Completed",
+      "jobId": "nx7e73mwbjg3gv1p5nbx8hc7r98gy9k5",
+      "modalFunctionCallId": "fc-01M5S8RF0J3KTZQPRH55KGPAZV",
+      "output": {
+        "completed": true,
+        "evaluation": {
+          "comments": [],
+          "requirementCount": {
+            "blocking": true,
+            "mode": "blocking"
+          },
+          "summary": "There are too many requirements in this task",
+          "verdict": "FAIL",
+          "verdictBasis": {
+            "dropped": [],
+            "majors": 0,
+            "minors": 0,
+            "requirementCountBlocking": true
+          }
+        },
+        "executionTimeSeconds": 66.67321,
+        "summary": "There are too many requirements in this task",
+        "verdict": "FAIL"
+      },
+      "progress": 100,
+      "stale": false,
+      "status": "completed"
+    },
+    "solutionQuality": {
+      "artifactPath": "20261025/6x8gyet8_evaluate_101234",
+      "completedAt": 1792923367283,
+      "createdAt": 1792923154521,
+      "currentStep": "Completed",
+      "jobId": "nx72qjrjz6qdam5gvzrzwjhhqh8gzsqf",
+      "modalFunctionCallId": "fc-01M5S8RET9JFWR4V93796FZB2K",
+      "output": {
+        "completed": true,
+        "evaluation": {
+          "code_quality": {
+            "level": "Partially Met",
+            "max_score": 3,
+            "reasoning": "Most of the changes are integrated with the existing argument/signature and gradual-typing machinery, and wrapper classes that need to propagate the new argument-expansion behavior are updated. The solution also modifies `jedi/inference/value/klass.py` to add a substantial structural Protocol compatibility implementation (`_Params`, `_compatible_params`, `_member_compatible`, and `_provides_protocol_members`). Protocol matching is not among the described changes, and this large addition substantially expands the patch's surface area; it should be separated or justified as necessary for a stated requirement. The repository's configured flake8 gate was checked; no definite violation is called out here.",
+            "score": 2
+          },
+          "issues": [
+            {
+              "criterion": "comprehensiveness",
+              "detail": "Please check every iterable clause in a comprehension (or otherwise determine whether the comprehension can produce any entries). For example, `f({k: C for k in [1] for _ in []})` produces an empty dict, so a `dict[str, type[A]]` annotation accepts it vacuously. The added `is_empty_comprehension` logic checks only `comp_for.children[3]`, the first iterable; the mapping-item fallback can therefore treat this empty comprehension as having an unknown value and reject the overload instead of selecting the first matching overload.",
+              "evidence": "Description: “A dict comprehension over an empty literal holds no entries.”",
+              "severity": "high",
+              "title": "Nested empty dict comprehensions are not recognized as empty"
+            },
+            {
+              "criterion": "comprehensiveness",
+              "detail": "Please preserve the positional assignments for every possible sequence length when the variant product exceeds the limit, or conservatively avoid claiming a match when those assignments cannot be checked. `argument_variants` returns `[self]` after more than `_MAX_ARGUMENT_VARIANTS` choices; in the fallback, each variable-length `*` contributes a possibly-missing placeholder, but following positional arguments are not shifted into the earlier parameter slots when an unpacked sequence is empty. For example, five independent `xs = [A] if condition else []` unpackings followed by `C` have 32 length combinations; a signature with five optional `type[A]` parameters and a final optional `type[C]` parameter can appear to match the placeholders, despite the all-empty call binding `C` to the first `type[A]` parameter.",
+              "evidence": "Description: “When the unpacked value may be sequences of different lengths, like `xs` in `xs = [A] if c else []`, the overload must match every possible call, so in `f(*xs, C)` the argument `C` may be the first or the second one.”",
+              "severity": "medium",
+              "title": "Variant limit can produce an incorrect overload match"
+            },
+            {
+              "criterion": "quality",
+              "detail": "Please move the structural Protocol checker to a separately scoped change, or explain why it is required for the promised overload-argument behavior. The patch adds a sizeable implementation for Protocol member discovery and callable variance, although the described task does not request Protocol matching; keeping this separate would reduce risk and make the overload-resolution change easier to review.",
+              "evidence": "`jedi/inference/value/klass.py`, added by this patch around lines 642–826 and 845–891, contains `_Params`, `_compatible_params`, `_member_compatible`, and `ClassValue._provides_protocol_members`; the problem description focuses on overload selection, `type[...]`, Optional, containers, and unpacked arguments.",
+              "severity": "medium",
+              "title": "Large Protocol-matching feature is outside the described change"
+            }
+          ],
+          "overall_feedback": "The main inference path is thoughtfully connected across argument expansion, signature matching, and annotation acceptance, and it addresses the issue example as well as the described class, union, container, and variadic cases. I found two remaining contract gaps: empty dict comprehensions with a later empty generator clause are not recognized as empty, and the >16 variant fallback can erase positional shifts and falsely accept an overload.\n\nAll solution-touched files are production code; no solution tests, docs, or configuration files are added. The additional structural Protocol implementation in `value/klass.py` is a significant scope expansion and should be separated or tied explicitly to a stated requirement. With the comprehension gap contradicting a concrete promise, the solution is not fully comprehensive despite the green test run.",
+          "solution_comprehensiveness": {
+            "level": "Not Met",
+            "max_score": 3,
+            "reasoning": "The production changes span `jedi/inference/arguments.py`, `base_value.py`, `gradual/base.py`, `gradual/type_var.py`, `gradual/typing.py`, `lazy_value.py`, `param.py`, `signature.py`, `value/function.py`, `value/instance.py`, `value/klass.py`, and `jedi/plugins/stdlib.py`; no tests, docs, or configuration are added by the solution patch. The implementation covers the central contracts: `type`/`Type` distinguish classes from instances, TypeVar bounds and constraints and Optional are considered, container elements and mapping keys/values are checked, overload arguments are checked collectively, and the first match is selected before falling back to combined results. However, the empty-dict-comprehension handling does not cover a comprehension whose later `for` clause iterates an empty literal: `is_empty_comprehension` checks only the initial iterable, so an actually empty mapping can be treated as having an unknown value and fail the generic annotation check. That contradicts the stated empty-comprehension behavior. There is also a bounded-variant fallback that can lose positional shifts for calls with many variable-length `*` unpackings, so it can accept an overload that fails on one possible call.",
+            "score": 1
+          },
+          "summary": "Core overload matching is implemented, but empty nested dict comprehensions and high-variant `*` calls violate promised matching semantics; the patch also adds a substantial unrelated Protocol checker.",
+          "verdict": "FAIL"
+        },
+        "executionTimeSeconds": 207.178889,
+        "summary": "Core overload matching is implemented, but empty nested dict comprehensions and high-variant `*` calls violate promised matching semantics; the patch also adds a substantial unrelated Protocol checker.",
+        "verdict": "FAIL"
+      },
+      "progress": 100,
+      "stale": false,
+      "status": "completed"
+    },
+    "taskQuality": {
+      "artifactPath": "20261025/6x8gyet8_evaluate_101234",
+      "completedAt": 1792923212548,
+      "createdAt": 1792923154521,
+      "currentStep": "Completed",
+      "jobId": "nx7fw0qgspdbzmd5zxvh53n12s8gzdj9",
+      "modalFunctionCallId": "fc-01M5S8REP15PJC9X1WHE8VTBM5",
+      "output": {
+        "completed": true,
+        "evaluation": {
+          "criteria": [
+            {
+              "criterion_id": "01",
+              "criterion_name": "Task is Authentic Engineering Work",
+              "justification": "This is a concrete Jedi inference bug with a visible user impact: calling an overloaded factory with a class can expose completions from the wrong return type. The repository already has overload dispatch in `jedi/inference/value/function.py` and argument-to-signature matching in `jedi/inference/signature.py` and `jedi/inference/param.py`, so the requested work addresses a real subsystem rather than an artificial exercise.",
+              "suggestions": "",
+              "verdict": "PASS"
+            },
+            {
+              "criterion_id": "02",
+              "criterion_name": "Has Reasonable Formatting and Presentation",
+              "justification": "The title is concise and the description is grammatical, readable prose. It is unusually dense and lengthy, but it groups related semantics—class types, containers, unpacking, dictionary replacement, and overload fallback—into understandable paragraphs rather than being unintelligible or contradictory.",
+              "suggestions": "",
+              "verdict": "PASS"
+            },
+            {
+              "criterion_id": "03",
+              "criterion_name": "Clearly Describes What to Build/Fix",
+              "justification": "The task gives the central behavior (choose the first overload that accepts every invocation argument, otherwise combine overload results) and specifies the relevant edge cases: `type[...]`, TypeVars, Optional, unions, variadic parameters, unpacked literals, container elements, dictionary key replacement, and uncertain sequence lengths. The repository’s existing signature/argument machinery provides context for integrating these requirements without needing an arbitrary new public interface.",
+              "suggestions": "",
+              "verdict": "PASS"
+            },
+            {
+              "criterion_id": "04",
+              "criterion_name": "The Challenge is Fair",
+              "justification": "The test patch’s behaviors are stated in the description or are natural applications of those stated rules: for example, checking all types in a union, handling `*args`/`**kwargs`, matching every possible unpacked sequence length, and treating equal dictionary keys as replacements. The repository has established overload, annotation, generic, and argument-unpacking machinery to inspect and extend; the tests require functional inference results, not particular helper names or file layouts. The less common dictionary cases (conditional nested unpacking, class/tuple keys, and numeric equality) are explicitly called out in the task, so they are not hidden gotchas.",
+              "suggestions": "",
+              "verdict": "PASS"
+            },
+            {
+              "criterion_id": "05",
+              "criterion_name": "Self-Contained (Not Repo-Wide Refactor)",
+              "justification": "The scope is bounded to overload resolution and the type/argument inference it depends on; it does not ask for a repository-wide redesign. At the same time, it necessarily engages several related components—signature matching, parameter binding, gradual typing, container iteration, and argument expansion—rather than being an isolated edit.",
+              "suggestions": "",
+              "verdict": "PASS"
+            },
+            {
+              "criterion_id": "06",
+              "criterion_name": "Not Trivial or Too Easy",
+              "justification": "This requires substantial reasoning about interacting inference behaviors, including unions and subclassing, annotation forms, argument binding, variadic aggregation, and possible dictionary or sequence contents. The new tests span many scenarios and the existing implementation shows these concerns cross `arguments.py`, `param.py`, `signature.py`, and gradual typing code, making this a demanding engineering task rather than a mechanical change.",
+              "suggestions": "",
+              "verdict": "PASS"
+            },
+            {
+              "criterion_id": "07",
+              "criterion_name": "Success is Objectively Verifiable",
+              "justification": "Correctness can be tested through Jedi’s inferred return values and completion suggestions for the specified calls. The test patch supplies explicit expected overload results for the core behavior and edge cases, so success is not subjective.",
+              "suggestions": "",
+              "verdict": "PASS"
+            },
+            {
+              "criterion_id": "08",
+              "criterion_name": "Long-Horizon and System-Level",
+              "justification": "Solving the task requires tracing how call arguments are unpacked and bound, how annotations are represented and compared, and how the selected overload’s return type reaches inference and completion. The existing implementation places these responsibilities across multiple modules, and the requested cases—including nested unpacking and container contents—require coordinated changes rather than one isolated adjustment.",
+              "suggestions": "",
+              "verdict": "PASS"
+            }
+          ],
+          "fail_count": 0,
+          "pass_count": 8,
+          "summary": "The task is a well-specified, substantial Jedi inference improvement. Its detailed edge cases align with the stated behavior and with the repository’s existing overload and argument-inference architecture; no checklist criterion needs correction.",
+          "uncertain_count": 0,
+          "verdict": "PASS"
+        },
+        "executionTimeSeconds": 55.009191,
+        "summary": "The task is a well-specified, substantial Jedi inference improvement. Its detailed edge cases align with the stated behavior and with the repository’s existing overload and argument-inference architecture; no checklist criterion needs correction.",
+        "verdict": "PASS"
+      },
+      "progress": 100,
+      "stale": false,
+      "status": "completed"
+    },
+    "verifierIncompleteness": {
+      "artifactPath": "20261020/mn8gb1t7_verifier_incompleteness_083955",
+      "completedAt": 1792486216790,
+      "createdAt": 1792485595541,
+      "currentStep": "Completed",
+      "jobId": "nx7d3m3y0hgexqrh4z3s6b3w658gm4r3",
+      "modalFunctionCallId": "fc-01M5C7F6QPPGB1EMWVM6XT4JAE",
+      "output": {
+        "agentMessages": 39,
+        "agentSteps": 19,
+        "completed": true,
+        "executionTimeSeconds": 613.779729,
+        "gaps": [
+          {
+            "demonstrated": true,
+            "description": "The original tests use names such as p and q for a parameter spelled **x, but never call f(x=...). Omitting the strict binding special case causes x=C to be bound as the raw class value rather than as an entry of the kwargs mapping; overload matching then calls exact_key_items on ClassValue and crashes. This violates the requirement that all arguments received through **kwargs be aggregated and checked.",
+            "evidence": "The combined broken implementation passed the original 61/61 new tests and the full base suite (3,955 passed). Direct probes produced reference `var_keyword_named_x ['RB']` versus broken `CRASH: AttributeError: 'ClassValue' object has no attribute 'exact_key_items'`. With the replacement verifier, `test_var_keyword_parameter_name_is_collected` fails with that traceback.",
+            "plausibility": "high",
+            "probeDescription": "Two overloads f(**x: type[A]) -> RA and f(**x: type[C]) -> RB, called as f(x=C). The reference returns ['RB']; the broken implementation raises AttributeError: 'ClassValue' object has no attribute 'exact_key_items'.",
+            "remedyTestNames": [
+              "test_var_keyword_parameter_name_is_collected"
+            ],
+            "requirementIds": [
+              "R9",
+              "R12"
+            ],
+            "severity": "crash",
+            "title": "**kwargs crashes when the keyword has the same name as the variadic parameter",
+            "wrongImplDescription": "Reuse the existing non-strict argument binder for overload matching and do not special-case a keyword whose spelling equals a starred parameter name."
+          },
+          {
+            "demonstrated": true,
+            "description": "The spec explicitly requires dict(...) in any call form it supports. The verifier checks iterable tuple pairs but not other valid two-item iterables such as list pairs. An implementation can incorrectly assume each pair is a tuple and lose the values used for overload selection.",
+            "evidence": "The tuple-only-pair shortcut passed all 61 original new tests and the 3,981-test base run. Probe output was reference `dict_list_lists ['RB']` and broken `dict_list_lists ['RA', 'RB']`. The added `test_dict_call_accepts_all_pair_iterables` fails on its first assertion against the shortcut and also pins a generator-of-pairs form.",
+            "plausibility": "high",
+            "probeDescription": "For **x overloads annotated type[A] and type[C], call f(**dict([['p', C], ['q', C]])). The reference selects only RB; the shortcut combines RA and RB.",
+            "remedyTestNames": [
+              "test_dict_call_accepts_all_pair_iterables"
+            ],
+            "requirementIds": [
+              "R10"
+            ],
+            "severity": "wrong_result",
+            "title": "Valid dict(...) iterable-of-list-pairs form is not pinned",
+            "wrongImplDescription": "When expanding dict(iterable), accept only tuple-valued pairs and treat list-valued pairs as unknown entries."
+          },
+          {
+            "demonstrated": true,
+            "description": "No original test uses typing.Protocol. A hurried implementation can perform only nominal subclass checks, contrary to type-checker matching, and reject a class that structurally provides every required protocol member.",
+            "evidence": "The nominal-Protocol shortcut passed all original new and base tests. Probe output was reference `protocol_match ['RA']` versus broken `protocol_match ['RB']`; the reference also rejected a missing-member class as RB. The replacement's `test_protocol_annotations_are_structural` fails against the shortcut.",
+            "plausibility": "high",
+            "probeDescription": "Runner(Protocol) requires run() -> int; Good defines that method without inheriting Runner. For overloads Runner -> RA and object -> RB, the reference returns RA while the nominal shortcut returns RB.",
+            "remedyTestNames": [
+              "test_protocol_annotations_are_structural"
+            ],
+            "requirementIds": [
+              "R6",
+              "R13"
+            ],
+            "severity": "wrong_result",
+            "title": "Protocol annotations can be treated nominally instead of structurally",
+            "wrongImplDescription": "Use the ordinary nominal annotation_accepts implementation for Protocol classes and omit structural member matching."
+          },
+          {
+            "demonstrated": true,
+            "description": "The original partial tests combine different keyword names but never bind and later replace the same name. Concatenating bound and call-time keywords can make overload binding see a duplicate or preserve the stale bound value, rather than applying functools.partial's replacement semantics.",
+            "evidence": "The concatenate-only partial merge passed all original tests and the full base suite. Probe outputs were reference `partial_keyword_override ['RB']` and `partial_dict_override ['RB']`, versus broken `['RA']` for both. `test_partial_call_keyword_overrides_bound_keyword` fails against the shortcut.",
+            "plausibility": "high",
+            "probeDescription": "Bind x=A in functools.partial(f, x=A), then call it with x=C (directly and through **dict(x=C)); overloads distinguish type[A] and type[C]. The reference returns RB, while the shortcut returns RA.",
+            "remedyTestNames": [
+              "test_partial_call_keyword_overrides_bound_keyword"
+            ],
+            "requirementIds": [
+              "R11",
+              "R15"
+            ],
+            "severity": "wrong_result",
+            "title": "Call-time functools.partial keywords need not override bound keywords",
+            "wrongImplDescription": "Merge partial arguments by yielding bound arguments followed by call-time arguments, without replacing a bound keyword when the call supplies the same key."
+          },
+          {
+            "demonstrated": true,
+            "description": "Existing tuple tests robustly cover homogeneous tuples, but their one fixed-tuple case does not require checking distinct slots or exact arity. Flattening tuple[T1, T2] into a union of T1 and T2 therefore passes, despite violating the corresponding-annotation rule.",
+            "evidence": "The flattening shortcut passed all 61 original tests and the full base suite. Probe outputs were reference `fixed_tuple_positions ['RB']` / `fixed_tuple_length ['RB']` versus broken `['RA']` / `['RA']`. The added `test_fixed_tuple_slots_and_length` fails against it.",
+            "plausibility": "medium",
+            "probeDescription": "For tuple[type[A], type[C]] and tuple[type[C], type[A]], call f((C, A)); the reference selects the second overload RB while the flattened shortcut selects first RA. For tuple[type[A], type[C]] versus object, f((A, C, C)) selects object RB in the reference but fixed-tuple RA in the shortcut.",
+            "remedyTestNames": [
+              "test_fixed_tuple_slots_and_length"
+            ],
+            "requirementIds": [
+              "R5",
+              "R14"
+            ],
+            "severity": "wrong_result",
+            "title": "Fixed tuple annotations can be flattened, losing slot order and arity",
+            "wrongImplDescription": "For a fixed tuple annotation, union all slot annotations and merely require every argument element to match some member of that union; do not zip slots or require equal lengths."
+          }
+        ],
+        "patchValidation": {
+          "appliesCleanly": true,
+          "baseTestsPass": true,
+          "log": "git apply --check: ok\nbase (no solution): PASSED (3981 tests, 3955 passed, 26 skipped)\nnew (no solution): FAILED (66 tests, 66 failed) (exit 1)\nbase (with solution): PASSED (3981 tests, 3955 passed, 26 skipped)\nnew (with solution): PASSED (66 tests, 66 passed)",
+          "referencePassesUpdatedSuite": true,
+          "updatedNewTestsFailOnCleanRepo": true
+        },
+        "requirements": [
+          {
+            "id": "R1",
+            "sourceQuote": "A `type[X]` parameter accepts class `X` and its subclasses, not instances.",
+            "text": "type[X] and Type[X] accept the class X and subclasses of X, but reject instances and unrelated classes.",
+            "tier": 1
+          },
+          {
+            "id": "R2",
+            "sourceQuote": "Annotation `type`, `Type` or `type[Any]` accepts all classes.",
+            "text": "Bare type/Type and type[Any]/Type[Any] accept every class but not instances.",
+            "tier": 1
+          },
+          {
+            "id": "R3",
+            "sourceQuote": "With `type[T]` where `T` is TypeVar, the class must satisfy the bounds or one of the constraints of `T`; If `T` has no bounds and no constraints, then all classes are accepted.",
+            "text": "For type[T], bounded and constrained TypeVars restrict accepted classes accordingly, while an unconstrained TypeVar accepts every class.",
+            "tier": 1
+          },
+          {
+            "id": "R4",
+            "sourceQuote": "The `Optional[X]` parameter takes `None` and any value that `X` takes.",
+            "text": "Optional[X] accepts None and every value accepted by X, and rejects values accepted by neither branch.",
+            "tier": 1
+          },
+          {
+            "id": "R5",
+            "sourceQuote": "With annotation containers like `list[X]` or `dict[K, V]`, every element of the argument must be accepted by the corresponding annotation; With dict, both key and value must be accepted.",
+            "text": "Container annotations recursively check every element; mapping annotations check every key and every value against their corresponding annotations.",
+            "tier": 1
+          },
+          {
+            "id": "R6",
+            "sourceQuote": "Jedi should choose overload as a type checker: the first overload where every invocation argument (either by position or by name) matches the annotation will be used, and only if no overload matches will combine the results of all overloads.",
+            "text": "Overload selection checks all invocation arguments, whether bound positionally or by name, and chooses the first matching overload.",
+            "tier": 1
+          },
+          {
+            "id": "R7",
+            "sourceQuote": "Jedi should choose overload as a type checker: the first overload where every invocation argument (either by position or by name) matches the annotation will be used, and only if no overload matches will combine the results of all overloads.",
+            "text": "If no overload matches completely, inference combines the return results of all overloads rather than selecting a partial match or returning nothing.",
+            "tier": 1
+          },
+          {
+            "id": "R8",
+            "sourceQuote": "If an argument passed by position or by name can have multiple types (e.g. Union), the annotation must accept all of those types.",
+            "text": "If an inferred invocation argument has multiple possible types, every possible type must satisfy the parameter annotation.",
+            "tier": 1
+          },
+          {
+            "id": "R9",
+            "sourceQuote": "When parameters receive arguments via `*args` or `**kwargs`, annotations describing each argument are aggregated; Arguments unpacked from a tuple, list, or dict at the call are also counted, including dicts created by a `dict(...)` call in any call form that `dict` supports. These rules also apply when an overloaded function is called via `functools.partial`. If `*args` or `**kwargs` receives no arguments, the overload still matches.",
+            "text": "The annotations on *args and **kwargs describe each collected argument; every collected argument must match, while collecting none is a valid match.",
+            "tier": 1
+          },
+          {
+            "id": "R10",
+            "sourceQuote": "When parameters receive arguments via `*args` or `**kwargs`, annotations describing each argument are aggregated; Arguments unpacked from a tuple, list, or dict at the call are also counted, including dicts created by a `dict(...)` call in any call form that `dict` supports.",
+            "text": "Arguments unpacked at the call from tuples, lists, and dicts participate in matching, including every valid dict(...) construction form.",
+            "tier": 1
+          },
+          {
+            "id": "R11",
+            "sourceQuote": "These rules also apply when an overloaded function is called via `functools.partial`.",
+            "text": "The same overload-resolution rules apply through functools.partial, combining bound arguments and call-time arguments according to partial call semantics.",
+            "tier": 1
+          },
+          {
+            "id": "R12",
+            "sourceQuote": "When parameters receive arguments via `*args` or `**kwargs`, annotations describing each argument are aggregated; Arguments unpacked from a tuple, list, or dict at the call are also counted, including dicts created by a `dict(...)` call in any call form that `dict` supports.",
+            "text": "A keyword whose spelling equals the **kwargs parameter's own name is still an ordinary collected keyword value and must be annotation-checked without crashing.",
+            "tier": 2
+          },
+          {
+            "id": "R13",
+            "sourceQuote": "Jedi should choose overload as a type checker: the first overload where every invocation argument (either by position or by name) matches the annotation will be used, and only if no overload matches will combine the results of all overloads.",
+            "text": "Because overload selection is type-checker-like, structurally conforming values satisfy Protocol annotations even without nominal inheritance, while nonconforming values do not.",
+            "tier": 2
+          },
+          {
+            "id": "R14",
+            "sourceQuote": "With annotation containers like `list[X]` or `dict[K, V]`, every element of the argument must be accepted by the corresponding annotation; With dict, both key and value must be accepted.",
+            "text": "For a fixed-length tuple annotation, each element must match its corresponding positional annotation and tuple length must match; annotations cannot be flattened into an unordered union.",
+            "tier": 2
+          },
+          {
+            "id": "R15",
+            "sourceQuote": "These rules also apply when an overloaded function is called via `functools.partial`.",
+            "text": "When calling a functools.partial, a call-time keyword replaces a previously bound keyword of the same name before overload matching.",
+            "tier": 2
+          }
+        ],
+        "summary": "Audited the specification, the 61-test verifier, the reference implementation, the full 3,981-test base suite, and adversarial probes. The original verifier strongly covers type[X]/Type[X], subclass-vs-instance behavior, Any-class forms, TypeVar bounds/constraints, Optional, first-match/fall-through ordering, positional/keyword/multi-valued arguments, direct and unpacked variadics, many dict(...) forms, methods/classmethods/partial, and homogeneous/nested containers. Five real blind spots remain. A single plausible broken implementation combining those five shortcuts passed all original verifier tests (61/61) and the full base suite (3,955 passed, 21 skipped, 5 xfailed), while reference probes diverged on every blind spot. The replacement /var/artifacts/updated_test.patch adds five tests; it applies cleanly to the pristine checkout, all 66 tests pass with the reference, and all five added tests fail against the demonstrated broken implementation.",
+        "verdict": "INCOMPLETE"
+      },
+      "progress": 100,
+      "stale": true,
+      "status": "completed"
+    },
+    "verifyBuild": {
+      "artifactPath": "20261015/mn8gb1t7_verify_build_194417",
+      "completedAt": 1792093467199,
+      "createdAt": 1792093457672,
+      "currentStep": "Completed",
+      "jobId": "nx70dana7wa1kebr8jaev5mxrn8ga1yr",
+      "modalFunctionCallId": "fc-01M50HG3N4WQFNRVNEHWYXMF4P",
+      "output": {
+        "completed": true,
+        "executionTimeSeconds": 1.482287,
+        "message": "Docker image built successfully."
+      },
+      "progress": 100,
+      "stale": false,
+      "status": "completed"
+    },
+    "verifyFairness": {
+      "artifactPath": "20261025/6x8gyet8_verify_fairness_101234",
+      "completedAt": 1792923350692,
+      "createdAt": 1792923154521,
+      "currentStep": "Completed",
+      "jobId": "nx7bf4mn3fbe9v1csharagan018gys5j",
+      "modalFunctionCallId": "fc-01M5S8REKS8G5AX5SY9KSBNGHW",
+      "output": {
+        "completed": true,
+        "coverageSuggestions": [
+          {
+            "area": "Call-time dict unpacking into fixed named parameters",
+            "gapKind": "not_discriminating",
+            "requirement": "Call-time unpacking from tuple, list, or dict literals and variables containing them is counted, including nested `*` inside a literal.",
+            "sourceIfAdded": "Prompt-stated",
+            "suggestion": "Add overload calls such as `f(**{'x': A})` and `f(**d)` where `x` is a regular named formal parameter, and assert that its annotation is checked. Current dict-unpacking tests unpack into `**kwargs`, so they would not detect an implementation that fails to bind unpacked keys to fixed parameters."
+          }
+        ],
+        "error": "",
+        "executionTimeSeconds": 188.483537,
+        "message": "All hidden tests are fair.",
+        "overall": "All 35 test functions have a concrete basis in the prompt or standard Python typing/method-binding semantics. The tests assert inferred overload return types or the explicitly requested completion members; they do not pin error-message text or Jedi internals. Snippets containing `random.random()` are analyzed as source code and are not executed by these tests, so they do not introduce run-to-run randomness. One coverage gap remains: call-time `**` unpacking is tested into `**kwargs`, but not into named fixed parameters; an implementation could handle variadic keyword collection while failing to bind unpacked dict keys to ordinary formal parameters.",
+        "requirements": [
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_type_of_class",
+              "test_type_rejects_instances",
+              "test_optional_of_class"
+            ],
+            "requirement": "A `type[X]` parameter accepts class `X` and subclasses, but not instances.",
+            "sourceQuote": "A parameter `type[X]` accepts class `X` and its subclasses, not instances."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_any_class",
+              "test_any_class_defined_later"
+            ],
+            "requirement": "The broad `type`, `Type`, and `type[Any]` forms accept all classes.",
+            "sourceQuote": "Annotation `type`, `Type` or `type[Any]` accepts all classes."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_type_of_type_var",
+              "test_type_var_with_forward_references",
+              "test_variadic_parameters_with_other_annotations"
+            ],
+            "requirement": "`type[T]` class objects must satisfy a TypeVar bound or constraint, while an unbounded and unconstrained TypeVar accepts all classes.",
+            "sourceQuote": "With `type[T]` where `T` is TypeVar, the class must satisfy the bounds or one of the constraints of `T`; If `T` has no bounds and no constraints, then all classes are accepted."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_optional_accepts_none",
+              "test_optional_of_class"
+            ],
+            "requirement": "Optional accepts `None` and values accepted by its inner type.",
+            "sourceQuote": "The `Optional[X]` parameter takes `None` and any value that `X` takes."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_elements_of_containers",
+              "test_every_element_has_to_fit",
+              "test_items_of_mappings_and_other_containers"
+            ],
+            "requirement": "Every element in an annotated container must match its corresponding annotation, including elements unpacked inside list/dict literals.",
+            "sourceQuote": "With annotation containers like `list[X]` or `dict[K, V]`, every element of the argument must be accepted by the corresponding annotation, including elements unpacked with `*` or `**` right in the literal like `[C, *a]` or `{\"k\": C, **d}`;"
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_items_of_mappings_and_other_containers"
+            ],
+            "requirement": "For dict annotations, both keys and values must match their corresponding annotations.",
+            "sourceQuote": "With dict, both key and value must be accepted."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_dict_unpacking",
+              "test_items_of_mappings_and_other_containers",
+              "test_keys_that_are_not_strings"
+            ],
+            "requirement": "Dict literal contents reflect later replacement of earlier equal keys, including when keys are numbers, classes, or tuples.",
+            "sourceQuote": "The entries of a dict literal are the ones it holds once built: a key written later replaces an earlier entry with the same key, whether that entry was written directly or came from `**`. Keys are the same when Python considers them equal, which includes numbers like `1` and `True`, classes, and tuples like `(1, 2)`."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_dict_unpacking",
+              "test_items_of_mappings_and_other_containers",
+              "test_entries_of_dict_comprehensions",
+              "test_entries_that_may_be_missing_in_nested_mappings"
+            ],
+            "requirement": "An entry that may or may not exist, including through nested `**`, replaces an earlier entry only when present, so both values remain possible.",
+            "sourceQuote": "An entry that the dict may or may not hold, for example from `**` of a conditional expression, possibly through nested `**`, replaces the earlier one only when it is there, so both values stay possible."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_entries_of_dict_comprehensions"
+            ],
+            "requirement": "A dict comprehension over an empty literal holds no entries.",
+            "sourceQuote": "A dict comprehension over an empty literal holds no entries."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_unpacked_sequences_of_several_lengths",
+              "test_tuples_of_unknown_length"
+            ],
+            "requirement": "An unknown-length tuple value does not match a fixed-length tuple annotation.",
+            "sourceQuote": "A value of unknown length, such as a value of type `tuple[X, ...]`, does not match a fixed-length tuple annotation such as `tuple[X]`."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_first_matching_overload_wins",
+              "test_type_keyword_argument",
+              "test_every_argument_has_to_fit",
+              "test_no_matching_overload"
+            ],
+            "requirement": "Select the first overload where every invocation argument matches by position or name; combine all overload results only if none matches.",
+            "sourceQuote": "Jedi should choose overload as a type checker: the first overload where every invocation argument (either by position or by name) matches the annotation will be used, and only if no overload matches will combine the results of all overloads."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_union_argument"
+            ],
+            "requirement": "When an argument has multiple possible types, the annotation must accept all of them.",
+            "sourceQuote": "If a positional or name argument can have multiple types (e.g. Union), the annotation must accept all of those types."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_var_positional",
+              "test_var_keyword",
+              "test_variadic_parameters_with_other_annotations",
+              "test_variadic_parameters_together",
+              "test_no_matching_overload",
+              "test_every_collected_argument_is_checked"
+            ],
+            "requirement": "Types received through `*args` or `**kwargs` are aggregated for matching, and an overload still matches if the variadic parameter receives no arguments.",
+            "sourceQuote": "When parameters receive arguments via `*args` or `**kwargs`, annotations describing each argument are aggregated;"
+          },
+          {
+            "covered": "partial",
+            "coveringTests": [
+              "test_var_positional_unpacked",
+              "test_var_keyword_unpacked",
+              "test_dict_unpacking",
+              "test_unpacked_sequences_of_several_lengths"
+            ],
+            "requirement": "Call-time unpacking from tuple, list, or dict literals and variables containing them is counted, including nested `*` inside a literal.",
+            "sourceQuote": "Arguments unpacked at the call from a literal tuple, list, or dict, or from a variable containing that literal, are also counted, including elements unpacked with `*` inside the literal such as `f(*[A, *b])`."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_unpacked_sequences_of_several_lengths"
+            ],
+            "requirement": "For unpacked sequences with multiple possible lengths, every resulting argument position must match.",
+            "sourceQuote": "When the unpacked value may be sequences of different lengths, like `xs` in `xs = [A] if c else []`, the overload must match every possible call, so in `f(*xs, C)` the argument `C` may be the first or the second one."
+          },
+          {
+            "covered": "yes",
+            "coveringTests": [
+              "test_var_positional",
+              "test_var_keyword",
+              "test_variadic_parameters_together"
+            ],
+            "requirement": "An overload remains a match when `*args` or `**kwargs` receives no arguments.",
+            "sourceQuote": "If `*args` or `**kwargs` receives no arguments, the overload still matches."
+          }
+        ],
+        "taskSummary": "The benchmark asks Jedi to select overloads from the inferred types of call arguments: class objects versus instances, generic and optional annotations, TypeVars, unions, positional/named and variadic arguments, unpacked containers, and dictionary contents after key replacement. The new tests check the resulting inferred return types (and, in the motivating example, completion members).",
+        "tests": [
+          {
+            "concerns": [],
+            "evidence": "The prompt says that for `get_obj(Foo).` only `FooBuilder` methods should be suggested, not both builders. The test's two calls check the corresponding completion members.",
+            "fairness": "Prompt-stated",
+            "name": "test_issue_example",
+            "qualityCheck": "Directly checks both sides of the motivating regression; the positive and negative member assertions are both relevant.",
+            "verifies": "For `get_obj(Foo).`, completion contains `func_foo` and omits `func_bar`; for `get_obj(Bar).`, it contains `func_bar` and omits `func_foo`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt states that `type[X]` accepts class `X` and its subclasses. Here `B` subclasses `A`, while `C` is unrelated; `Type[X]` is also explicitly included in the prompt's class-annotation discussion.",
+            "fairness": "Prompt-stated",
+            "name": "test_type_of_class",
+            "qualityCheck": "Parameterized over both annotation spellings and representative exact, subclass, and unrelated classes.",
+            "verifies": "For both `type[A]` and `Type[A]`, `f(A)` and `f(B)` infer `RA`, while `f(C)` infers `RB`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly says a `type[X]` parameter accepts classes and subclasses, not instances.",
+            "fairness": "Prompt-stated",
+            "name": "test_type_rejects_instances",
+            "qualityCheck": "Covers both directions of the class/instance distinction, including a call expression whose result is an instance.",
+            "verifies": "An instance argument selects the `A` overload rather than `type[A]`; a callable `Factory()` returning `A` is also rejected by `type[A]`; class arguments select the `type[A]` overload instead of `A`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt states: “Annotation `type`, `Type` or `type[Any]` accepts all classes.” It also states that `type[X]` does not accept instances.",
+            "fairness": "Prompt-stated",
+            "name": "test_any_class",
+            "qualityCheck": "Exercises all four listed annotation forms and distinguishes class objects from instances.",
+            "verifies": "For `type`, `Type`, `type[Any]`, and `Type[Any]`, class arguments `A`, `B`, `C`, `int`, and `str` select that overload, while instances of `int`, `C`, and `str` select the instance overload."
+          },
+          {
+            "concerns": [],
+            "evidence": "This uses Python typing semantics for unions in `type[C]`/`Type[C]`: a class object may match a member of the union (and its subclasses). The prompt supplies the general `type[X]` class/subclass rule, but does not spell out its union case.",
+            "fairness": "Standard external semantics",
+            "name": "test_type_of_union",
+            "qualityCheck": "Checks several equivalent union spellings; the union-specific application is not stated verbatim in the prompt.",
+            "verifies": "With the second overload annotated `type[Union[A, C]]`, `Type[A | C]`, or `type[A] | type[C]`, calls with class `C` and subclass `B` infer `RB`, rather than the `int` overload's result."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt says that `type[T]` requires the class to satisfy a bound or one of the constraints, and that an unbounded, unconstrained `T` accepts all classes.",
+            "fairness": "Prompt-stated",
+            "name": "test_type_of_type_var",
+            "qualityCheck": "Good coverage of bound, constrained, and unconstrained cases, with both class and instance inputs.",
+            "verifies": "With bounded `T`, `type[T]` accepts class `B` (a subclass of `A`) but not unrelated class `C`; with constrained `T`, classes matching `A` or `int` constraints are accepted and `str` is not; with unconstrained `T`, class objects including `C`, `int`, and `str` are accepted, but instance `3` is not."
+          },
+          {
+            "concerns": [],
+            "evidence": "Python typing semantics allow forward references in TypeVar bounds and constraints; this specific string-form resolution is not named in the prompt. The underlying bound/constraint matching is stated there.",
+            "fairness": "Standard external semantics",
+            "name": "test_type_var_with_forward_references",
+            "qualityCheck": "Adds a useful typing syntax variant beyond the prompt's examples.",
+            "verifies": "A string forward reference in a TypeVar bound or constraint is resolved: `B` and `E` match the referenced classes, `int` matches its constraint, and unrelated `C` does not."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt's `type[X]` rule applies to the argument's type, and its overload rule applies to every invocation argument. The test constructs a value with that explicit annotation.",
+            "fairness": "Prompt-stated",
+            "name": "test_type_from_annotated_names",
+            "qualityCheck": "Checks propagation of an annotated argument through a function parameter as well as a directly annotated name.",
+            "verifies": "A name annotated `type[C]`, both directly and when passed through `g(k: type[C])`, selects the `type[C]` overload and infers `RB`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly says “the first overload where every invocation argument ... matches the annotation will be used.”",
+            "fairness": "Prompt-stated",
+            "name": "test_first_matching_overload_wins",
+            "qualityCheck": "Reorders overlapping overloads, so it tests precedence rather than merely whether a matching overload exists.",
+            "verifies": "When multiple overloads accept an argument, the first matching overload's return is inferred; the tested orderings include `type[A]`/`type[B]`, broad `type` before `type[A]`, and three overloads."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt says invocation arguments can be passed by name and must match the overload annotation; its class/subclass rule accounts for `B` matching `type[A]`.",
+            "fairness": "Prompt-stated",
+            "name": "test_type_keyword_argument",
+            "qualityCheck": "A compact check of named binding with class, subclass, and ordinary instance values.",
+            "verifies": "Named calls `f(x=C)`, `f(x=B)`, and `f(x=3)` select the respective matching `type[C]`, `type[A]`, and `int` overload returns."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt requires every invocation argument, whether positional or named, to match; only if no overload matches are results combined.",
+            "fairness": "Prompt-stated",
+            "name": "test_every_argument_has_to_fit",
+            "qualityCheck": "Includes argument order, keyword binding, mixed positional/named binding, and calls with no fully matching overload.",
+            "verifies": "Across two-parameter positional and named calls, `RA` is inferred for the first signature that accepts both arguments, `RB` for the second when it is the first full match, and `[RA, RB]` when neither overload accepts every argument."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt says arguments received through `*args` are aggregated and that an overload with no `*args` arguments still matches.",
+            "fairness": "Prompt-stated",
+            "name": "test_var_positional",
+            "qualityCheck": "Covers homogeneous, mixed, and empty variadic calls, including a signature with a preceding fixed parameter.",
+            "verifies": "For `*x: type[A]` versus `*x: type[C]` (with and without a preceding `y: int`), every collected positional argument must fit the variadic annotation; mixed sets infer both results, and an empty variadic set infers the first matching result `RA`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly counts call-time unpacking from literal tuples/lists or variables containing them, and elements unpacked with `*` inside a literal.",
+            "fairness": "Prompt-stated",
+            "name": "test_var_positional_unpacked",
+            "qualityCheck": "Good nested-unpacking coverage; results are checked for both direct `*args` overloads and ordinary overload parameters.",
+            "verifies": "Positional values unpacked from tuple/list variables and from nested starred literals are checked against the `*x` overload annotation; the listed homogeneous and mixed calls infer `RA`, `RB`, or both as expected."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt says `**kwargs` arguments are aggregated and explicitly states that an overload still matches when `**kwargs` receives no arguments.",
+            "fairness": "Prompt-stated",
+            "name": "test_var_keyword",
+            "qualityCheck": "Covers homogeneous, mixed, and empty keyword-variadic calls.",
+            "verifies": "For `**x: type[A]` versus `**x: type[C]` (with and without a preceding `y: int`), every keyword value must fit; mixed values infer both results, and no collected keyword values still permits the first matching overload."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly counts arguments unpacked from a dict literal at the call site and says values received through `**kwargs` are aggregated.",
+            "fairness": "Prompt-stated",
+            "name": "test_var_keyword_unpacked",
+            "qualityCheck": "A useful direct case, though it exercises only one key and one value.",
+            "verifies": "Calling `f(**{'p': C})` selects the `**x: type[C]` overload and infers `RB`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt specifies TypeVar bounds, union arguments, and aggregation of every argument received by `*args` or `**kwargs`.",
+            "fairness": "Prompt-stated",
+            "name": "test_variadic_parameters_with_other_annotations",
+            "qualityCheck": "Combines already-tested rules and is useful integration coverage; some cases overlap other tests.",
+            "verifies": "Variadic annotations using a bounded TypeVar, a union, broad `type`, and `int` are matched against all collected arguments; the asserted outputs distinguish fully matching overloads from the no-match combined result."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt requires every positional or named invocation argument to match and requires `*args`/`**kwargs` annotations to cover their collected arguments, including the empty case.",
+            "fairness": "Prompt-stated",
+            "name": "test_variadic_parameters_together",
+            "qualityCheck": "Strong integration test across fixed, positional-variadic, keyword-only, and keyword-variadic parameters.",
+            "verifies": "For overloads with fixed `y`, `*x`, keyword-only `z`, and `**k`, the inferred result changes according to whether all fixed, variadic, and named arguments fit; empty variadic portions still allow a match."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly says to combine results of all overloads only if no overload matches, while selecting the first matching overload otherwise.",
+            "fairness": "Prompt-stated",
+            "name": "test_no_matching_overload",
+            "qualityCheck": "Checks both fallback and successful-match paths.",
+            "verifies": "Where no overload accepts all arguments, inference combines `RA` and `RB`; where the first overload matches, only `RA` is inferred."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt says call-time dict unpacking is counted and that a possibly present later dict entry replaces an earlier one only when present, leaving both values possible.",
+            "fairness": "Prompt-stated",
+            "name": "test_dict_unpacking",
+            "qualityCheck": "Covers literal, variable, multiple-dict, and conditionally present overwrite cases.",
+            "verifies": "For `**kwargs` overloads, literal and variable dict unpacking infer the matching value-type result; mixed values and a conditional later overwrite that may or may not occur infer both results."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly says that when an unpacked sequence may have different lengths, the overload must match every possible call, and gives the `f(*xs, C)` positional-shift example.",
+            "fairness": "Prompt-stated",
+            "name": "test_unpacked_sequences_of_several_lengths",
+            "qualityCheck": "Tests empty/nonempty possibilities, one or multiple lengths, and a fixed-length tuple annotation against an unknown-length sequence.",
+            "verifies": "For fixed-parameter overloads, unpacked sequences with possible lengths are checked at every possible argument position; this includes `*maybe_a, C`, nested starred literals, and known or variable-length tuple values."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt says `Optional[X]` accepts `None` and any value accepted by `X`.",
+            "fairness": "Prompt-stated",
+            "name": "test_optional_accepts_none",
+            "qualityCheck": "Checks both branches of the Optional rule and a competing overload.",
+            "verifies": "`Optional[int]` accepts `None` and `1` (selecting `RA`), while an empty string selects the `str` overload (`RB`)."
+          },
+          {
+            "concerns": [],
+            "evidence": "Python method binding supplies the receiver separately from explicit keyword arguments; the prompt's `**kwargs` aggregation rule then applies to the unpacked value.",
+            "fairness": "Standard external semantics",
+            "name": "test_dict_unpacking_in_method",
+            "qualityCheck": "A useful integration check for receiver binding combined with dict unpacking.",
+            "verifies": "For bound instance method calls using `**{'p': C}` or `**{'p': A}`, the selected overloaded method return is respectively `RB` or `RA`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly says that when an argument has multiple possible types, the annotation must accept all of them.",
+            "fairness": "Prompt-stated",
+            "name": "test_union_argument",
+            "qualityCheck": "Directly discriminates “accepts one union member” from “accepts all possible types.”",
+            "verifies": "An argument inferred as `Union[A, C]` matches an overload only when its annotation accepts both alternatives; the tests assert combined results when neither individual overload accepts both, and `RA`/`RB` when the union-accepting overload is first matching."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt says the broad class annotations accept all classes and that `type[X]` does not accept instances.",
+            "fairness": "Prompt-stated",
+            "name": "test_any_class_defined_later",
+            "qualityCheck": "Checks broad-class behavior for a class defined after the shared header and preserves the class-versus-instance distinction.",
+            "verifies": "For each of `type`, `Type`, `type[Any]`, and `Type[Any]`, a later-defined class object selects the broad class overload and its instance selects the `D` overload."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt says Optional accepts `None` and any value accepted by its inner type; `B` is a subclass of `A` in the test header.",
+            "fairness": "Prompt-stated",
+            "name": "test_optional_of_class",
+            "qualityCheck": "Checks None, a subclass instance, and an unrelated competing type.",
+            "verifies": "`Optional[A]` accepts `B()` and `None`, while `C()` selects the competing `C` overload."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt requires every collected `*args` or `**kwargs` argument to be accepted by the annotation.",
+            "fairness": "Prompt-stated",
+            "name": "test_every_collected_argument_is_checked",
+            "qualityCheck": "Good regression check against implementations that inspect only the first variadic value.",
+            "verifies": "For both `*x` and `**x`, later collected values are not ignored: a final `C` selects the broad `type` overload, while all `A`/`B` class values select `type[A]`."
+          },
+          {
+            "concerns": [],
+            "evidence": "Python classmethod binding supplies `cls` separately; the prompt's rule for keyword-unpacked variadic arguments applies to the remaining call arguments.",
+            "fairness": "Standard external semantics",
+            "name": "test_dict_unpacking_in_classmethod",
+            "qualityCheck": "Checks classmethod receiver binding through both class and instance access; useful but narrow integration coverage.",
+            "verifies": "For classmethod calls through both `K.f` and `K().f`, unpacked `C`/`A` values select the corresponding `**x` overload results."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt says that for annotation containers like `list[X]` or `dict[K, V]`, every element must be accepted by its corresponding annotation; it also states the class/subclass rule for `type[X]`.",
+            "fairness": "Prompt-stated",
+            "name": "test_elements_of_containers",
+            "qualityCheck": "Broad representative coverage of standard container annotations; the test's `x = ...` case intentionally checks a variable-held container without the substitution assertion.",
+            "verifies": "For each listed list, sequence, iterable, tuple, dict, and mapping annotation, a container holding `C` selects the `type[C]` overload; where the call expression is eligible for substitution, replacing `C` with subclass `B` selects `type[A]`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt requires every element of a container argument, including elements unpacked with `*` in the literal, to match the corresponding annotation.",
+            "fairness": "Prompt-stated",
+            "name": "test_every_element_has_to_fit",
+            "qualityCheck": "Tests multiple ways a nonmatching element can enter a container, not just a simple mixed literal.",
+            "verifies": "Each mixed or uncertain list argument—including list elements from a conditional and elements supplied by nested `*` unpacking—fails both specific element-type overloads, so inference returns the fallback `RC`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt describes checking every container element against its corresponding annotation; it separately specifies the distinction between fixed-length and unknown-length tuple annotations.",
+            "fairness": "Prompt-stated",
+            "name": "test_tuples_of_any_length",
+            "qualityCheck": "Exercises empty, single-element, multi-element, and mixed tuple contents, including a fixed tuple annotation competing with a variadic one.",
+            "verifies": "The asserted tuple calls infer the `tuple[type[C], ...]` or `tuple[int, ...]` overload for matching homogeneous tuples, the `type[A]` overload for `(B, A)`, fallback results for mixed tuples, and the variadic tuple overload for `()`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly says dict keys and values must both match, later equal keys replace earlier entries, potentially missing entries preserve both possibilities, and container elements must match their corresponding annotations.",
+            "fairness": "Prompt-stated",
+            "name": "test_items_of_mappings_and_other_containers",
+            "qualityCheck": "Good variety of mapping and container cases; several individual assertions combine multiple stated rules.",
+            "verifies": "Mapping overloads check keys as well as values; nested dict values, sequence elements, and a returned tuple are checked; dict overwrites, possibly present overwrites, and a bounded TypeVar in a container produce the asserted overload results."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly states that an unknown-length value such as `tuple[X, ...]` does not match a fixed-length tuple annotation such as `tuple[X]`.",
+            "fairness": "Prompt-stated",
+            "name": "test_tuples_of_unknown_length",
+            "qualityCheck": "Directly tests both sides using declared return types for the input-producing functions.",
+            "verifies": "A value annotated `tuple[int, ...]` selects that overload rather than fixed `tuple[int]`, while a fixed one-item tuple selects `tuple[int]`."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly says an empty-literal dict comprehension holds no entries and says possibly present entries from conditional unpacking leave possible values to be considered.",
+            "fairness": "Prompt-stated",
+            "name": "test_entries_of_dict_comprehensions",
+            "qualityCheck": "Covers empty, nonempty, conditional, and call-time unpacking forms.",
+            "verifies": "An empty-literal dict comprehension contributes no entries; nonempty or conditionally produced comprehensions contribute their key/value types; unpacking the conditional comprehension into `**kwargs` selects the corresponding overload."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly covers entries that may or may not be present, including those arising through nested `**`, and says replacement occurs only when the possibly present entry exists.",
+            "fairness": "Prompt-stated",
+            "name": "test_entries_that_may_be_missing_in_nested_mappings",
+            "qualityCheck": "Thoroughly probes nested and conditional mapping composition; the helper-function wrappers add integration coverage for inferred mapping results.",
+            "verifies": "Nested and variable-held `**` mappings preserve possible values when entries may be absent, allow a later definite entry to replace earlier possibilities, and pass through `wrap` results as asserted."
+          },
+          {
+            "concerns": [],
+            "evidence": "The prompt explicitly says Python key equality includes numbers like `1` and `True`, classes, and tuples like `(1, 2)`, and that later equal keys replace earlier entries.",
+            "fairness": "Prompt-stated",
+            "name": "test_keys_that_are_not_strings",
+            "qualityCheck": "Checks both replacement and nonreplacement, including all equality examples named by the prompt.",
+            "verifies": "Dict literal entries are treated as duplicates for equal class keys, equal tuple keys, `1`/`True`, and equal string-valued keys; unequal tuple keys remain separate and produce the fallback result."
+          }
+        ],
+        "unfairTestCount": 0,
+        "verdict": "PASS"
+      },
+      "progress": 100,
+      "stale": false,
+      "status": "completed"
+    },
+    "verifyFlakiness": {
+      "artifactPath": "20261025/6x8gyet8_verify_flakiness_101234",
+      "createdAt": 1792923154521,
+      "currentStep": "test.patch: run 4/6 (base)",
+      "jobId": "nx78wktddm46m7tqcmdqys3xmn8gyrap",
+      "modalFunctionCallId": "fc-01M5S8REP09XXS1EDFKWNX9TMZ",
+      "progress": 45,
+      "stale": false,
+      "status": "running"
+    },
+    "verifySolution": {
+      "artifactPath": "20261025/6x8gyet8_verify_solution_101234",
+      "createdAt": 1792923154521,
+      "currentStep": "Phase 2: wrapper run (without solution)",
+      "jobId": "nx70fz7n9x7rzs3phx1asz9r998gzp5e",
+      "modalFunctionCallId": "fc-01M5S8REKVDKD7N92P9QBH50V5",
+      "progress": 43,
+      "stale": false,
+      "status": "running"
+    },
+    "verifyTests": {
+      "artifactPath": "20261025/6x8gyet8_verify_tests_101234",
+      "completedAt": 1792923311541,
+      "createdAt": 1792923154521,
+      "currentStep": "Completed",
+      "jobId": "nx75ewzd1755wke8rcj1zrvwnd8gytkz",
+      "modalFunctionCallId": "fc-01M5S8REK3764SA7NBPB2926XD",
+      "output": {
+        "baselinePassed": true,
+        "baselineTestResults": {
+          "allPassed": true,
+          "errored": 0,
+          "failed": 0,
+          "passed": 3955,
+          "skipped": 26,
+          "total": 3981
+        },
+        "completed": true,
+        "executionTimeSeconds": 132.794049,
+        "message": "Baseline tests pass and new tests fail on the clean repo (expected). Test harness is valid. New tests: 67 tests, 67 failed.",
+        "newTestResults": {
+          "allPassed": false,
+          "errored": 0,
+          "failed": 67,
+          "passed": 0,
+          "skipped": 0,
+          "total": 67
+        },
+        "newTestsPassed": false,
+        "verdict": "PASS"
+      },
+      "progress": 100,
+      "stale": false,
+      "status": "completed"
+    }
+  },
+  "readiness": {
+    "canSubmit": false,
+    "canSubmitWithoutBypass": false,
+    "cooldownAppliesToProblem": false,
+    "criteria": [
+      {
+        "detail": "5/5 passing, some stale",
+        "id": "prechecks",
+        "label": "Prechecks",
+        "stale": true,
+        "status": "fail"
+      },
+      {
+        "detail": "stale — re-run required",
+        "id": "scopeGate",
+        "label": "Scope Gate",
+        "stale": true,
+        "status": "fail",
+        "verdict": "pass"
+      },
+      {
+        "detail": "3/7 passing",
+        "id": "dynamicChecks",
+        "label": "Quality Checks",
+        "stale": false,
+        "status": "pending"
+      },
+      {
+        "id": "agentFair",
+        "label": "Fair task",
+        "status": "pending"
+      },
+      {
+        "id": "agentSolvable",
+        "label": "Solvable",
+        "status": "pending"
+      },
+      {
+        "id": "agentCodenameCoverage",
+        "label": "Rollouts on every model",
+        "status": "pending"
+      },
+      {
+        "id": "agentPassStructure",
+        "label": "Solved by one model only",
+        "status": "pending"
+      },
+      {
+        "id": "agentNovaSequenceLength",
+        "label": "Long horizon",
+        "status": "pending"
+      },
+      {
+        "id": "agentNoCheating",
+        "label": "No cheating",
+        "status": "pending"
+      },
+      {
+        "id": "agentNoEnvBlocker",
+        "label": "No environment blockers",
+        "status": "pending"
+      },
+      {
+        "detail": "stale, re-run after latest changes",
+        "id": "autoReview",
+        "label": "Auto Review",
+        "status": "fail"
+      },
+      {
+        "detail": "image rebuilds hermetically",
+        "id": "rebuildSafe",
+        "label": "Rebuild-safe",
+        "status": "pass"
+      },
+      {
+        "detail": "image deep-rebuilds from clean source + vendored deps",
+        "id": "harborSafe",
+        "label": "Harbor rebuild-safe",
+        "status": "pass"
+      }
+    ],
+    "isBypassed": false
+  },
+  "version": 3
+}

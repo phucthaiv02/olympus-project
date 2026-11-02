@@ -1,0 +1,344 @@
+
+  ID          kh7d8qtdcfr0k5mt1rvftcvebn8gb2va
+  Title       Overload resolution ignores type[...] and *args/**kwargs annotations
+  Status      ○ draft
+  Version     v3 (unlocked)
+  Language    python
+  Category    bugfix
+  Repo        https://github.com/davidhalter/jedi
+  Commit      2af1a0f3
+  Test Patch  yes
+  Solution    yes
+  Dockerfile  yes
+
+  Description:
+    Jedi chooses the wrong overload when the parameter is annotated with `type[...]`. With `get_obj(input: type[Foo]) -> FooBuilder` and `get_obj(input: type[Bar]) -> BarBuilder`, when typing `get_obj(Foo).` Jedi suggests methods of both `FooBuilder` and `BarBuilder`, while only `FooBuilder` should be suggested. A parameter `type[X]` accepts class `X` and its subclasses, not instances. Annotation `type`, `Type` or `type[Any]` accepts all classes. With `type[T]` where `T` is TypeVar, the class must satisfy the bounds or one of the constraints of `T`; If `T` has no bounds and no constraints, then all classes are accepted. The `Optional[X]` parameter takes `None` and any value that `X` takes. With annotation containers like `list[X]` or `dict[K, V]`, every element of the argument must be accepted by the corresponding annotation, including elements unpacked with `*` or `**` right in the literal like `[C, *a]` or `{"k": C, **d}`; With dict, both key and value must be accepted. The entries of a dict literal are the ones it holds once built: a key written later replaces an earlier entry with the same key, whether that entry was written directly or came from `**`. Keys are the same when Python considers them equal, which includes numbers like `1` and `True`, classes, and tuples like `(1, 2)`. An entry that the dict may or may not hold, for example from `**` of a conditional expression, possibly through nested `**`, replaces the earlier one only when it is there, so both values stay possible. A dict comprehension over an empty literal holds no entries. A value of unknown length, such as a value of type `tuple[X, ...]`, does not match a fixed-length tuple annotation such as `tuple[X]`.
+    
+    Jedi should choose overload as a type checker: the first overload where every invocation argument (either by position or by name) matches the annotation will be used, and only if no overload matches will combine the results of all overloads. If a positional or name argument can have multiple types (e.g. Union), the annotation must accept all of those types. When parameters receive arguments via `*args` or `**kwargs`, annotations describing each argument are aggregated; Arguments unpacked at the call from a literal tuple, list, or dict, or from a variable containing that literal, are also counted, including elements unpacked with `*` inside the literal such as `f(*[A, *b])`. When the unpacked value may be sequences of different lengths, like `xs` in `xs = [A] if c else []`, the overload must match every possible call, so in `f(*xs, C)` the argument `C` may be the first or the second one. If `*args` or `**kwargs` receives no arguments, the overload still matches.
+    
+
+  Submission Readiness:
+    ✗ fail  Prechecks  5/5 passing, some stale (stale)
+    ✗ fail  Scope Gate  stale — re-run required (stale)
+    ○ pending  Quality Checks  3/7 passing
+    ○ pending  Fair task
+    ○ pending  Solvable
+    ○ pending  Rollouts on every model
+    ○ pending  Solved by one model only
+    ○ pending  Long horizon
+    ○ pending  No cheating
+    ○ pending  No environment blockers
+    ✗ fail  Auto Review  stale, re-run after latest changes
+    ✓ pass  Rebuild-safe  image rebuilds hermetically
+    ✓ pass  Harbor rebuild-safe  image deep-rebuilds from clean source + vendored deps
+
+  Quality Checks:
+    ✓ completed  Verify Build (verifyBuild)  Docker image built successfully.
+    ✓ completed  Verify Tests (verifyTests) [PASS]  Baseline tests pass and new tests fail on the clean repo (expected)...
+    ⟳ running  Verify Solution (verifySolution)
+    ✓ completed  Task Quality (taskQuality) [PASS]  The task is a well-specified, substantial Jedi inference improvemen...
+    ✓ completed  Solution Quality (solutionQuality) [FAIL]  Core overload matching is implemented, but empty nested dict compre...
+    ✓ completed  Description Quality (descriptionQuality) [FAIL]  There are too many requirements in this task
+    ✓ completed  autoReview (autoReview)  The description and production solution are strong and well-scoped,... (stale)
+    ✓ completed  verifierIncompleteness (verifierIncompleteness) [INCOMPLETE]  Audited the specification, the 61-test verifier, the reference impl... (stale)
+    ✓ completed  verifyFairness (verifyFairness) [PASS]  All hidden tests are fair.
+    ⟳ running  verifyFlakiness (verifyFlakiness)
+
+  Rollouts:
+    batch-7a1a5a72-56c1-48dc-aed2-45a45eb5e27f (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Orion #1 [FAIL_REGRESSION]
+    batch-5bca439d-6295-48fd-beda-5bf396fade6c (all stale)
+      2 runs · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #2 [FAIL_MISSED_REQUIREMENT]
+    batch-60535736-5278-470b-8eac-12f8d8d1b0af (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Orion #1 [FAIL_MISSED_REQUIREMENT]
+    Re-evaluation (all stale)
+      8 runs · 0 active · evaluation
+      ✓ completed  Vega #1 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #3 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #1 · re-eval 1 [FAIL_UNVERIFIED_ASSUMPTION]
+      ✓ completed  Vega #1 · re-eval 1 [PASS_LEGITIMATE]
+      ✓ completed  Vega #1 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #2 · re-eval 1 [FAIL_REGRESSION]
+      ✓ completed  Nova #1 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #1 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+    batch-0c6adc74-1159-45cf-9a27-255cd19afc86 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Vega #1 [PASS_LEGITIMATE]
+    batch-827a4c1d-0a9f-4481-a5e9-62ce14f8e21e (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+    batch-bcb75d40-e2fe-4348-a5c8-e96a4593d849 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Vega #1 [PASS_LEGITIMATE]
+    batch-3701d98b-89ca-478a-a0a8-6002d8b786b2 (all stale)
+      2 runs · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_UNVERIFIED_ASSUMPTION]
+      ✓ completed  Orion #2 [FAIL_REGRESSION]
+    batch-5243e92e-9f4a-44e9-a774-99700b8e1c5f (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+    batch-433ccaf0-4d65-4be4-9fad-2e2dc8537eff (all stale)
+      1 run · 0 active · evaluation
+      ✗ failed  Vega #1
+    batch-ffcabf07-616a-4bd0-8727-62fe0f349032 (all stale)
+      1 run · 0 active · evaluation
+      ✗ failed  Vega #1
+    batch-aa6f14db-7f38-49eb-aaa5-32374a495857 (all stale)
+      3 runs · 0 active · evaluation
+      ✗ failed  Vega #2
+      ✓ completed  Orion #3 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+    batch-22959806-1409-49a0-9a2e-80813d51e326 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+    batch-5ab9cf55-6576-44dd-9879-5196b1905257 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+    batch-83e5173d-23da-4a67-a1a5-4efb495ae989 (all stale)
+      3 runs · 0 active · evaluation
+      ✓ completed  Orion #3 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+    batch-226f088e-ac4a-48df-b541-c7d248512067 (all stale)
+      3 runs · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #3 [FAIL_MISSED_REQUIREMENT]
+    batch-0e6cb773-c789-4fa6-ac6e-bb87d5fa0241 (all stale)
+      3 runs · 0 active · evaluation
+      ✓ completed  Orion #3 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+    batch-f07a9137-15b8-4000-8b17-df91065a2c05 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+    batch-5f925714-a048-4977-9de7-f99ff29f82a4 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_EXECUTION_ERROR_EXTERNAL] (scratched)
+    batch-62d36a38-6872-4674-9495-9bc98315ea74 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+    batch-24cb957f-7a80-482a-82d9-139d4aae1ea3 (all stale)
+      2 runs · 0 active · evaluation
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #1 [FAIL_EARLY_TERMINATION]
+    batch-700f70a8-ed59-4e3e-b444-164e46cbe500 (all stale)
+      2 runs · 0 active · evaluation
+      ✓ completed  Orion #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #1 [FAIL_WRONG_LOGIC]
+    batch-40bf20fe-935f-4351-9a77-e1b77956481d (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_WRONG_LOGIC]
+    batch-ba6f9a91-6fc6-4723-bc29-ce1497fe99df (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Orion #1 [FAIL_MISSED_REQUIREMENT]
+    batch-b69377f9-962d-4628-8ca4-19f19ed4c537 (all stale)
+      2 runs · 0 active · evaluation
+      ✓ completed  Orion #1 [FAIL_REGRESSION]
+      ✓ completed  Nova #2 [FAIL_MISSED_REQUIREMENT]
+    batch-5741664e-7b18-43ab-9ed7-51f0499347bd (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Orion #1 [FAIL_MISSED_REQUIREMENT]
+    Re-evaluation (all stale)
+      4 runs · 0 active · evaluation
+      ✓ completed  Nova #1 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #1 · re-eval 1 [PASS_LEGITIMATE]
+      ✓ completed  Vega #2 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #1 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+    batch-7a744758-bf55-4174-aca1-c8500c263775 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Vega #1 [PASS_LEGITIMATE]
+    batch-d43e6539-d08e-4a3c-a67f-dff340c0407c (all stale)
+      1 run · 0 active · evaluation
+      ✗ failed  Orion #1 (scratched)
+    batch-ac4cf26e-f652-4e46-957e-0b3e31895c3c (all stale)
+      2 runs · 0 active · evaluation
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #1 [PASS_LEGITIMATE]
+    batch-7de8fae3-964a-4f8f-8d77-e68083136e38 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+    batch-b848b725-fd04-4a5e-b62e-f1239cd69677 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_REGRESSION]
+    batch-8e802426-26c3-437e-8039-cab5d1c58d7f (all stale)
+      2 runs · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #2 [FAIL_MISSED_REQUIREMENT]
+    batch-70e13430-5aa4-400d-9a40-ed69a5ad4d1f (all stale)
+      5 runs · 0 active · evaluation
+      ✓ completed  Nova #3 [FAIL_REGRESSION]
+      ✓ completed  Nova #4 [FAIL_REGRESSION]
+      ✓ completed  Nova #5 [FAIL_REGRESSION]
+      ✓ completed  Nova #1 [FAIL_REGRESSION]
+      ✓ completed  Nova #2 [FAIL_REGRESSION]
+    Re-evaluation (all stale)
+      8 runs · 0 active · evaluation
+      ✓ completed  Vega #4 · re-eval 1 [FAIL_REGRESSION]
+      ✓ completed  Vega #1 · re-eval 1 [FAIL_REGRESSION]
+      ✓ completed  Vega #3 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #7 · re-eval 1 [FAIL_REGRESSION]
+      ✓ completed  Vega #2 · re-eval 1 [PASS_LEGITIMATE]
+      ✓ completed  Vega #5 · re-eval 1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #8 · re-eval 1 [PASS_LEGITIMATE]
+      ✓ completed  Vega #6 · re-eval 1 [FAIL_REGRESSION]
+    batch-40cdef2b-fc16-4911-854f-ad979ce9397b (all stale)
+      8 runs · 0 active · evaluation
+      ✓ completed  Vega #4 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #6 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #7 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #8 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #5 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #3 [FAIL_MISSED_REQUIREMENT]
+    batch-7817fdaf-173c-4698-b285-c8721d7b4326 (all stale)
+      8 runs · 0 active · evaluation
+      ✓ completed  Vega #4 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #8 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #7 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #3 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #6 [PASS_LEGITIMATE]
+      ✓ completed  Vega #5 [PASS_LEGITIMATE]
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+    batch-4239b63e-b32f-4670-8db3-4fb79098df69 (all stale)
+      4 runs · 0 active · evaluation
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #3 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #4 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #1 [PASS_LEGITIMATE]
+    batch-6d01d0e4-36c2-4a32-a67b-5c0877d49822 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+    batch-66fd3f5e-5008-4d70-a64f-adcdf44cbac8 (all stale)
+      4 runs · 0 active · evaluation
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #4 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #3 [PASS_LEGITIMATE]
+    batch-60859cf0-49ae-45b5-9ad6-31af3b921a1c (all stale)
+      4 runs · 0 active · evaluation
+      ✓ completed  Orion #4 [PASS_LEGITIMATE]
+      ✓ completed  Orion #2 [PASS_LEGITIMATE]
+      ✓ completed  Orion #3 [PASS_LEGITIMATE]
+      ✓ completed  Orion #1 [PASS_LEGITIMATE]
+    batch-ba7b96b2-5a77-4997-8691-8c0c04765de4 (all stale)
+      4 runs · 0 active · evaluation
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #4 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #3 [FAIL_MISSED_REQUIREMENT]
+    batch-a0acbd6d-269c-4703-8158-e0f04f78f395 (all stale)
+      2 runs · 0 active · evaluation
+      ✓ completed  Nova #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #1 [FAIL_WRONG_LOGIC]
+    batch-fcc18f1e-627a-4fc8-b143-6bbeb0081f29 (all stale)
+      2 runs · 0 active · evaluation
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Vega #2 [FAIL_MISSED_REQUIREMENT]
+    batch-785b098c-a8a0-40a9-a3dd-5b242c2ad2d7 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+    batch-1e78634d-5d05-4a8a-bf63-346eac97390c (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Vega #1 [FAIL_MISSED_REQUIREMENT]
+    batch-9c766474-a77f-4b6a-896a-7996afb4985a (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+    batch-25224464-8b60-4ae5-94a4-7d42289d03e9 (all stale)
+      5 runs · 0 active · evaluation
+      ✓ completed  Orion #2 [FAIL_WRONG_LOGIC]
+      ✓ completed  Orion #5 [FAIL_WRONG_LOGIC]
+      ✓ completed  Orion #3 [FAIL_WRONG_LOGIC]
+      ✓ completed  Orion #1 [FAIL_WRONG_LOGIC]
+      ✓ completed  Orion #4 [FAIL_WRONG_LOGIC]
+    batch-79bdde2c-78f7-428c-b1a4-6963a60ccfba (all stale)
+      4 runs · 0 active · evaluation
+      ✓ completed  Orion #3 [FAIL_REGRESSION]
+      ✓ completed  Orion #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #4 [FAIL_REGRESSION]
+    batch-93f0e5ab-3711-4aff-ae5f-6ea3972a1db5 (all stale)
+      12 runs · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #3 [FAIL_REGRESSION]
+      ✓ completed  Nova #4 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #6 [FAIL_REGRESSION]
+      ✓ completed  Orion #9 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #5 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #11 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #10 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #8 [FAIL_REGRESSION]
+      ✓ completed  Nova #7 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #12 [FAIL_MISSED_REQUIREMENT]
+    batch-3e56466d-d53d-4fcd-bb96-a80610fce675 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Orion #1 [FAIL_MISSED_REQUIREMENT]
+    batch-0222a9eb-a31c-49bf-a708-819c42c2c2f6 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+    batch-4e57bb6b-d00c-4a92-9ee0-425192dd836d (all stale)
+      4 runs · 0 active · evaluation
+      ✓ completed  Orion #1 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #4 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #3 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #2 [FAIL_MISSED_REQUIREMENT]
+    batch-23907c70-0b31-40e7-8442-39f922791360 (all stale)
+      12 runs · 0 active · evaluation
+      ✓ completed  Nova #7 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #10 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #4 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #9 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #2 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #8 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #3 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #12 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #5 [FAIL_REGRESSION]
+      ✓ completed  Nova #6 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Orion #11 [FAIL_MISSED_REQUIREMENT]
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+    batch-33e8aabe-4487-4070-8a66-fad20a76eaa9 (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [FAIL_MISSED_REQUIREMENT]
+    batch-0877f125-2b2a-453d-ba1c-f13c5de8483e (all stale)
+      1 run · 0 active · evaluation
+      ✓ completed  Nova #1 [PASS_LEGITIMATE]
+
+  Rollout Criteria:
+    ○ pending  Fair task
+      Target: No agent run flagged the task as unfair or broken
+    ○ pending  Solvable
+      Target: At least 1 agent run must solve the problem
+    ○ pending  Rollouts on every model
+      Target: At least 4 runs must complete on each of Nova, Orion and Vega
+    ○ pending  Solved by one model only
+      Target: Exactly one of Nova, Orion or Vega solves it, more than 0% and at most 25% of the time; the other two stay at 0%
+    ○ pending  Long horizon
+      Target: Nova runs must average more than 400K tokens of sequence length
+    ○ pending  No cheating
+      Target: Cheat rate must be below 20% (across all agents)
+    ○ pending  No environment blockers
+      Target: No run should be blocked by environment or verifier issues
+
+  Reviews:
+    ! revision_requested  by Ali Hashir (v1)  10/22/2026
+      Tests: T4: All 62 new tests pass despite incorrect handling of nested starred arguments...
+    ! revision_requested  by Ali Hashir (v2)  10/25/2026
+      Tests: T4: All 63 new tests pass despite a valid-input inference crash and incorrect ma...
+
+  Commands:
+    olympus problems download kh7d8qtdcfr0k5mt1rvftcvebn8gb2va        Download the current version locally
+    olympus checks view kh7d8qtdcfr0k5mt1rvftcvebn8gb2va              Checks + readiness detail
+    olympus checks run-all kh7d8qtdcfr0k5mt1rvftcvebn8gb2va           Run the default quality-check set
+    olympus runs view kh7d8qtdcfr0k5mt1rvftcvebn8gb2va                Rollout batches + criteria
+    olympus runs presets kh7d8qtdcfr0k5mt1rvftcvebn8gb2va             Show quick/full rollout mixes
+    olympus runs run kh7d8qtdcfr0k5mt1rvftcvebn8gb2va --preset full   Trigger the production full rollout preset
+    olympus problems edit kh7d8qtdcfr0k5mt1rvftcvebn8gb2va --help     Edit draft fields
+    olympus problems version list kh7d8qtdcfr0k5mt1rvftcvebn8gb2va    List all versions
+
