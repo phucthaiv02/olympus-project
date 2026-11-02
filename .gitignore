@@ -1,0 +1,26 @@
+# Upstream repo clones (re-cloned per task, have their own .git)
+jedi-overload-arguments/qc-v11/jedi/
+jedi-overload-arguments/fp-v16/jedi/
+jedi-overload-arguments/v9-review2/jedi/
+jedi-overload-arguments/work-v2/base/
+jedi-overload-arguments/work-v2/jedi/
+xgo-index-operators/work/
+
+# Environments and caches
+venv/
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Local-only settings
+.claude/settings.local.json
+
+# Agent run outputs (downloaded from platform)
+agent-runs/
+passed-runs/
+passed-runs.zip
+gopherjs-pointer-conversions/runs/
+first_chall/Nova_Nova/
