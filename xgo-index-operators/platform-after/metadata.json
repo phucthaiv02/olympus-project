@@ -1,0 +1,17 @@
+{
+  "problemId": "kh78nr222wf7f785y260bfyke98g9fqp",
+  "title": "Add index operator methods so user-defined types support m[i] and m[i, j]",
+  "status": "draft",
+  "version": 0,
+  "versionId": "kd74f95s5dvggpbqac8wv13np98g8e03",
+  "isLocked": false,
+  "language": "go",
+  "difficulty": null,
+  "category": "feature_request",
+  "repoUrl": "https://github.com/goplus/xgo",
+  "commitHash": "26e013d1fc7171b01d32bdb4fdda3aab5a3bcd25",
+  "githubIssueUrl": "https://github.com/goplus/xgo/issues/859",
+  "estimatedLOC": null,
+  "testOutputMode": null,
+  "downloadedAt": "2026-10-24T17:02:44.102Z"
+}

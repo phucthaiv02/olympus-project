@@ -1,0 +1,958 @@
+diff --git a/cl/compile.go b/cl/compile.go
+index 6331076e..8885a372 100644
+--- a/cl/compile.go
++++ b/cl/compile.go
+@@ -517,9 +517,10 @@ type blockCtx struct {
+ 
+ 	allowClassFields bool // available when isClass
+ 
+-	fileLine  bool
+-	isClass   bool
+-	isXgoFile bool // is XGo file or not
++	fileLine   bool
++	isClass    bool
++	isXgoFile  bool // is XGo file or not
++	simpleStmt bool // compiling a statement that must be a simple statement
+ }
+ 
+ func (p *blockCtx) cstr() gogen.Ref {
+@@ -1753,7 +1754,12 @@ func loadFunc(ctx *blockCtx, recv *types.Var, name string, d *ast.FuncDecl, genB
+ 			}
+ 		}
+ 	} else if d.Operator {
+-		if recv != nil { // binary op
++		if v, ok := indexXGoNames[name]; ok { // index op
++			if !checkIndexOpSig(ctx, d) {
++				return
++			}
++			name = v
++		} else if recv != nil { // binary op
+ 			if v, ok := binaryXGoNames[name]; ok {
+ 				name = v
+ 			}
+diff --git a/cl/expr.go b/cl/expr.go
+index b623cf73..3c4df889 100644
+--- a/cl/expr.go
++++ b/cl/expr.go
+@@ -330,6 +330,12 @@ func compileExprLHS(ctx *blockCtx, expr ast.Expr) {
+ 		compileIdent(ctx, 1, v, clIdentLHS)
+ 	case *ast.IndexExpr:
+ 		compileIndexExprLHS(ctx, v)
++	case *ast.IndexListExpr:
++		compileExpr(ctx, 1, v.X)
++		if indexOp(ctx, indexSetter) == nil {
++			panic(ctx.newCodeErrorf(v.Pos(), v.End(), "invalid operation: more than one index"))
++		}
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(), "cannot assign to %s here", ctx.LoadExpr(v)))
+ 	case *ast.SelectorExpr:
+ 		compileSelectorExprLHS(ctx, v)
+ 	case *ast.StarExpr:
+@@ -479,6 +485,9 @@ func compileExprOrNone(ctx *blockCtx, expr ast.Expr) {
+ 
+ func compileUnaryExpr(ctx *blockCtx, lhs int, v *ast.UnaryExpr) {
+ 	compileExpr(ctx, 1, v.X)
++	if v.Op == token.AND && isIndexGetCall(ctx.cb.Get(-1)) {
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(), "cannot take address of %s", ctx.LoadExpr(v.X)))
++	}
+ 	ctx.cb.UnaryOpEx(gotoken.Token(v.Op), lhs, v)
+ }
+ 
+@@ -490,6 +499,9 @@ func compileBinaryExpr(ctx *blockCtx, v *ast.BinaryExpr) {
+ 
+ func compileIndexExprLHS(ctx *blockCtx, v *ast.IndexExpr) {
+ 	compileExpr(ctx, 1, v.X)
++	if indexOp(ctx, indexSetter) != nil {
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(), "cannot assign to %s here", ctx.LoadExpr(v)))
++	}
+ 	compileExpr(ctx, 1, v.Index)
+ 	ctx.cb.IndexRef(1, v)
+ }
+@@ -515,16 +527,25 @@ func compileTypeAssertExpr(ctx *blockCtx, lhs int, v *ast.TypeAssertExpr) {
+ 
+ func compileIndexExpr(ctx *blockCtx, lhs int, v *ast.IndexExpr, inFlags ...int) { // x[i]
+ 	compileExpr(ctx, 1, v.X, inFlags...)
++	if compileIndexGet(ctx, lhs, v, []ast.Expr{v.Index}) {
++		return
++	}
+ 	compileExpr(ctx, 1, v.Index)
+ 	ctx.cb.Index(1, lhs, v)
+ }
+ 
+-func compileIndexListExpr(ctx *blockCtx, lhs int, v *ast.IndexListExpr, inFlags ...int) { // fn[t1,t2]
++func compileIndexListExpr(ctx *blockCtx, lhs int, v *ast.IndexListExpr, inFlags ...int) { // fn[t1,t2] or x[i,j]
+ 	compileExpr(ctx, 1, v.X, inFlags...)
++	if compileIndexGet(ctx, lhs, v, v.Indices) {
++		return
++	}
+ 	n := len(v.Indices)
+ 	for i := 0; i < n; i++ {
+ 		compileExpr(ctx, 1, v.Indices[i])
+ 	}
++	if _, ok := ctx.cb.Get(-n).Type.(*gogen.TypeType); !ok {
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(), "invalid operation: more than one index"))
++	}
+ 	ctx.cb.Index(n, lhs, v)
+ }
+ 
+diff --git a/cl/index_op.go b/cl/index_op.go
+new file mode 100644
+index 00000000..ae28c92a
+--- /dev/null
++++ b/cl/index_op.go
+@@ -0,0 +1,589 @@
++/*
++ * Copyright (c) 2026 The XGo Authors (xgo.dev). All rights reserved.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package cl
++
++import (
++	goast "go/ast"
++	gotoken "go/token"
++	"go/types"
++	"strconv"
++
++	"github.com/goplus/gogen"
++	"github.com/goplus/xgo/ast"
++	"github.com/goplus/xgo/token"
++)
++
++// Index operator methods:
++//
++//	func (m *Matrix) [](i, j int) float64       // XGo_Index: x = m[i, j]
++//	func (m *Matrix) []=(i, j int, v float64)   // XGo_IndexSet: m[i, j] = v
++const (
++	indexGetter = "XGo_Index"
++	indexSetter = "XGo_IndexSet"
++)
++
++var indexXGoNames = map[string]string{
++	"[]":  indexGetter,
++	"[]=": indexSetter,
++}
++
++func numFields(list *ast.FieldList) (n int) {
++	if list == nil {
++		return
++	}
++	for _, f := range list.List {
++		if len(f.Names) == 0 {
++			n++
++		} else {
++			n += len(f.Names)
++		}
++	}
++	return
++}
++
++// checkIndexOpSig checks the signature of an index getter (`[]`) or setter
++// (`[]=`) declaration.
++func checkIndexOpSig(ctx *blockCtx, d *ast.FuncDecl) bool {
++	nparams, nresults := numFields(d.Type.Params), numFields(d.Type.Results)
++	switch d.Name.Name {
++	case "[]":
++		if nparams < 1 || nresults != 1 {
++			ctx.handleErrorf(d.Name.Pos(), d.Name.End(),
++				"index getter [] must have at least one parameter and exactly one result")
++			return false
++		}
++	case "[]=":
++		if nparams < 2 || nresults != 0 {
++			ctx.handleErrorf(d.Name.Pos(), d.Name.End(),
++				"index setter []= must have at least two parameters and no results")
++			return false
++		}
++	}
++	return true
++}
++
++// indexOp returns the method name (XGo_Index or XGo_IndexSet) of the operand
++// on the top of the stack, or nil if the operand has no such method.
++func indexOp(ctx *blockCtx, name string) *types.Func {
++	typ := ctx.cb.Get(-1).Type
++	switch types.Unalias(typ).(type) {
++	case *types.Named, *types.Pointer, *types.TypeParam, *types.Interface:
++	default:
++		return nil
++	}
++	loadMethods(ctx, typ, make(map[*types.Named]bool))
++	obj, _, _ := types.LookupFieldOrMethod(typ, true, ctx.pkg.Types, name)
++	fn, _ := obj.(*types.Func)
++	return fn
++}
++
++// loadMethods makes sure that the methods of typ declared in this package,
++// including the ones promoted through embedded fields, are loaded.
++func loadMethods(ctx *blockCtx, typ types.Type, visited map[*types.Named]bool) {
++	if t, ok := types.Unalias(typ).(*types.Pointer); ok {
++		typ = t.Elem()
++	}
++	t, ok := types.Unalias(typ).(*types.Named)
++	if !ok || visited[t] {
++		return
++	}
++	visited[t] = true
++	if o := t.Obj(); o.Pkg() == ctx.pkg.Types {
++		ctx.loadType(o.Name())
++	}
++	if st, ok := t.Underlying().(*types.Struct); ok {
++		for i := 0; i < st.NumFields(); i++ {
++			if f := st.Field(i); f.Embedded() {
++				loadMethods(ctx, f.Type(), visited)
++			}
++		}
++	}
++}
++
++// paramType returns the type of the i-th argument of a call to fn.
++func paramType(fn *types.Func, i int) types.Type {
++	sig := fn.Type().(*types.Signature)
++	params := sig.Params()
++	n := params.Len()
++	if sig.Variadic() && i >= n-1 {
++		return params.At(n - 1).Type().(*types.Slice).Elem()
++	}
++	if i < n {
++		return params.At(i).Type()
++	}
++	return nil
++}
++
++// checkIndexCount checks that the index operator fn of lhs, called with the
++// indices of lhs and nextra more arguments, gets the right number of them.
++func checkIndexCount(ctx *blockCtx, lhs ast.Expr, fn *types.Func, nidx, nextra int) {
++	sig := fn.Type().(*types.Signature)
++	if sig.Variadic() {
++		return
++	}
++	if want := sig.Params().Len() - nextra; nidx != want {
++		panic(ctx.newCodeErrorf(lhs.Pos(), lhs.End(),
++			"wrong number of indices in %s: have %d, want %d", ctx.LoadExpr(lhs), nidx, want))
++	}
++}
++
++func indicesOf(x ast.Expr) []ast.Expr {
++	switch v := x.(type) {
++	case *ast.IndexExpr:
++		return []ast.Expr{v.Index}
++	case *ast.IndexListExpr:
++		return v.Indices
++	}
++	return nil
++}
++
++// compileIndexGet compiles x[indices] as a call of the index getter of x, the
++// operand on the top of the stack. It returns false if x has no index getter.
++func compileIndexGet(ctx *blockCtx, lhs int, v ast.Expr, indices []ast.Expr) bool {
++	if indexOp(ctx, indexGetter) == nil {
++		return false
++	}
++	cb := ctx.cb
++	cb.MemberVal(indexGetter, 0, v)
++	for _, idx := range indices {
++		compileExpr(ctx, 1, idx)
++	}
++	cb.CallWith(len(indices), lhs, 0, v)
++	return true
++}
++
++// isIndexGetCall reports whether x is a call of an index getter.
++func isIndexGetCall(x *gogen.Element) bool {
++	if call, ok := x.Val.(*goast.CallExpr); ok {
++		if sel, ok := call.Fun.(*goast.SelectorExpr); ok {
++			return sel.Sel.Name == indexGetter
++		}
++	}
++	return false
++}
++
++// lhsOperand is the compiled operand x of a left-hand side x[i, ...].
++type lhsOperand struct {
++	x      *gogen.Element
++	setter *types.Func
++}
++
++// compileLHSOperands compiles the operands of the index expressions in lhs,
++// from left to right, and reports whether any of them has an index setter.
++func compileLHSOperands(ctx *blockCtx, lhs []ast.Expr) (ops []*lhsOperand, hasSetter bool) {
++	for i, e := range lhs {
++		var x ast.Expr
++		switch v := unparen(e).(type) {
++		case *ast.IndexExpr:
++			x = v.X
++		case *ast.IndexListExpr:
++			x = v.X
++		default:
++			continue
++		}
++		if ops == nil {
++			ops = make([]*lhsOperand, len(lhs))
++		}
++		compileExpr(ctx, 1, x)
++		setter := indexOp(ctx, indexSetter)
++		ops[i] = &lhsOperand{x: ctx.cb.InternalStack().Pop(), setter: setter}
++		if setter != nil {
++			hasSetter = true
++		}
++	}
++	return
++}
++
++// compileLHS compiles the left-hand side expr, whose operand was compiled by
++// compileLHSOperands when op is not nil.
++func compileLHS(ctx *blockCtx, expr ast.Expr, op *lhsOperand) {
++	if op == nil {
++		compileExprLHS(ctx, expr)
++		return
++	}
++	ctx.cb.InternalStack().Push(op.x)
++	switch v := unparen(expr).(type) {
++	case *ast.IndexExpr:
++		compileExpr(ctx, 1, v.Index)
++		ctx.cb.IndexRef(1, v)
++	case *ast.IndexListExpr:
++		panic(ctx.newCodeErrorf(v.Pos(), v.End(), "invalid operation: more than one index"))
++	}
++	if rec := ctx.recorder(); rec != nil {
++		rec.recordExpr(ctx, expr, true)
++	}
++}
++
++// compileIndexSet compiles `x[indices] = rhs` as a call of the index setter.
++func compileIndexSet(ctx *blockCtx, lhs ast.Expr, op *lhsOperand, rhs ast.Expr, src ast.Node) {
++	cb := ctx.cb
++	indices := indicesOf(unparen(lhs))
++	cb.InternalStack().Push(op.x)
++	cb.MemberVal(indexSetter, 0, lhs)
++	for _, idx := range indices {
++		compileExpr(ctx, 1, idx)
++	}
++	compileAssignValue(ctx, rhs, paramType(op.setter, len(indices)), lhs)
++	cb.CallWith(len(indices)+1, 0, 0, src)
++}
++
++// compileAssignValue compiles the value rhs assigned to lhs of type typ.
++func compileAssignValue(ctx *blockCtx, rhs ast.Expr, typ types.Type, lhs ast.Expr) {
++	switch e := unparen(rhs).(type) {
++	case *ast.ArrowExpr, *ast.LambdaExpr:
++		if typ != nil {
++			sig, err := checkLambdaFuncType(ctx, e, typ, clLambaAssign, lhs)
++			if err != nil {
++				panic(err)
++			}
++			compileLambda(ctx, e, sig)
++			return
++		}
++	case *ast.SliceLit:
++		compileSliceLit(ctx, e, typ)
++		return
++	case *ast.CompositeLit:
++		compileCompositeLit(ctx, e, typ, false)
++		return
++	}
++	compileExpr(ctx, 1, rhs)
++}
++
++// needAddr reports whether calling the methods fns on x requires its address.
++func needAddr(x *gogen.Element, fns ...*types.Func) bool {
++	switch x.Type.Underlying().(type) {
++	case *types.Pointer, *types.Interface:
++		return false
++	}
++	for _, fn := range fns {
++		if obj, _, indirect := types.LookupFieldOrMethod(x.Type, false, fn.Pkg(), fn.Name()); obj == nil && indirect {
++			return true
++		}
++	}
++	return false
++}
++
++// tempBlock starts a block holding the temporary variables of a lowered
++// assignment. Where a simple statement is required, it is a function literal
++// that is called at once. The returned function ends the block.
++func tempBlock(ctx *blockCtx) func() {
++	cb := ctx.cb
++	closure := ctx.simpleStmt
++	if closure {
++		ctx.simpleStmt = false
++		sig := types.NewSignatureType(nil, nil, nil, nil, nil, false)
++		cb.NewClosureWith(sig).BodyStart(ctx.pkg)
++	} else {
++		cb.Block()
++	}
++	return func() {
++		if enableRecover {
++			if e := recover(); e != nil {
++				cb.ResetStmt()
++				cb.End()
++				ctx.simpleStmt = closure
++				panic(e)
++			}
++		}
++		cb.End()
++		if closure {
++			cb.CallWith(0, 0, 0).EndStmt()
++			ctx.simpleStmt = true
++		}
++	}
++}
++
++// newTemp declares a temporary variable name of type typ (inferred if nil)
++// initialized with the value that init pushes.
++func newTemp(ctx *blockCtx, name string, typ types.Type, init func()) {
++	ctx.cb.NewVarStart(typ, name)
++	initTemps(ctx, init)
++}
++
++// defineTemps defines temporary variables names initialized with the values
++// of the expression that init pushes.
++func defineTemps(ctx *blockCtx, pos token.Pos, names []string, init func()) {
++	ctx.cb.DefineVarStart(pos, names...)
++	initTemps(ctx, init)
++}
++
++func initTemps(ctx *blockCtx, init func()) {
++	cb := ctx.cb
++	if enableRecover {
++		defer func() {
++			if e := recover(); e != nil {
++				cb.ResetInit()
++				panic(e)
++			}
++		}()
++	}
++	init()
++	cb.EndInit(1)
++}
++
++// newOperandTemp declares a temporary variable name holding the operand x, or
++// its address if calling fns on it requires one.
++func newOperandTemp(ctx *blockCtx, name string, x *gogen.Element, fns ...*types.Func) {
++	newTemp(ctx, name, nil, func() {
++		ctx.cb.InternalStack().Push(x)
++		if needAddr(x, fns...) {
++			ctx.cb.UnaryOp(gotoken.AND)
++		}
++	})
++}
++
++// compileIndexOpAssignOp compiles `x[indices] op= rhs`, `x[indices]++` and
++// `x[indices]--`, where x has an index setter:
++//
++//	{
++//		_xgo_x := x // or &x
++//		var _xgo_i0 T0 = i0
++//		...
++//		_xgo_v := _xgo_x.XGo_Index(_xgo_i0, ...)
++//		_xgo_v op= rhs
++//		_xgo_x.XGo_IndexSet(_xgo_i0, ..., _xgo_v)
++//	}
++func compileIndexOpAssignOp(ctx *blockCtx, lhs ast.Expr, op *lhsOperand, tok token.Token, rhs ast.Expr, src ast.Node) {
++	cb := ctx.cb
++	stk := cb.InternalStack()
++	stk.Push(op.x)
++	getter := indexOp(ctx, indexGetter)
++	stk.Pop()
++	if getter == nil {
++		panic(ctx.newCodeErrorf(lhs.Pos(), lhs.End(),
++			"invalid operation: %s (type %v has no index getter)", ctx.LoadExpr(lhs), op.x.Type))
++	}
++	indices := indicesOf(unparen(lhs))
++	checkIndexCount(ctx, lhs, getter, len(indices), 0)
++	checkIndexCount(ctx, lhs, op.setter, len(indices), 1)
++	const (
++		nameX = "_xgo_x"
++		nameV = "_xgo_v"
++	)
++	defer tempBlock(ctx)()
++	newOperandTemp(ctx, nameX, op.x, getter, op.setter)
++	names := make([]string, len(indices))
++	for i, idx := range indices {
++		names[i] = "_xgo_i" + strconv.Itoa(i)
++		newTemp(ctx, names[i], paramType(getter, i), func() {
++			compileExpr(ctx, 1, idx)
++		})
++	}
++	newTemp(ctx, nameV, nil, func() {
++		cb.VarVal(nameX).MemberVal(indexGetter, 0, lhs)
++		for _, name := range names {
++			cb.VarVal(name)
++		}
++		cb.CallWith(len(names), 1, 0, lhs)
++	})
++	cb.VarRef(nameV)
++	if tok == token.INC || tok == token.DEC {
++		cb.IncDec(gotoken.Token(tok), src)
++	} else {
++		compileExpr(ctx, 1, rhs)
++		cb.AssignOp(gotoken.Token(tok), src)
++	}
++	cb.VarVal(nameX).MemberVal(indexSetter, 0, lhs)
++	for _, name := range names {
++		cb.VarVal(name)
++	}
++	cb.VarVal(nameV).CallWith(len(names)+1, 0, 0, src).EndStmt()
++}
++
++const (
++	targetBlank  = iota // _
++	targetVar           // variable
++	targetSetter        // x[i, ...] with an index setter
++	targetIndex         // a[i] of an array, slice or map
++	targetField         // x.f
++	targetElem          // *p
++)
++
++// assignTarget is a left-hand side of an assignment with several targets.
++type assignTarget struct {
++	expr    ast.Expr
++	kind    int
++	x       string   // temporary holding the operand
++	indices []string // temporaries holding the indices
++	val     string   // temporary holding the assigned value
++	sel     string
++	typ     types.Type // type of the assigned value, nil if unknown
++}
++
++// compileIndexOpMultiAssign compiles an assignment with several targets where
++// at least one is an index expression with an index setter. The operands and
++// indices of all targets and then all values are evaluated into temporaries,
++// from left to right; after that the assignments are carried out in order.
++func compileIndexOpMultiAssign(ctx *blockCtx, expr *ast.AssignStmt, ops []*lhsOperand) {
++	cb := ctx.cb
++	stk := cb.InternalStack()
++	nl, nr := len(expr.Lhs), len(expr.Rhs)
++	if nr != 1 && nr != nl {
++		panic(ctx.newCodeErrorf(expr.Pos(), expr.End(), "assignment mismatch: %d variables but %d values", nl, nr))
++	}
++	defer tempBlock(ctx)()
++	targets := make([]assignTarget, nl)
++	for i, lhs := range expr.Lhs {
++		t := &targets[i]
++		prefix := "_xgo_" + strconv.Itoa(i)
++		t.expr, t.x, t.val = lhs, prefix+"x", prefix+"v"
++		switch v := unparen(lhs).(type) {
++		case *ast.Ident:
++			if v.Name == "_" {
++				t.kind = targetBlank
++				break
++			}
++			t.kind = targetVar
++			compileExprLHS(ctx, v)
++			t.typ, _ = gogen.DerefType(stk.Pop().Type)
++		case *ast.IndexExpr, *ast.IndexListExpr:
++			op := ops[i]
++			indices := indicesOf(v)
++			if op.setter != nil {
++				checkIndexCount(ctx, lhs, op.setter, len(indices), 1)
++				t.kind = targetSetter
++				newOperandTemp(ctx, t.x, op.x, op.setter)
++				for j, idx := range indices {
++					name := prefix + "i" + strconv.Itoa(j)
++					newTemp(ctx, name, paramType(op.setter, j), func() {
++						compileExpr(ctx, 1, idx)
++					})
++					t.indices = append(t.indices, name)
++				}
++				t.typ = paramType(op.setter, len(indices))
++				break
++			}
++			if len(indices) != 1 {
++				panic(ctx.newCodeErrorf(v.Pos(), v.End(), "invalid operation: more than one index"))
++			}
++			var keyType types.Type
++			addr := false
++			switch u := op.x.Type.Underlying().(type) {
++			case *types.Array:
++				addr, t.typ = true, u.Elem()
++			case *types.Slice:
++				t.typ = u.Elem()
++			case *types.Map:
++				keyType, t.typ = u.Key(), u.Elem()
++			case *types.Pointer:
++				if a, ok := u.Elem().Underlying().(*types.Array); ok {
++					t.typ = a.Elem()
++				}
++			}
++			if t.typ == nil {
++				panic(ctx.newCodeErrorf(v.Pos(), v.End(), "cannot assign to %s", ctx.LoadExpr(v)))
++			}
++			t.kind = targetIndex
++			newTemp(ctx, t.x, nil, func() {
++				stk.Push(op.x)
++				if addr {
++					cb.UnaryOp(gotoken.AND)
++				}
++			})
++			name := prefix + "i0"
++			newTemp(ctx, name, keyType, func() {
++				compileExpr(ctx, 1, indices[0])
++			})
++			t.indices = []string{name}
++		case *ast.SelectorExpr:
++			if id, ok := v.X.(*ast.Ident); ok {
++				if _, kind := compileIdent(ctx, 1, id, clIdentLHS|clIdentSelectorExpr); kind != objNormal {
++					t.kind = targetVar // pkg.Var
++					compileExprLHS(ctx, v)
++					t.typ, _ = gogen.DerefType(stk.Pop().Type)
++					break
++				}
++			} else {
++				compileExpr(ctx, 1, v.X)
++			}
++			x := stk.Pop()
++			if _, ok := x.Type.(*gogen.TypeType); ok { // T.staticVar
++				t.kind = targetVar
++				compileExprLHS(ctx, v)
++				t.typ, _ = gogen.DerefType(stk.Pop().Type)
++				break
++			}
++			t.kind, t.sel = targetField, v.Sel.Name
++			newTemp(ctx, t.x, nil, func() {
++				stk.Push(x)
++				if _, ok := x.Type.Underlying().(*types.Pointer); !ok {
++					cb.UnaryOp(gotoken.AND)
++				}
++			})
++			cb.VarVal(t.x).MemberRef(t.sel, v)
++			t.typ, _ = gogen.DerefType(stk.Pop().Type)
++		case *ast.StarExpr:
++			t.kind = targetElem
++			newTemp(ctx, t.x, nil, func() {
++				compileExpr(ctx, 1, v.X)
++			})
++			cb.VarVal(t.x).ElemRef()
++			t.typ, _ = gogen.DerefType(stk.Pop().Type)
++		default:
++			panic(ctx.newCodeErrorf(lhs.Pos(), lhs.End(), "cannot assign to %s", ctx.LoadExpr(lhs)))
++		}
++	}
++	if nr == nl {
++		for i, rhs := range expr.Rhs {
++			t := &targets[i]
++			if t.kind == targetBlank {
++				cb.VarRef(nil)
++				compileExpr(ctx, 1, rhs)
++				cb.AssignWith(1, 1, rhs)
++				continue
++			}
++			newTemp(ctx, t.val, t.typ, func() {
++				compileAssignValue(ctx, rhs, t.typ, t.expr)
++			})
++		}
++	} else {
++		names := make([]string, nl)
++		for i := range targets {
++			if targets[i].kind == targetBlank {
++				names[i] = "_"
++			} else {
++				names[i] = targets[i].val
++			}
++		}
++		defineTemps(ctx, expr.Pos(), names, func() {
++			compileExpr(ctx, nl, expr.Rhs[0])
++		})
++	}
++	for i := range targets {
++		t := &targets[i]
++		switch t.kind {
++		case targetBlank:
++			continue
++		case targetSetter:
++			cb.VarVal(t.x).MemberVal(indexSetter, 0, t.expr)
++			for _, name := range t.indices {
++				cb.VarVal(name)
++			}
++			cb.VarVal(t.val).CallWith(len(t.indices)+1, 0, 0, t.expr).EndStmt()
++			continue
++		case targetVar:
++			compileExprLHS(ctx, unparen(t.expr))
++		case targetIndex:
++			cb.VarVal(t.x).VarVal(t.indices[0]).IndexRef(1, t.expr)
++		case targetField:
++			cb.VarVal(t.x).MemberRef(t.sel, t.expr)
++		case targetElem:
++			cb.VarVal(t.x).ElemRef()
++		}
++		cb.VarVal(t.val).AssignWith(1, 1, t.expr)
++	}
++}
+diff --git a/cl/stmt.go b/cl/stmt.go
+index 7b32d41e..4a449914 100644
+--- a/cl/stmt.go
++++ b/cl/stmt.go
+@@ -119,6 +119,17 @@ func compileStmts(ctx *blockCtx, body []ast.Stmt) {
+ 	}
+ }
+ 
++// compileSimpleStmt compiles the init statement of an if, for or switch
++// statement, or the post statement of a for statement.
++func compileSimpleStmt(ctx *blockCtx, stmt ast.Stmt) {
++	old := ctx.simpleStmt
++	ctx.simpleStmt = true
++	defer func() {
++		ctx.simpleStmt = old
++	}()
++	compileStmt(ctx, stmt)
++}
++
+ func compileStmt(ctx *blockCtx, stmt ast.Stmt) {
+ 	if enableRecover {
+ 		defer func() {
+@@ -243,7 +254,16 @@ func compileReturnStmt(ctx *blockCtx, expr *ast.ReturnStmt) {
+ }
+ 
+ func compileIncDecStmt(ctx *blockCtx, expr *ast.IncDecStmt) {
+-	compileExprLHS(ctx, expr.X)
++	ops, hasSetter := compileLHSOperands(ctx, []ast.Expr{expr.X})
++	if hasSetter {
++		compileIndexOpAssignOp(ctx, expr.X, ops[0], expr.Tok, nil, expr)
++		return
++	}
++	var op *lhsOperand
++	if ops != nil {
++		op = ops[0]
++	}
++	compileLHS(ctx, expr.X, op)
+ 	ctx.cb.IncDec(gotoken.Token(expr.Tok))
+ }
+ 
+@@ -341,8 +361,30 @@ func compileAssignStmt(ctx *blockCtx, expr *ast.AssignStmt) {
+ 		ctx.cb.EndInit(stk.Len() - base)
+ 		return
+ 	}
+-	for _, lhs := range expr.Lhs {
+-		compileExprLHS(ctx, lhs)
++	ops, hasSetter := compileLHSOperands(ctx, expr.Lhs)
++	if hasSetter {
++		switch {
++		case len(expr.Lhs) > 1:
++			if tok != token.ASSIGN {
++				panic("TODO: invalid syntax of assign by operator")
++			}
++			compileIndexOpMultiAssign(ctx, expr, ops)
++		case len(expr.Rhs) != 1:
++			panic(ctx.newCodeErrorf(expr.Pos(), expr.End(),
++				"assignment mismatch: 1 variable but %d values", len(expr.Rhs)))
++		case tok == token.ASSIGN:
++			compileIndexSet(ctx, expr.Lhs[0], ops[0], expr.Rhs[0], expr)
++		default:
++			compileIndexOpAssignOp(ctx, expr.Lhs[0], ops[0], tok, expr.Rhs[0], expr)
++		}
++		return
++	}
++	for i, lhs := range expr.Lhs {
++		var op *lhsOperand
++		if ops != nil {
++			op = ops[i]
++		}
++		compileLHS(ctx, lhs, op)
+ 	}
+ 	for i, rhs := range expr.Rhs {
+ 		switch e := unparen(rhs).(type) {
+@@ -402,6 +444,10 @@ func compileRangeStmt(ctx *blockCtx, v *ast.RangeStmt) {
+ 		compileForStmt(ctx, toForStmt(v.For, v.Key, v.Body, re, tok, nil))
+ 		return
+ 	}
++	if v.Tok == token.ASSIGN && (isIndexTarget(v.Key) || isIndexTarget(v.Value)) {
++		compileRangeStmt(ctx, rangeToDefine(v))
++		return
++	}
+ 	cb := ctx.cb
+ 	defer cb.End(v)
+ 	defer func() {
+@@ -467,6 +513,46 @@ func compileRangeStmt(ctx *blockCtx, v *ast.RangeStmt) {
+ 	setBodyHandler(ctx)
+ }
+ 
++func isIndexTarget(x ast.Expr) bool {
++	switch unparen(x).(type) {
++	case *ast.IndexExpr, *ast.IndexListExpr:
++		return true
++	}
++	return false
++}
++
++// rangeToDefine rewrites a range loop that assigns to index expressions, so
++// that they can use index setters:
++//
++//	for k, a[i] = range x { ... }
++//
++// =>
++//
++//	for _xgo_k, _xgo_v := range x { k, a[i] = _xgo_k, _xgo_v; ... }
++func rangeToDefine(v *ast.RangeStmt) *ast.RangeStmt {
++	var lhs, rhs []ast.Expr
++	vars := [2]ast.Expr{v.Key, v.Value}
++	for i, name := range [2]string{"_xgo_k", "_xgo_v"} {
++		x := vars[i]
++		if x == nil {
++			continue
++		}
++		if id, ok := x.(*ast.Ident); ok && id.Name == "_" {
++			continue
++		}
++		id := &ast.Ident{NamePos: x.Pos(), Name: name}
++		lhs, rhs, vars[i] = append(lhs, x), append(rhs, id), id
++	}
++	body := &ast.BlockStmt{Lbrace: v.Body.Lbrace, Rbrace: v.Body.Rbrace}
++	body.List = append([]ast.Stmt{&ast.AssignStmt{
++		Lhs: lhs, TokPos: v.TokPos, Tok: token.ASSIGN, Rhs: rhs,
++	}}, v.Body.List...)
++	return &ast.RangeStmt{
++		For: v.For, Key: vars[0], Value: vars[1], TokPos: v.TokPos, Tok: token.DEFINE,
++		X: v.X, Body: body, NoRangeOp: v.NoRangeOp,
++	}
++}
++
+ func compileForPhraseStmt(ctx *blockCtx, v *ast.ForPhraseStmt) {
+ 	if re, ok := v.X.(*ast.RangeExpr); ok {
+ 		compileForStmt(ctx, toForStmt(v.For, v.Value, v.Body, re, token.DEFINE, v.ForPhrase))
+@@ -640,7 +726,7 @@ func compileForStmt(ctx *blockCtx, v *ast.ForStmt) {
+ 		rec.Scope(v, cb.Scope())
+ 	}
+ 	if v.Init != nil {
+-		compileStmt(ctx, v.Init)
++		compileSimpleStmt(ctx, v.Init)
+ 	}
+ 	if v.Cond != nil {
+ 		compileExpr(ctx, 1, v.Cond)
+@@ -654,7 +740,7 @@ func compileForStmt(ctx *blockCtx, v *ast.ForStmt) {
+ 	compileStmts(ctx, v.Body.List)
+ 	if v.Post != nil {
+ 		cb.Post()
+-		compileStmt(ctx, v.Post)
++		compileSimpleStmt(ctx, v.Post)
+ 	}
+ 	cb.SetComments(comments, once)
+ 	setBodyHandler(ctx)
+@@ -678,7 +764,7 @@ func compileIfStmt(ctx *blockCtx, v *ast.IfStmt) {
+ 	comments, once := cb.BackupComments()
+ 	cb.If(v)
+ 	if v.Init != nil {
+-		compileStmt(ctx, v.Init)
++		compileSimpleStmt(ctx, v.Init)
+ 	}
+ 	compileExpr(ctx, 1, v.Cond)
+ 	if rec := ctx.recorder(); rec != nil {
+@@ -743,7 +829,7 @@ func compileTypeSwitchStmt(ctx *blockCtx, v *ast.TypeSwitchStmt) {
+ 		rec.Scope(v, cb.Scope())
+ 	}
+ 	if v.Init != nil {
+-		compileStmt(ctx, v.Init)
++		compileSimpleStmt(ctx, v.Init)
+ 	}
+ 	compileExpr(ctx, 1, ta.X)
+ 	cb.TypeAssertThen()
+@@ -826,7 +912,7 @@ func compileSwitchStmt(ctx *blockCtx, v *ast.SwitchStmt) {
+ 	comments, once := cb.BackupComments()
+ 	cb.Switch(v)
+ 	if v.Init != nil {
+-		compileStmt(ctx, v.Init)
++		compileSimpleStmt(ctx, v.Init)
+ 	}
+ 	if v.Tag != nil { // switch tag {....}
+ 		compileExpr(ctx, 1, v.Tag)
+diff --git a/parser/parser.go b/parser/parser.go
+index 490d80a1..01c8d141 100644
+--- a/parser/parser.go
++++ b/parser/parser.go
+@@ -2240,12 +2240,12 @@ func (p *parser) parseIndexOrSliceContinue(x ast.Expr, lbrack token.Pos, idx ast
+ 			}
+ 		}
+ 	case token.COMMA:
+-		// instance expression
++		// instance expression or index expression with several indices
+ 		args = append(args, index[0])
+ 		for p.tok == token.COMMA {
+ 			p.next()
+ 			if p.tok != token.RBRACK && p.tok != token.EOF {
+-				args = append(args, p.parseType())
++				args = append(args, p.parseRHS())
+ 			}
+ 		}
+ 	}
+@@ -4222,6 +4222,30 @@ func (p *parser) parseGenDecl(keyword token.Token, f parseSpecFunction) *ast.Gen
+ 	return ret
+ }
+ 
++// parseIndexOpName parses the name of an index operator method, `[]` (getter)
++// or `[]=` (setter), which follows the receiver of a method declaration.
++// Otherwise `[` starts the result type of a function literal: `[]T` is parsed
++// and returned as typ, and the `[` of `[N]T` is left for the caller.
++func (p *parser) parseIndexOpName() (ident *ast.Ident, typ ast.Expr) {
++	lbrack := p.pos
++	p.next()
++	if p.tok != token.RBRACK {
++		p.unget(lbrack, token.LBRACK, "")
++		return
++	}
++	p.next()
++	switch p.tok {
++	case token.LPAREN:
++		return &ast.Ident{NamePos: lbrack, Name: "[]"}, nil
++	case token.ASSIGN:
++		p.next()
++		return &ast.Ident{NamePos: lbrack, Name: "[]="}, nil
++	}
++	typ = &ast.ArrayType{Lbrack: lbrack, Elt: p.parseType()}
++	p.resolve(typ)
++	return
++}
++
+ func isOverloadOp(tok token.Token) bool {
+ 	return int(tok) < len(overloadOps) && overloadOps[tok] != 0
+ }
+@@ -4296,7 +4320,7 @@ func (p *parser) parseFuncDeclOrCall(decs []*ast.FuncDecorator) (ast.Decl, *ast.
+ 
+ 	var recv, params, results *ast.FieldList
+ 	var ident *ast.Ident
+-	var isOp, isStatic, isFunLit, ok bool
++	var isOp, isIndexOp, isStatic, isFunLit, ok bool
+ 
+ 	switch p.tok {
+ 	case token.LPAREN:
+@@ -4304,7 +4328,21 @@ func (p *parser) parseFuncDeclOrCall(decs []*ast.FuncDecorator) (ast.Decl, *ast.
+ 		// overload: `func (T).identOrOp = (overloadFuncs)`
+ 		// funlit: `func (params) results { ... }()`
+ 		params = p.parseParameters(scope, true)
+-		if p.tok == token.LPAREN {
++		var indexOp *ast.Ident
++		var sliceType ast.Expr
++		if p.tok == token.LBRACK {
++			indexOp, sliceType = p.parseIndexOpName()
++		}
++		if indexOp != nil {
++			// func (recv) [](params) result { ... }
++			// func (recv) []=(params) { ... }
++			isOp, isIndexOp = true, true
++			recv, ident = params, indexOp
++			params, results = p.parseSignature(scope)
++		} else if sliceType != nil {
++			// func (params) []T { ... }()
++			isFunLit, results = true, &ast.FieldList{List: []*ast.Field{{Type: sliceType}}}
++		} else if p.tok == token.LPAREN {
+ 			// func (params) (results) { ... }()
+ 			isFunLit, results = true, p.parseParameters(scope, false)
+ 		} else if p.tok == token.PERIOD {
+@@ -4396,7 +4434,7 @@ func (p *parser) parseFuncDeclOrCall(decs []*ast.FuncDecorator) (ast.Decl, *ast.
+ 		params, results = p.parseSignature(scope)
+ 	}
+ 
+-	if isOp {
++	if isOp && !isIndexOp {
+ 		if params == nil || len(params.List) != 1 {
+ 			p.error(ident.Pos(), "overload operator can only have one parameter")
+ 		}
