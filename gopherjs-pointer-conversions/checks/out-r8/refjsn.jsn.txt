@@ -1,0 +1,19 @@
+ok J1 P(o) == P(unsafe(o))
+ok J2 P(o) == P(o)
+ok J3 %T P(o)
+ok J4 %T P(unsafe(o))
+ok J5 back (*js.Object)(P(o)) == o
+ok J6 back via unsafe
+ok J7 unsafe(P(o)) == unsafe(o)
+ok J8 iface assert P
+ok J9 iface assert not *js.Object
+ok J10 P -> Q
+ok J11 implicit var P = o
+ok J12 implicit back var *js.Object = P
+ok J13 nil P
+ok J14 reflect Convert
+ok J15 reflect Set
+ok J16 reflect NewAt-free Pointer eq
+ok J17 map key P
+ok J18 deref field through P
+ok J19 o unchanged keys

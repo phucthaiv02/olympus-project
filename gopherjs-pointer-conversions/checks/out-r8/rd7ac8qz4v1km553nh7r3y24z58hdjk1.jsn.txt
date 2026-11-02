@@ -1,0 +1,19 @@
+ok J1 P(o) == P(unsafe(o))
+ok J2 P(o) == P(o)
+FAIL J3 %T P(o) panic: JavaScript error: Cannot read properties of undefined (reading 'length')
+FAIL J4 %T P(unsafe(o)) panic: JavaScript error: Cannot read properties of undefined (reading 'constructor')
+ok J5 back (*js.Object)(P(o)) == o
+ok J6 back via unsafe
+ok J7 unsafe(P(o)) == unsafe(o)
+FAIL J8 iface assert P
+ok J9 iface assert not *js.Object
+FAIL J10 P -> Q panic: JavaScript error: Cannot read properties of undefined (reading 'constructor')
+ok J11 implicit var P = o
+ok J12 implicit back var *js.Object = P
+FAIL J13 nil P
+FAIL J14 reflect Convert
+FAIL J15 reflect Set
+FAIL J16 reflect NewAt-free Pointer eq panic: reflect: call of reflect.Value.Pointer on zero Value
+ok J17 map key P
+ok J18 deref field through P
+FAIL J19 o unchanged keys

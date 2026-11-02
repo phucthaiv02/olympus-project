@@ -1,0 +1,26 @@
+ok D1 %T &*PT
+ok D2 &*PT == &x
+ok D3 %T &*PI
+ok D4 &*PI == &n
+ok D5 &*PI == (*int)(p)
+ok D6 &*PI write
+ok U1 **MyInt write keeps *int
+ok U2 **MyInt read has *MyInt
+ok U3 **MyInt write aliases and identity
+ok U4 **T write of nil
+ok U5 struct field **
+ok A1 Elem().Addr() type PT
+ok A2 Elem().Addr() == &x PT
+ok A3 Elem().Addr() type PI
+FAIL A4 Elem().Addr() == &n PI
+ok A5 named array
+ok M1 rows of 2 conversions
+ok M2 row vs row converted directly
+ok M3 row back to source
+ok M4 row unsafe equal
+ok M5 reflect Index.Addr vs direct
+ok M6 reflect Index.Addr pointer value
+ok M7 elements share and read typed
+ok M8 element pointers
+ok M9 named Grid rows
+ok M10 unconverted 2D baseline

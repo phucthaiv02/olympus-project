@@ -1,0 +1,13 @@
+FAIL X1 direct row[0] then view
+FAIL X2 view then direct row[1]
+ok X3 two direct row conversions
+ok X4 round trip direct row
+FAIL X5 view row back
+ok X6 reflect row vs direct-converted
+ok X7 reflect row vs view row
+ok X8 reflect on source vs view row back
+ok X9 write through direct row
+ok X10 write through view row
+FAIL X11 3D rows
+FAIL X12 struct array field row
+ok X13 named row array
