@@ -1,0 +1,28 @@
+from lib import *
+c = []
+def case(n, prefix, anns, call, exp): c.append((n, prefix + ov(*anns) + call, exp))
+TC = 'T = TypeVar("T", A, C)\n'
+case('constr list mixed', TC, ['x: list[T]', 'x: object'], 'f([A(), C()])', ['RB'])
+case('constr two args', TC, ['x: T, y: T', 'x: object, y: object'], 'f(A(), C())', ['RB'])
+case('constr two args same', TC, ['x: T, y: T', 'x: object, y: object'], 'f(A(), B())', ['RA'])
+case('constr type mixed', TC, ['x: list[type[T]]', 'x: object'], 'f([A, C])', ['RB'])
+case('empty tuple ann', '', ['x: tuple[()]', 'x: object'], 'f(())', ['RA'])
+case('empty tuple ann bad', '', ['x: tuple[()]', 'x: object'], 'f((A,))', ['RB'])
+case('multi values', '', ['x: type[A], **kw: object', 'x: object, **kw: object'], 'f(C, x=A)', ['RA', 'RB'])
+case('multi values2', '', ['x: type[A], **kw: object', 'x: object = None, **kw: object'], 'f(A, **{"x": A})', ['RA', 'RB'])
+case('dict setitem', 'd = {"x": A}\nd["x"] = C\n', ['x: type[A]', 'x: object'], 'f(**d)', ['RB'])
+case('list append', 'xs = [A]\nxs.append(C)\n', ['x: type[A], y: type[A]', 'x: object, y: object'], 'f(*xs)', ['RB'])
+case('list append len', 'xs = [A]\nxs.append(A)\n', ['x: type[A]', 'x: object, y: object'], 'f(*xs)', ['RB'])
+TD = 'from typing import TypedDict\nclass TD(TypedDict):\n    x: type[C]\ndef g() -> TD: ...\n'
+case('typeddict', TD, ['x: type[A]', 'x: type[C]'], 'f(**g())', ['RB'])
+case('nested var star', 'ys = [A] if random.random() else []\nxs = [*ys, C]\n', ['x: type[A] = A, y: type[C] = C', 'x: object = None, y: object = None'], 'f(*xs)', ['RB'])
+case('cond dict var', 'd = {"x": A} if random.random() else {"x": C}\n', ['x: type[A]', 'x: object'], 'f(**d)', ['RB'])
+case('cond kw val', '', ['x: type[A]', 'x: object'], 'f(x=A if random.random() else C)', ['RB'])
+case('cond in list', '', ['x: list[type[A]]', 'x: object'], 'f([A if random.random() else C])', ['RB'])
+case('cond in dict key', '', ['x: dict[str, type[A]]', 'x: object'], 'f({("a" if random.random() else 1): A})', ['RB'])
+case('cond key replace', 'k = "a" if random.random() else "b"\n', ['x: dict[str, type[A]]', 'x: object'], 'f({"a": C, k: A})', ['RB'])
+case('cond key kw', 'k = "x" if random.random() else "y"\n', ['x: type[A] = A, y: type[A] = A', 'x: object = None, y: object = None'], 'f(**{k: C})', ['RB'])
+case('cond key kw ok', 'k = "x" if random.random() else "y"\n', ['x: type[C] = C, y: type[C] = C', 'x: object = None, y: object = None'], 'f(**{k: C})', ['RA'])
+case('cond key kw required', 'k = "x" if random.random() else "y"\n', ['x: type[C], y: type[C] = C', 'x: object = None, y: object = None'], 'f(**{k: C})', ['RB'])
+case('walrus base', '', ['x: type[A]', 'x: object'], '(y := C)', ['C'])
+run(c)

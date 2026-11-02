@@ -1,0 +1,37 @@
+from lib import *
+import time
+c = []
+def case(n, prefix, anns, call, exp): c.append((n, prefix + ov(*anns) + call, exp))
+TC = 'T = TypeVar("T", A, C)\n'
+case('c two', TC, ['x: T, y: T', 'x: object, y: object'], 'f(A(), C())', ['RB'])
+case('c two sub', TC, ['x: T, y: T', 'x: object, y: object'], 'f(B(), A())', ['RA'])
+case('c args', TC, ['*a: T', '*a: object'], 'f(A(), C())', ['RB'])
+case('c args ok', TC, ['*a: T', '*a: object'], 'f(C(), C())', ['RA'])
+case('c kwargs', TC, ['**k: T', '**k: object'], 'f(p=A(), q=C())', ['RB'])
+case('c type', TC, ['x: type[T], y: T', 'x: object, y: object'], 'f(A, C())', ['RB'])
+case('c type ok', TC, ['x: type[T], y: T', 'x: object, y: object'], 'f(C, C())', ['RA'])
+case('c nested dict', TC, ['x: dict[str, list[T]]', 'x: object'], 'f({"a": [A()], "b": [C()]})', ['RB'])
+case('c nested dict ok', TC, ['x: dict[str, list[T]]', 'x: object'], 'f({"a": [A()], "b": [B()]})', ['RA'])
+case('c optional', TC, ['x: Optional[T], y: T', 'x: object, y: object'], 'f(None, C())', ['RA'])
+case('c union', TC, ['x: Union[T, int], y: T', 'x: object, y: object'], 'f(1, C())', ['RA'])
+case('c tuple', TC, ['x: tuple[T, T]', 'x: object'], 'f((A(), C()))', ['RB'])
+case('c tuple var', TC, ['x: tuple[T, ...]', 'x: object'], 'f((A(), C()))', ['RB'])
+case('c forward', 'T = TypeVar("T", "A", "C")\n', ['x: T, y: T', 'x: object, y: object'], 'f(A(), C())', ['RB'])
+case('c forward ok', 'T = TypeVar("T", "A", "C")\n', ['x: T, y: T', 'x: object, y: object'], 'f(C(), C())', ['RA'])
+case('c quoted ann', TC, ['x: "T", y: "T"', 'x: object, y: object'], 'f(A(), C())', ['RB'])
+case('c builtin', 'T = TypeVar("T", int, str)\n', ['x: T, y: T', 'x: object, y: object'], 'f(1, "a")', ['RB'])
+case('c builtin ok', 'T = TypeVar("T", int, str)\n', ['x: T, y: T', 'x: object, y: object'], 'f(1, True)', ['RA'])
+case('c float promo', 'T = TypeVar("T", float, str)\n', ['x: T, y: T', 'x: object, y: object'], 'f(1, 1.5)', ['RA'])
+case('c generic constraint', 'T = TypeVar("T", list[int], str)\n', ['x: T', 'x: object'], 'f([1])', ['RA'])
+case('c generic constraint bad', 'T = TypeVar("T", list[int], str)\n', ['x: T', 'x: object'], 'f(["a"])', ['RB'])
+case('c return only', TC, ['x: int', 'x: object'], 'f(1)', ['RA'])
+case('bound+constrained mix', TC + 'U = TypeVar("U", bound=A)\n', ['x: T, y: U', 'x: object, y: object'], 'f(C(), B())', ['RA'])
+case('two constrained', TC + 'U = TypeVar("U", int, str)\n', ['x: T, y: U, z: T, w: U', 'x: object, y: object, z: object, w: object'], 'f(A(), 1, B(), "a")', ['RB'])
+case('two constrained ok', TC + 'U = TypeVar("U", int, str)\n', ['x: T, y: U, z: T, w: U', 'x: object, y: object, z: object, w: object'], 'f(A(), 1, B(), 2)', ['RA'])
+case('c in protocol-ish callable', TC, ['x: list[type[T]]', 'x: object'], 'f([A, B])', ['RA'])
+case('c default', TC, ['x: T, y: T = A()', 'x: object, y: object = None'], 'f(C())', ['RA'])
+case('c generic class method', 'from typing import Generic\n' + TC + 'class K(Generic[T]):\n' + ov('self, x: T', 'self, x: object', name='m', indent='    ') + 'def g() -> K[A]: ...\n', [], 'g().m(C())', ['RB'])
+case('typevar in generic container ann', 'S = TypeVar("S")\n', ['x: list[S], y: S', 'x: object, y: object'], 'f([A()], C())', ['RA'])
+for n, code, exp in c:
+    t = time.time(); got = infer(code); dt = time.time() - t
+    print('%-4s %-28s %.1fs got=%s expected=%s' % ('OK' if got == exp else 'BAD', n, dt, got, exp), flush=True)

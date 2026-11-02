@@ -1,0 +1,26 @@
+from lib import *
+import parso
+print(parso.parse('f(y := C)').children[0].children[1].children[1])
+print(parso.parse('f(y := C)').children[0].children[1].children[1].children)
+c = []
+def case(n, prefix, anns, call, exp): c.append((n, prefix + ov(*anns) + call, exp))
+case('walrus', '', ['x: type[A]', 'x: object'], 'f(y := C)', ['RB'])
+case('walrus x', '', ['x: type[C], y: type[A] = A', 'x: object, y: object = None'], 'f(y := C)', ['RA'])
+case('key first dstar', '', ['x: dict[bool, type[C]]', 'x: dict[int, type[C]]', 'x: object'], 'f({1: A, **{True: C}})', ['RB'])
+case('key first var', 'd = {1: A, True: C}\n', ['x: dict[bool, type[C]]', 'x: dict[int, type[C]]', 'x: object'], 'f(d)', ['RB'])
+case('complex int', '', ['x: complex', 'x: object'], 'f(1.5)', ['RA'])
+def K(body): return 'class K:\n' + body
+CALL = K('    @overload\n    def __call__(self, x: type[A]) -> RA: ...\n    @overload\n    def __call__(self, x: type[C]) -> RB: ...\n    def __call__(self, x): ...\n')
+c.append(('__call__', CALL + 'K()(C)', ['RB']))
+c.append(('__call__ dstar', CALL + 'K()(**{"x": C})', ['RB']))
+GI = K('    @overload\n    def __getitem__(self, x: type[A]) -> RA: ...\n    @overload\n    def __getitem__(self, x: type[C]) -> RB: ...\n    def __getitem__(self, x): ...\n')
+c.append(('__getitem__', GI + 'K()[C]', ['RB']))
+M = K('    @overload\n    def m(self, x: type[A]) -> RA: ...\n    @overload\n    def m(self, x: type[C]) -> RB: ...\n    def m(self, x): ...\n')
+c.append(('partial method', M + 'p = functools.partial(K().m, C)\np()', ['RB']))
+c.append(('partial method kw', M + 'p = functools.partial(K().m)\np(x=C)', ['RB']))
+c.append(('unbound method', M + 'K.m(K(), C)', ['RB']))
+c.append(('unbound method kw', M + 'K.m(K(), **{"x": C})', ['RB']))
+c.append(('unbound method self kw', M + 'K.m(self=K(), x=C)', ['RB']))
+c.append(('super', M + 'class L(K):\n    def n(self):\n        return super().m(C)\nL().n()', ['RB']))
+c.append(('stub builtin', '', None))
+run(c[:-1])

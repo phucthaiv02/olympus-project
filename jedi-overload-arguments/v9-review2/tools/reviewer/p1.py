@@ -1,0 +1,30 @@
+from lib import *
+c = []
+def case(n, prefix, anns, call, exp): c.append((n, prefix + ov(*anns) + call, exp))
+D = "def g() -> dict[str, type[C]]: ...\nd = g()\n"
+DA = "def g() -> dict[str, type[A]]: ...\nd = g()\n"
+case('kw ann dict vs kwargs', D, ['**kw: type[A]', '**kw: type[C]'], 'f(**d)', ['RB'])
+case('kw ann dict vs kwargs param', "def h(d: dict[str, type[C]]):\n    return f(**d)\nh({})", ['**kw: type[A]', '**kw: type[C]'], '', ['RB'])
+case('kw ann dict vs named', D, ['x: type[A]', 'x: type[C]'], 'f(**d)', ['RB'])
+case('kw ann dict vs default', D, ['x: type[A] = A', 'x: type[C] = C'], 'f(**d)', ['RB'])
+case('kw ann dict A vs named+kw', DA, ['x: type[C] = C, **kw: type[C]', 'x: type[A] = A, **kw: object'], 'f(**d)', ['RB'])
+case('kw lit then ann', D, ['x: type[C], y: type[A] = A', 'x: object, y: object = None'], 'f(x=C, **d)', ['RB'])
+case('Mapping ann', "def g() -> Mapping[str, type[C]]: ...\nd = g()\n", ['**kw: type[A]', '**kw: type[C]'], 'f(**d)', ['RB'])
+# positional
+case('star ann list', "def g() -> list[type[C]]: ...\nxs = g()\n", ['*a: type[A]', '*a: type[C]'], 'f(*xs)', ['RB'])
+case('star ann tuple fixed', "def g() -> tuple[type[C], type[A]]: ...\nxs = g()\n", ['x: type[C], y: type[C]', 'x: type[C], y: type[A]'], 'f(*xs)', ['RB'])
+case('star ann tuple fixed kwargs', "def g() -> tuple[type[C], type[A]]: ...\nxs = g()\n", ['x: type[C], y: type[C] = C', 'x: object, y: object = None'], 'f(*xs)', ['RB'])
+case('star ann tuple fixed shift', "def g() -> tuple[type[A], type[A]]: ...\nxs = g()\n", ['x: type[A], y: type[A], z: type[A]', 'x: object, y: object, z: type[C]'], 'f(*xs, C)', ['RB'])
+case('star ann tuple fixed shift2', "def g() -> tuple[type[A]]: ...\nxs = g()\n", ['x: type[C], y: type[A] = A', 'x: type[A], y: type[C] = C'], 'f(*xs, C)', ['RB'])
+case('cond expr arg', '', ['x: type[A]', 'x: object'], 'f(A if random.random() else C)', ['RB'])
+case('cond expr star', '', ['x: type[A], y: type[C]', 'x: object, y: object = None'], 'f(*([A, C] if random.random() else [A]))', ['RB'])
+case('cond expr kw', '', ['x: type[A], y: type[C] = C', 'x: object = None, y: object = None'], 'f(**({"x": A} if random.random() else {"y": C}))', ['RB'])
+case('unknown name', '', ['x: type[A]', 'x: object'], 'f(undefined_thing)', ['RA','RB'])
+case('unknown star', '', ['x: type[A]', 'x: object'], 'f(*undefined_thing)', ['RA','RB'])
+case('unknown dstar', '', ['x: type[A]', 'x: object'], 'f(**undefined_thing)', ['RA','RB'])
+case('var lit dict', "d = {'x': C}\n", ['x: type[A]', 'x: type[C]'], 'f(**d)', ['RB'])
+case('var lit list', "xs = [C, A]\n", ['x: type[A], y: type[A]', 'x: type[C], y: type[A]'], 'f(*xs)', ['RB'])
+case('bool key replace', "", ['x: dict[int, type[A]]', 'x: dict[int, type[C]]', 'x: object'], 'f({1: A, True: C})', ['RB'])
+case('float key replace', "", ['x: dict[float, type[A]]', 'x: dict[float, type[C]]', 'x: object'], 'f({1.0: A, 1: C})', ['RB'])
+case('dict len', "", ['x: dict[int, type[A]]', 'x: object'], 'f({1: A, True: C})', ['RB'])
+run(c)
