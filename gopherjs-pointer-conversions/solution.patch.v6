@@ -1,0 +1,704 @@
+diff --git a/compiler/expressions.go b/compiler/expressions.go
+index a2c65878..b3c66a06 100644
+--- a/compiler/expressions.go
++++ b/compiler/expressions.go
+@@ -801,7 +801,7 @@ func (fc *funcContext) translateExpr(expr ast.Expr) *expression {
+ 		}
+ 		if c1, isCall := e.X.(*ast.CallExpr); isCall && len(c1.Args) == 1 {
+ 			if c2, isCall := c1.Args[0].(*ast.CallExpr); isCall && len(c2.Args) == 1 && types.Identical(fc.typeOf(c2.Fun), types.Typ[types.UnsafePointer]) {
+-				if unary, isUnary := c2.Args[0].(*ast.UnaryExpr); isUnary && unary.Op == token.AND {
++				if unary, isUnary := c2.Args[0].(*ast.UnaryExpr); isUnary && unary.Op == token.AND && fc.unsafeDerefAsIs(fc.typeOf(unary.X), exprType) {
+ 					return fc.translateExpr(unary.X) // unsafe conversion
+ 				}
+ 			}
+@@ -1171,6 +1171,14 @@ func (fc *funcContext) packageAllowsKindTypeConversion() bool {
+ 	return false
+ }
+ 
++// unsafeDerefAsIs reports whether *(*T)(unsafe.Pointer(&x)), where x is of
++// type from and T is to, can be translated as x itself. That is the case when
++// the types are the same, and in packages that reinterpret values on purpose.
++// Otherwise the value must take the representation of T.
++func (fc *funcContext) unsafeDerefAsIs(from, to types.Type) bool {
++	return types.Identical(from, to) || fc.packageAllowsKindTypeConversion() || fc.pkgCtx.Pkg.Path() == "syscall"
++}
++
+ func (fc *funcContext) translateConversion(expr ast.Expr, desiredType types.Type) *expression {
+ 	exprType := fc.typeOf(expr)
+ 	if types.Identical(exprType, desiredType) {
+@@ -1266,29 +1274,48 @@ func (fc *funcContext) translateConversion(expr ast.Expr, desiredType types.Type
+ 				panic(fmt.Sprintf("Unhandled conversion: %v\n", et))
+ 			}
+ 		case t.Kind() == types.UnsafePointer:
+-			if unary, isUnary := expr.(*ast.UnaryExpr); isUnary && unary.Op == token.AND {
++			// Code in syscall works with the bytes of slices and structs that it
++			// passes to system calls, so there unsafe.Pointer values made from
++			// them are byte arrays. Everywhere else they are the pointers.
++			if unary, isUnary := expr.(*ast.UnaryExpr); isUnary && unary.Op == token.AND && fc.pkgCtx.Pkg.Path() == "syscall" {
+ 				if indexExpr, isIndexExpr := unary.X.(*ast.IndexExpr); isIndexExpr {
+-					return fc.formatExpr("$sliceToNativeArray(%s)", fc.translateConversionToSlice(indexExpr.X, types.NewSlice(types.Typ[types.Uint8])))
++					// The native array is kept for code that works with the bytes, and
++					// the element pointer with it, so that converting back to a pointer
++					// gives that pointer.
++					xVar := fc.newLocalVariable("_x")
++					x := fc.newIdent(xVar, fc.typeOf(indexExpr.X))
++					elemPtr := fc.setType(&ast.UnaryExpr{Op: token.AND, X: fc.setType(&ast.IndexExpr{X: x, Index: indexExpr.Index}, fc.typeOf(unary.X))}, fc.typeOf(unary))
++					return fc.formatExpr("(%s = %e, $withSourcePointer($sliceToNativeArray(%s), %e))", xVar, indexExpr.X, fc.translateConversionToSlice(x, types.NewSlice(types.Typ[types.Uint8])), elemPtr)
+ 				}
+ 				if ident, isIdent := unary.X.(*ast.Ident); isIdent && ident.Name == "_zero" {
+-					return fc.formatExpr("new Uint8Array(0)")
++					return fc.formatExpr("$withSourcePointer(new Uint8Array(0), %e)", unary)
+ 				}
+ 			}
+ 			if ptr, isPtr := fc.typeOf(expr).(*types.Pointer); fc.pkgCtx.Pkg.Path() == "syscall" && isPtr {
+ 				if s, isStruct := ptr.Elem().Underlying().(*types.Struct); isStruct {
+ 					array := fc.newLocalVariable("_array")
+ 					target := fc.newLocalVariable("_struct")
+-					fc.Printf("%s = new Uint8Array(%d);", array, sizes32.Sizeof(s))
++					// A nil struct pointer becomes the zero unsafe.Pointer, and there is
++					// nothing to load back into it afterwards. Otherwise the byte array
++					// starts with the struct's contents and remembers the struct, so
++					// that converting it back gives the original pointer.
+ 					fc.Delayed(func() {
+-						fc.Printf("%s = %s, %s;", target, fc.translateExpr(expr), fc.loadStruct(array, target, s))
++						fc.Printf("if (%s !== 0) { %s; }", array, fc.loadStruct(array, target, s, true))
+ 					})
+-					return fc.formatExpr("%s", array)
++					return fc.formatExpr("(%s = %e, $isNilPointer(%s) ? (%s = 0) : (%s = $withSourcePointer(new Uint8Array(%d), %s), %s, %s))", target, expr, target, array, array, sizes32.Sizeof(s), target, fc.storeStruct(array, target, s), array)
+ 				}
+ 			}
+-			if call, ok := expr.(*ast.CallExpr); ok {
++			if call, ok := expr.(*ast.CallExpr); ok && fc.pkgCtx.Pkg.Path() == "syscall" {
+ 				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "new" {
+-					return fc.formatExpr("new Uint8Array(%d)", int(sizes32.Sizeof(fc.typeOf(call.Args[0]))))
++					return fc.formatExpr("$withSourcePointer(new Uint8Array(%d), %e)", int(sizes32.Sizeof(fc.typeOf(call.Args[0]))), expr)
++				}
++			}
++			if ptr, isPtr := exprType.Underlying().(*types.Pointer); isPtr {
++				if _, isArray := ptr.Elem().Underlying().(*types.Array); isArray {
++					// The array doesn't carry its type, see $pointerToUnsafe.
++					return fc.formatExpr("$pointerToUnsafe(%e, %s)", expr, fc.typeName(exprType))
+ 				}
++				return fc.formatExpr("$pointerToUnsafe(%e)", expr)
+ 			}
+ 		}
+ 
+@@ -1317,17 +1344,23 @@ func (fc *funcContext) translateConversion(expr ast.Expr, desiredType types.Type
+ 			if _, ok := exprType.Underlying().(*types.Slice); ok {
+ 				return fc.formatExpr("$sliceToGoArray(%e, %s)", expr, fc.typeName(desiredType))
+ 			}
+-			// TODO(nevkontakte): Is this just for aliased types (e.g. `type a [4]byte`)?
+-			return fc.translateExpr(expr)
++			// Pointers to arrays are represented by the array itself, which all
++			// pointer types to the same array share, but each pointer type has its
++			// own nil value. Whether the elements must be reinterpreted for the
++			// desired type, as when converting via unsafe.Pointer, is only known
++			// at run time; if not, the result is the array itself.
++			return fc.formatExpr("$toPointerType(%e, %s)", expr, fc.typeName(desiredType))
+ 		case *types.Struct: // (*StructT)(expr) — converting expr to a pointer to a struct.
+ 			if fc.pkgCtx.Pkg.Path() == "syscall" && types.Identical(exprType, types.Typ[types.UnsafePointer]) {
+ 				// Special case: converting an unsafe pointer to a byte array into a
+ 				// struct pointer when handling syscalls.
+ 				// TODO(nevkontakte): Add a runtime assertion that the unsafe.Pointer is
+ 				// indeed pointing at a byte array.
++				// The zero unsafe.Pointer becomes the nil struct pointer, and a pointer
++				// to a struct of the desired type is returned as is.
+ 				array := fc.newLocalVariable("_array")
+ 				target := fc.newLocalVariable("_struct")
+-				return fc.formatExpr("(%s = %e, %s = %e, %s, %s)", array, expr, target, fc.zeroValue(t.Elem()), fc.loadStruct(array, target, ptrElType), target)
++				return fc.formatExpr("(%s = %e, $isNilPointer(%s) ? %s.nil : (%s = $unsafeStructPointer(%s, %s)) !== undefined ? %s : (%s = %e, %s, %s))", array, expr, array, fc.typeName(desiredType), target, array, fc.typeName(desiredType), target, target, fc.zeroValue(t.Elem()), fc.loadStruct(array, target, ptrElType, false), target)
+ 			}
+ 			// Convert between structs of different types but identical layouts,
+ 			// for example:
+@@ -1335,23 +1368,24 @@ func (fc *funcContext) translateConversion(expr ast.Expr, desiredType types.Type
+ 			//
+ 			// TODO(nevkontakte): Should this only apply when exprType is a pointer to a
+ 			// struct as well?
++			if types.Identical(exprType, types.Typ[types.UnsafePointer]) {
++				return fc.formatExpr("$pointerOfStructConversion($unsafeSource(%e), %s)", expr, fc.typeName(desiredType))
++			}
+ 			return fc.formatExpr("$pointerOfStructConversion(%e, %s)", expr, fc.typeName(desiredType))
+ 		}
+ 
+ 		if types.Identical(exprType, types.Typ[types.UnsafePointer]) {
+-			// TODO(nevkontakte): Why do we fall through to the implicit conversion here?
+-			// Conversion from unsafe.Pointer() requires explicit type conversion: https://play.golang.org/p/IQxtmpn1wgc.
++			// The pointer type behind an unsafe.Pointer is only known at run time.
+ 			// Possibly related to https://github.com/gopherjs/gopherjs/issues/1001.
+-			break // Fall through to fc.translateImplicitConversionWithCloning() below.
++			return fc.formatExpr("$toPointerType(%e, %s)", expr, fc.typeName(desiredType))
+ 		}
+ 		// Handle remaining cases, for example:
+ 		// type iPtr *int; var c int = 42; println((iPtr)(&c));
+-		// TODO(nevkontakte): Are there any other cases that fall into this case?
+ 		exprTypeElem := exprType.Underlying().(*types.Pointer).Elem()
+ 		ptrVar := fc.newLocalVariable("_ptr")
+ 		getterConv := fc.translateConversion(fc.setType(&ast.StarExpr{X: fc.newIdent(ptrVar, exprType)}, exprTypeElem), t.Elem())
+ 		setterConv := fc.translateConversion(fc.newIdent("$v", t.Elem()), exprTypeElem)
+-		return fc.formatExpr("(%1s = %2e, new %3s(function() { return %4s; }, function($v) { %1s.$set(%5s); }, %1s.$target, %1s.$index))", ptrVar, expr, fc.typeName(desiredType), getterConv, setterConv)
++		return fc.formatExpr("$pointerConversion(%2e, %3s, %1s => new %3s(function() { return %4s; }, function($v) { %1s.$set(%5s); }, %1s.$target, %1s.$index))", ptrVar, expr, fc.typeName(desiredType), getterConv, setterConv)
+ 
+ 	case *types.Interface:
+ 		if types.Identical(exprType, types.Typ[types.UnsafePointer]) {
+@@ -1413,6 +1447,11 @@ func (fc *funcContext) translateImplicitConversion(expr ast.Expr, desiredType ty
+ 				return fc.formatExpr("$pointerOfStructConversion(%e, %s)", expr, fc.typeName(desiredType))
+ 			}
+ 		}
++		// The same goes for the other pointer types: the value must become a
++		// pointer of the desired type, with nil mapped to its nil value.
++		if _, ok := exprType.Underlying().(*types.Pointer); ok {
++			return fc.translateConversion(expr, desiredType)
++		}
+ 	}
+ 
+ 	return fc.translateExpr(expr)
+@@ -1426,9 +1465,10 @@ func (fc *funcContext) translateConversionToSlice(expr ast.Expr, desiredType typ
+ 	return fc.translateExpr(expr)
+ }
+ 
+-func (fc *funcContext) loadStruct(array, target string, s *types.Struct) string {
+-	view := fc.newLocalVariable("_view")
+-	code := fmt.Sprintf("%s = new DataView(%s.buffer, %s.byteOffset)", view, array, array)
++// structFields returns the non-struct fields of the struct target, including
++// those of nested structs, named by their JavaScript expressions, and their
++// offsets in the struct's memory layout.
++func (fc *funcContext) structFields(target string, s *types.Struct) ([]*types.Var, []int64) {
+ 	var fields []*types.Var
+ 	var collectFields func(s *types.Struct, path string)
+ 	collectFields = func(s *types.Struct, path string) {
+@@ -1443,7 +1483,43 @@ func (fc *funcContext) loadStruct(array, target string, s *types.Struct) string
+ 		}
+ 	}
+ 	collectFields(s, target)
+-	offsets := sizes32.Offsetsof(fields)
++	return fields, sizes32.Offsetsof(fields)
++}
++
++// storeStruct writes the fields of the struct target into the byte array, in
++// the layout that loadStruct reads them from.
++func (fc *funcContext) storeStruct(array, target string, s *types.Struct) string {
++	view := fc.newLocalVariable("_view")
++	code := fmt.Sprintf("%s = new DataView(%s.buffer, %s.byteOffset)", view, array, array)
++	fields, offsets := fc.structFields(target, s)
++	for i, field := range fields {
++		switch t := field.Type().Underlying().(type) {
++		case *types.Basic:
++			if isNumeric(t) {
++				if is64Bit(t) {
++					code += fmt.Sprintf(", %s.setUint32(%d, %s.$high, true), %s.setUint32(%d, %s.$low, true)", view, offsets[i]+4, field.Name(), view, offsets[i], field.Name())
++					break
++				}
++				code += fmt.Sprintf(", %s.set%s(%d, %s, true)", view, toJavaScriptType(t), offsets[i], field.Name())
++			}
++		case *types.Array:
++			if elem, ok := t.Elem().Underlying().(*types.Basic); ok && isNumeric(elem) && !is64Bit(elem) {
++				size := sizes32.Sizeof(t)
++				code += fmt.Sprintf(", new Uint8Array(%s.buffer, %s.byteOffset + %d, %d).set(new Uint8Array(%s.buffer, %s.byteOffset, %d))", array, array, offsets[i], size, field.Name(), field.Name(), size)
++			}
++		}
++	}
++	return code
++}
++
++// loadStruct reads the fields of the struct target from the byte array. Array
++// fields become views of the byte array, unless inPlace is set, in which case
++// their contents are copied into the struct's existing arrays, as storeStruct
++// copies them out.
++func (fc *funcContext) loadStruct(array, target string, s *types.Struct, inPlace bool) string {
++	view := fc.newLocalVariable("_view")
++	code := fmt.Sprintf("%s = new DataView(%s.buffer, %s.byteOffset)", view, array, array)
++	fields, offsets := fc.structFields(target, s)
+ 	for i, field := range fields {
+ 		switch t := field.Type().Underlying().(type) {
+ 		case *types.Basic:
+@@ -1455,6 +1531,13 @@ func (fc *funcContext) loadStruct(array, target string, s *types.Struct) string
+ 				code += fmt.Sprintf(", %s = %s.get%s(%d, true)", field.Name(), view, toJavaScriptType(t), offsets[i])
+ 			}
+ 		case *types.Array:
++			if inPlace {
++				if elem, ok := t.Elem().Underlying().(*types.Basic); ok && isNumeric(elem) && !is64Bit(elem) {
++					size := sizes32.Sizeof(t)
++					code += fmt.Sprintf(", new Uint8Array(%s.buffer, %s.byteOffset, %d).set(new Uint8Array(%s.buffer, %s.byteOffset + %d, %d))", field.Name(), field.Name(), size, array, array, offsets[i], size)
++				}
++				break
++			}
+ 			code += fmt.Sprintf(`, %s = new ($nativeArray(%s))(%s.buffer, $min(%s.byteOffset + %d, %s.buffer.byteLength))`, field.Name(), typeKind(t.Elem()), array, array, offsets[i], array)
+ 		}
+ 		// TODO(nevkontakte): Explicitly panic if unsupported field type is encountered?
+diff --git a/compiler/natives/src/reflect/reflect.go b/compiler/natives/src/reflect/reflect.go
+index fe9bbc0c..ed775dfb 100644
+--- a/compiler/natives/src/reflect/reflect.go
++++ b/compiler/natives/src/reflect/reflect.go
+@@ -579,6 +579,13 @@ func maplen(m unsafe.Pointer) int {
+ 	return js.InternalObject(m).Get("size").Int()
+ }
+ 
++//gopherjs:replace
++func NewAt(typ Type, p unsafe.Pointer) Value {
++	// The result is p converted to a pointer to typ, as in the compiled code.
++	t := PtrTo(typ)
++	return makeValue(toAbiType(t), js.Global.Call("$toPointerType", js.InternalObject(p), jsType(t)), 0)
++}
++
+ //gopherjs:replace
+ func cvtDirect(v Value, typ Type) Value {
+ 	srcVal := v.object()
+@@ -595,25 +602,9 @@ func cvtDirect(v Value, typ Type) Value {
+ 		slice.Set("$capacity", srcVal.Get("$capacity"))
+ 		val = js.Global.Call("$newDataPointer", slice, jsType(PtrTo(typ)))
+ 	case Ptr:
+-		switch typ.Elem().Kind() {
+-		case Struct:
+-			if toAbiType(typ.Elem()) == v.typ().Elem() {
+-				val = srcVal
+-				break
+-			}
+-			val = jsType(typ).New()
+-			abi.CopyStruct(val, srcVal, toAbiType(typ.Elem()))
+-		case Array:
+-			// Unlike other pointers, array pointers are "wrapped" types (see
+-			// isWrapped() in the compiler package), and are represented by a native
+-			// javascript array object here.
+-			val = srcVal
+-		default:
+-			// When creating a new pointer, copy the get, set, and target.
+-			// Not all pointers have index, only those pointing to slice or array,
+-			// so if index is undefined or not, copy it too.
+-			val = jsType(typ).New(srcVal.Get("$get"), srcVal.Get("$set"), srcVal.Get("$target"), srcVal.Get("$index"))
+-		}
++		// Like a conversion in the compiled code, the result is the same pointer
++		// for every conversion of srcVal to typ, and refers to the same variable.
++		return makeValue(toAbiType(typ), js.Global.Call("$toPointerType", srcVal, jsType(typ)), v.flag.ro())
+ 	case Struct:
+ 		val = jsType(typ).Get("ptr").New()
+ 		abi.CopyStruct(val, srcVal, toAbiType(typ))
+@@ -872,6 +863,11 @@ func (v Value) assignTo(context string, dst *abi.Type, target unsafe.Pointer) Va
+ 
+ 	switch {
+ 	case directlyAssignable(dst, v.typ()):
++		if dst.Kind() == abi.Pointer && dst != v.typ() {
++			// A pointer must become a pointer object of the type it is assigned
++			// to, as in an assignment in the compiled code.
++			return makeValue(dst, js.Global.Call("$toPointerType", v.object(), dst.JsType()), v.flag.ro())
++		}
+ 		// Overwrite type so that they match.
+ 		// Same memory layout, so no harm done.
+ 		fl := v.flag&(flagAddr|flagIndir) | v.flag.ro()
+@@ -1294,11 +1290,17 @@ func (v Value) lenNonSlice() int
+ //gopherjs:replace
+ func (v Value) Pointer() uintptr {
+ 	switch k := v.kind(); k {
+-	case Chan, Map, Ptr, UnsafePointer:
++	case Chan, Map:
+ 		if v.IsNil() {
+ 			return 0
+ 		}
+ 		return v.object().Unsafe()
++	case Ptr, UnsafePointer:
++		if v.IsNil() {
++			return 0
++		}
++		// Pointers of different types to the same variable have the same address.
++		return js.Global.Call("$pointerToUnsafe", v.object(), v.typ().JsType()).Unsafe()
+ 	case Func:
+ 		if v.IsNil() {
+ 			return 0
+diff --git a/compiler/prelude/prelude.js b/compiler/prelude/prelude.js
+index 9e158d29..526eff77 100644
+--- a/compiler/prelude/prelude.js
++++ b/compiler/prelude/prelude.js
+@@ -506,29 +506,342 @@ var $clone = (src, type) => {
+     return clone;
+ };
+ 
+-var $pointerOfStructConversion = (obj, type) => {
+-    if (obj === (obj.constructor && obj.constructor.nil)) {
++// Reports whether obj is a nil pointer of its own type or the zero
++// unsafe.Pointer value.
++var $isNilPointer = obj => {
++    return obj === 0 || obj === (obj.constructor && obj.constructor.nil);
++};
++
++// Return the map from type ids to the pointers of those types that refer to
++// the same variable as the pointer obj, creating it on first use. All of these
++// pointers share the map, and its $original entry is the pointer the others
++// were converted from, which is what they all become as unsafe.Pointer values.
++var $pointerProxies = obj => {
++    if (obj.$proxies === undefined) {
++        obj.$proxies = { $original: obj };
++        if (obj.constructor !== undefined && obj.constructor.id !== undefined) {
++            obj.$proxies[obj.constructor.id] = obj;
++        }
++    }
++    return obj.$proxies;
++};
++
++// Convert a pointer to a different pointer type with the same element
++// representation. Nil pointers become the nil value of the target type, and
++// converting the same pointer to the same type always yields the same object,
++// so that the converted pointers compare equal. makeProxy creates the pointer
++// object of the target type when the source can't be reused as is; it may be
++// omitted when the source representation is shared by both types, which is
++// the case for pointers to arrays.
++var $pointerConversion = (obj, type, makeProxy) => {
++    if ($isNilPointer(obj)) {
+         return type.nil;
+     }
+-    if (obj.$proxies === undefined) {
+-        obj.$proxies = {};
+-        obj.$proxies[obj.constructor.id] = obj;
++    if (makeProxy === undefined || obj.constructor === type) {
++        return obj;
+     }
+-    var proxy = obj.$proxies[type.id];
++    var proxies = $pointerProxies(obj);
++    var proxy = proxies[type.id];
+     if (proxy === undefined) {
++        proxy = makeProxy(obj);
++        proxies[type.id] = proxy;
++        proxy.$proxies = proxies;
++    }
++    return proxy;
++};
++
++// Convert a pointer to unsafe.Pointer, which represents nil as 0. Pointers of
++// different types that refer to the same variable give the same value. type is
++// the type of the pointer, if known. A pointer to an array is the native array
++// itself, which doesn't carry its type, so the array type is recorded for the
++// views of the array that reinterpret its elements.
++var $pointerToUnsafe = (obj, type) => {
++    if ($isNilPointer(obj)) {
++        return 0;
++    }
++    if (type !== undefined && type.kind === $kindPtr && type.elem.kind === $kindArray) {
++        $recordArrayType(obj, type.elem);
++    }
++    return obj.$proxies !== undefined ? obj.$proxies.$original : obj;
++};
++
++// Record that the native array arr is a variable of the array type type,
++// unless arr is a view of another array or its type is already known.
++var $recordArrayType = (arr, type) => {
++    if (arr.$proxies !== undefined && arr.$proxies.$original !== arr) {
++        return;
++    }
++    var proxies = $pointerProxies(arr);
++    if (proxies.$type === undefined) {
++        proxies.$type = type;
++    }
++};
++
++// Record the pointer that the unsafe.Pointer value obj, a native array created
++// for code that works with raw bytes, was made from, and return obj.
++var $withSourcePointer = (obj, ptr) => {
++    obj.$sourcePtr = ptr;
++    return obj;
++};
++
++// Return the pointer that the unsafe.Pointer value obj was made from.
++var $unsafeSource = obj => {
++    return obj.$sourcePtr !== undefined ? obj.$sourcePtr : obj;
++};
++
++// Convert obj to the pointer type type when the pointer type of obj is only
++// known at run time, as for unsafe.Pointer values and reflection. Nil becomes
++// the nil value of type and a pointer that already has type is returned as is,
++// so a round trip through unsafe.Pointer gives back the original pointer. A
++// pointer of another pointer type is accessed through a cached proxy of type,
++// as in $pointerConversion, which gives the values read through it the
++// representation of the element type of type. Other values, such as the byte
++// arrays used by syscall, keep their representation.
++var $toPointerType = (obj, type) => {
++    if ($isNilPointer(obj)) {
++        return type.nil;
++    }
++    if (type.elem.kind === $kindArray) {
++        // The byte arrays used by syscall are themselves pointers to arrays.
++        return $arrayPointerConversion(obj, type);
++    }
++    obj = $unsafeSource(obj);
++    if (type.elem.kind === $kindStruct) {
++        if (obj.constructor === undefined || obj.constructor.elem === undefined || obj.constructor.elem.kind !== $kindStruct) {
++            return obj;
++        }
++        return $pointerOfStructConversion(obj, type);
++    }
++    if (obj.$get === undefined || obj.constructor.elem === undefined) {
++        return obj;
++    }
++    return $pointerConversion(obj, type, ptr => new type(
++        () => $reinterpretPointee(ptr.$get(), type.elem),
++        v => { ptr.$set($reinterpretPointee(v, ptr.constructor.elem)); },
++        ptr.$target, ptr.$index));
++};
++
++// Return the pointer to a struct of type type that the unsafe.Pointer obj
++// stands for, or undefined if there is none. Besides such pointers themselves,
++// these are the native arrays that the compiler creates from them.
++var $unsafeStructPointer = (obj, type) => {
++    if (obj.constructor === type) {
++        return obj;
++    }
++    if (obj.$sourcePtr !== undefined && obj.$sourcePtr.constructor === type) {
++        return obj.$sourcePtr;
++    }
++    return undefined;
++};
++
++// Reports whether the value v, read from a variable of a type that differs from
++// type only in the names of the types it is made of, must be reinterpreted to
++// be a value of type.
++// That is the case for values that carry their own type, and for arrays and
++// structs that contain such values.
++var $needsReinterpret = (v, type) => {
++    if (v === null || v === undefined) {
++        return false;
++    }
++    switch (type.kind) {
++        case $kindInt64:
++        case $kindUint64:
++        case $kindComplex64:
++        case $kindComplex128:
++        case $kindSlice:
++            return v.constructor !== type;
++        case $kindPtr:
++            if (type.elem.kind === $kindArray) {
++                // A pointer to an array is the array itself, except for nil.
++                return $isNilPointer(v) ? v !== type.nil : $needsReinterpret(v, type.elem);
++            }
++            return v.constructor !== type;
++        case $kindStruct:
++            return v.constructor !== type.ptr;
++        case $kindArray:
++            if (type.elem.kind === $kindArray || (type.elem.kind === $kindPtr && type.elem.elem.kind === $kindArray)) {
++                // Unlike other elements, these don't all carry the same type.
++                return Array.prototype.some.call(v, e => $needsReinterpret(e, type.elem));
++            }
++            return v.length > 0 && $needsReinterpret(v[0], type.elem);
++    }
++    return false;
++};
++
++// Give a value read or written through a pointer converted via unsafe.Pointer
++// the representation of the type elem. Arrays and structs are accessed through
++// cached views of type elem, which convert their elements and fields the same
++// way when they are read or written. source is the type of the variable that v
++// was read from, if known.
++var $reinterpretPointee = (v, elem, source) => {
++    if (!$needsReinterpret(v, elem)) {
++        return v;
++    }
++    switch (elem.kind) {
++        case $kindInt64:
++        case $kindUint64:
++            return v.$high === undefined ? v : new elem(v.$high, v.$low);
++        case $kindComplex64:
++        case $kindComplex128:
++            return v.$real === undefined ? v : new elem(v.$real, v.$imag);
++        case $kindSlice:
++            return v.$array === undefined ? v : $reinterpretSlice(v, elem);
++        case $kindPtr:
++            return $toPointerType(v, elem);
++        case $kindStruct:
++            return $pointerOfStructConversion(v, elem.ptr);
++        case $kindArray:
++            return $arrayPointerConversion(v, $ptrType(elem), source);
++    }
++    return v;
++};
++
++// Convert a slice to the slice type type, whose element type differs from its
++// own only in type names. Both slices share the backing array, which the result
++// accesses through a view that reinterprets the elements if they must be.
++var $reinterpretSlice = (slice, type) => {
++    if (slice === slice.constructor.nil) {
++        return type.nil;
++    }
++    var array = $arrayPointerConversion(slice.$array, $ptrType($arrayType(type.elem, slice.$array.length)));
++    return $subslice(new type(array), slice.$offset, slice.$offset + slice.$length, slice.$offset + slice.$capacity);
++};
++
++// Return the value to store in place of old, the current value of a variable,
++// when the value v of the type elem, which differs from the type of the
++// variable only in type names, is written to it. Arrays and structs are copied
++// into the existing value. source is the type of the variable, if known.
++var $reinterpretInto = (v, old, elem, source) => {
++    switch (elem.kind) {
++        case $kindStruct:
++        case $kindArray:
++            elem.copy($reinterpretPointee(old, elem, source), v);
++            return old;
++    }
++    if (elem.kind === $kindPtr && elem.elem.kind === $kindArray) {
++        // The array itself rather than a view of it, or the nil value of the
++        // type of the variable.
++        if (!$isNilPointer(v)) {
++            return $pointerToUnsafe(v);
++        }
++        if (source !== undefined) {
++            return source.nil;
++        }
++        return $isNilPointer(old) ? old : v;
++    }
++    if (old === null || old === undefined || !$needsReinterpret(old, elem)) {
++        return v;
++    }
++    // The current value has the type of the variable.
++    return $reinterpretPointee(v, old.constructor);
++};
++
++// Convert a pointer to an array, which is the native array itself, to the
++// pointer type type. If the elements must be reinterpreted to be elements of
++// the array type of type, the result is a cached view of the array that does
++// so for each element read or written. source is the type of the array, if
++// known.
++var $arrayPointerConversion = (arr, type, source) => {
++    if ($isNilPointer(arr)) {
++        return type.nil;
++    }
++    var elem = type.elem.elem;
++    var original = arr.$proxies !== undefined ? arr.$proxies.$original : arr;
++    if (!$needsReinterpret(original, type.elem)) {
++        return original;
++    }
++    if (source !== undefined && original === arr) {
++        $recordArrayType(arr, source);
++    }
++    var proxies = $pointerProxies(original);
++    var view = proxies[type.elem.id];
++    if (view === undefined) {
++        var own = {};
++        var sourceElem = () => proxies.$type !== undefined ? proxies.$type.elem : undefined;
++        var index = key => {
++            if (typeof key !== "string") {
++                return -1;
++            }
++            var i = Number(key);
++            return Number.isInteger(i) && i >= 0 && i < original.length && String(i) === key ? i : -1;
++        };
++        view = new Proxy(original, {
++            get(target, key) {
++                var i = index(key);
++                if (i !== -1) {
++                    return $reinterpretPointee(target[i], elem, sourceElem());
++                }
++                if (Object.prototype.hasOwnProperty.call(own, key)) {
++                    return own[key];
++                }
++                return target[key];
++            },
++            set(target, key, v) {
++                var i = index(key);
++                if (i !== -1) {
++                    target[i] = $reinterpretInto(v, target[i], elem, sourceElem());
++                } else {
++                    own[key] = v;
++                }
++                return true;
++            }
++        });
++        own.$proxies = proxies;
++        proxies[type.elem.id] = view;
++    }
++    return view;
++};
++
++// Convert a pointer to a struct, which is the struct object itself, to the
++// pointer type type. The result is the struct object if it already has that
++// type, and otherwise a cached view of it with the fields of the struct type of
++// type, which refer to the fields of the original struct in the same position
++// and reinterpret their values if their types differ. Pointers to the fields of
++// the view are converted from the pointers to the fields of the original
++// struct, which the compiler caches in its $ptr_ properties.
++var $pointerOfStructConversion = (obj, type) => {
++    if ($isNilPointer(obj)) {
++        return type.nil;
++    }
++    var proxies = $pointerProxies(obj);
++    var proxy = proxies[type.id];
++    if (proxy === undefined) {
++        var original = proxies.$original;
++        var fields = type.elem.fields;
++        var originalFields = original.constructor.elem !== undefined ? original.constructor.elem.fields : undefined;
++        if (originalFields === undefined || originalFields.length !== fields.length) {
++            originalFields = fields;
++        }
+         var properties = {};
+-        for (var i = 0; i < type.elem.fields.length; i++) {
+-            (fieldProp => {
+-                properties[fieldProp] = {
+-                    get() { return obj[fieldProp]; },
+-                    set(value) { obj[fieldProp] = value; }
++        for (var i = 0; i < fields.length; i++) {
++            ((field, originalField) => {
++                var prop = originalField.prop;
++                var ptrKey = "$ptr_" + originalField.name;
++                properties["$ptr_" + field.name] = {
++                    get() {
++                        if (original[ptrKey] === undefined) {
++                            original[ptrKey] = new ($ptrType(originalField.typ))(function () { return this.$target[prop]; }, function ($v) { this.$target[prop] = $v; }, original);
++                        }
++                        return $toPointerType(original[ptrKey], $ptrType(field.typ));
++                    }
++                };
++                if (originalField.typ === field.typ) {
++                    properties[field.prop] = {
++                        get() { return original[prop]; },
++                        set(value) { original[prop] = value; }
++                    };
++                    return;
++                }
++                properties[field.prop] = {
++                    get() { return $reinterpretPointee(original[prop], field.typ, originalField.typ); },
++                    set(value) { original[prop] = $reinterpretInto(value, original[prop], field.typ, originalField.typ); }
+                 };
+-            })(type.elem.fields[i].prop);
++            })(fields[i], originalFields[i]);
+         }
+         proxy = Object.create(type.prototype, properties);
+         proxy.$val = proxy;
+-        obj.$proxies[type.id] = proxy;
+-        proxy.$proxies = obj.$proxies;
++        proxies[type.id] = proxy;
++        proxy.$proxies = proxies;
+     }
+     return proxy;
+ };
+diff --git a/compiler/prelude/types.js b/compiler/prelude/types.js
+index c0331bf5..2d9201df 100644
+--- a/compiler/prelude/types.js
++++ b/compiler/prelude/types.js
+@@ -678,6 +678,33 @@ var $newDataPointer = (data, constructor) => {
+ var $indexPtrGet = function () { return this.$target[this.$index]; };
+ var $indexPtrSet = function (v) { this.$target[this.$index] = v; };
+ var $indexPtr = (array, index, constructor) => {
++    if (!array.buffer && array.$proxies !== undefined && array.$proxies.$original !== array) {
++        // array is a view of another array whose elements have another type (see
++        // $arrayPointerConversion). The element pointer is converted from the
++        // pointer to the element of that array, so both refer to the same
++        // variable. The element type of that array is known from the array type
++        // recorded for it, or else from the element itself, except for non-nil
++        // pointers to arrays.
++        var original = array.$proxies.$original;
++        var source = array.$proxies.$type;
++        var elem = original[index];
++        switch (constructor.elem.kind) {
++            case $kindStruct:
++                return $toPointerType($indexPtr(original, index, elem.constructor), constructor);
++            case $kindInt64:
++            case $kindUint64:
++            case $kindComplex64:
++            case $kindComplex128:
++            case $kindSlice:
++            case $kindPtr:
++                if (source !== undefined) {
++                    return $toPointerType($indexPtr(original, index, $ptrType(source.elem)), constructor);
++                }
++                if (constructor.elem.kind !== $kindPtr || constructor.elem.elem.kind !== $kindArray || $isNilPointer(elem)) {
++                    return $toPointerType($indexPtr(original, index, $ptrType(elem.constructor)), constructor);
++                }
++        }
++    }
+     var makeIndexPtr = () => {
+         if (constructor.elem.kind === $kindStruct ||
+             constructor.elem.kind === $kindArray) {
